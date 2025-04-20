@@ -249,7 +249,7 @@ const SaveManager: React.FC<SaveManagerProps> = ({
       <BlurView intensity={30} style={styles.container} tint="dark">
         <View style={styles.modal}>
           <View style={styles.header}>
-            <Text style={styles.title}>Chat Save Manager</Text>
+            <Text style={styles.title}>存档管理</Text>
             <TouchableOpacity onPress={onClose} style={styles.closeButton}>
               <Ionicons name="close" size={24} color="#fff" />
             </TouchableOpacity>
@@ -260,19 +260,19 @@ const SaveManager: React.FC<SaveManagerProps> = ({
               style={[styles.tab, tab === 'load' && styles.activeTab]} 
               onPress={() => setTab('load')}
             >
-              <Text style={[styles.tabText, tab === 'load' && styles.activeTabText]}>Load Save</Text>
+              <Text style={[styles.tabText, tab === 'load' && styles.activeTabText]}>读取存档</Text>
             </TouchableOpacity>
             <TouchableOpacity 
               style={[styles.tab, tab === 'save' && styles.activeTab]} 
               onPress={() => setTab('save')}
             >
-              <Text style={[styles.tabText, tab === 'save' && styles.activeTabText]}>Create Save</Text>
+              <Text style={[styles.tabText, tab === 'save' && styles.activeTabText]}>新建存档</Text>
             </TouchableOpacity>
           </View>
 
           {tab === 'load' ? (
             <>
-              <Text style={styles.sectionTitle}>Saved States</Text>
+              <Text style={styles.sectionTitle}>当前存档</Text>
               {saves.length > 0 ? (
                 <FlatList
                   data={saves}
@@ -284,8 +284,7 @@ const SaveManager: React.FC<SaveManagerProps> = ({
               ) : (
                 <View style={styles.emptySaves}>
                   <Ionicons name="save-outline" size={40} color="#555" />
-                  <Text style={styles.emptySavesText}>No save points found</Text>
-                  <Text style={styles.emptySavesSubtext}>Create a save point to continue your conversation later</Text>
+                  <Text style={styles.emptySavesText}>暂无存档</Text>
                 </View>
               )}
             </>

@@ -10,7 +10,6 @@ import {
   StatusBar,
   Animated,
   Modal,
-  ScrollView,
   Alert,
 } from 'react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';

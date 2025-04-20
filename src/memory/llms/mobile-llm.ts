@@ -1,5 +1,6 @@
 import { LLM, LLMResponse } from './base';
 import { LLMConfig, Message } from '../types';
+import { getApiSettings } from '@/utils/settings-helper';
 
 /**
  * 适用于移动端的 LLM 实现
@@ -201,7 +202,31 @@ export class MobileLLM implements LLM {
    */
   private async getApiKeyFromStorage(): Promise<string | null> {
     try {
-      // 从localStorage获取
+      // 使用settings-helper获取API设置
+      const apiSettings = getApiSettings();
+      
+      if (apiSettings) {
+        if (apiSettings.apiProvider === 'openrouter' && 
+            apiSettings.openrouter?.enabled && 
+            apiSettings.openrouter?.apiKey) {
+          
+          this.apiProvider = 'openrouter';
+          this.provider = 'openrouter';
+          this.model = apiSettings.openrouter.model || 'openai/gpt-3.5-turbo';
+          this.openrouterConfig = apiSettings.openrouter;
+          return apiSettings.openrouter.apiKey;
+          
+        } else if (apiSettings.apiKey) {
+          this.apiProvider = 'gemini';
+          this.provider = 'gemini';
+          this.model = 'gemini-2.0-flash-exp';
+          return apiSettings.apiKey;
+        }
+      }
+      
+      console.log('[MobileLLM] 未从settings-helper获取到API密钥，尝试从本地存储获取');
+      
+      // 从localStorage获取（作为备选方案）
       if (typeof localStorage !== 'undefined') {
         const settings = localStorage.getItem('user_settings');
         if (settings) {
@@ -223,7 +248,7 @@ export class MobileLLM implements LLM {
         }
       }
       
-      // 从AsyncStorage获取
+      // 从AsyncStorage获取（作为备选方案）
       if (typeof require !== 'undefined') {
         try {
           const AsyncStorage = require('@react-native-async-storage/async-storage').default;

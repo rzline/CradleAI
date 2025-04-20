@@ -27,6 +27,15 @@ import {
 } from './memory.types';
 import {VectorStoreResult } from '@/src/memory/vector-stores/base';
 import {LLMConfig} from '@/src/memory/types';
+import { getDatabasePath } from './utils/file-system';
+// 导入表格记忆集成模块
+import {
+  isTableMemoryEnabled,
+  extendAddToVectorStore,
+  initializeTableMemory,
+  setTableMemoryEnabled
+} from './integration/table-memory-integration';
+
 /**
  * 移动端记忆管理类
  */
@@ -42,6 +51,7 @@ export class MobileMemory {
   private apiVersion: string;
   private processingInterval: number = 10;
   private memoryEnabled: boolean = true;
+  private tableMemoryEnabled: boolean = true; // Add this property
 
   constructor(config: Partial<MemoryConfig> = {}) {
     // 合并和验证配置
@@ -64,6 +74,46 @@ export class MobileMemory {
     this.db = new MobileSQLiteManager(this.config.historyDbPath || "memory_history.db");
     this.collectionName = this.config.vectorStore.config.collectionName;
     this.apiVersion = this.config.version || "v1.0";
+
+    // 初始化表格记忆插件
+    this.initializeTableMemory();
+  }
+
+  /**
+   * 初始化表格记忆插件
+   */
+  private async initializeTableMemory(): Promise<void> {
+    try {
+      // 获取数据库路径
+      const dbPath = await getDatabasePath('table_memory.db');
+      
+      // 初始化表格记忆插件
+      await initializeTableMemory({
+        dbPath,
+        defaultTemplates: true,
+        enabled: this.tableMemoryEnabled
+      });
+    } catch (error) {
+      console.error('[MobileMemory] 初始化表格记忆插件失败:', error);
+    }
+  }
+
+  /**
+   * 设置表格记忆功能启用状态
+   * @param enabled 是否启用
+   */
+  public setTableMemoryEnabled(enabled: boolean): void {
+    this.tableMemoryEnabled = enabled;
+    setTableMemoryEnabled(enabled);
+    console.log(`[MobileMemory] 表格记忆功能${enabled ? '已启用' : '已禁用'}`);
+  }
+  
+  /**
+   * 获取表格记忆功能启用状态
+   * @returns 是否启用
+   */
+  public isTableMemoryEnabled(): boolean {
+    return this.tableMemoryEnabled && isTableMemoryEnabled();
   }
 
   /**
@@ -377,7 +427,8 @@ export class MobileMemory {
    * @param isMultiRound 是否为多轮对话（默认为false）
    * @returns 记忆项数组
    */
-  private async addToVectorStore(
+  private addToVectorStore = extendAddToVectorStore(async function(
+    this: MobileMemory, // 添加this的类型注解
     messages: Message[],
     metadata: Record<string, any>,
     filters: SearchFilters,
@@ -395,6 +446,17 @@ export class MobileMemory {
     const parsedMessages = messages.map((m) => 
       typeof m.content === 'string' ? m.content : JSON.stringify(m.content)
     ).join('\n');
+    
+    // 为表格记忆系统准备原始消息内容
+    const rawChatContent = messages.map((m) => {
+      const role = m.role === 'assistant' ? (metadata.aiName || 'AI') : 
+                 (m.role === 'user' ? (metadata.userName || '用户') : m.role);
+      const content = typeof m.content === 'string' ? m.content : JSON.stringify(m.content);
+      return `${role}: ${content}`;
+    }).join('\n\n');
+    
+    console.log(`[MobileMemory] 准备了原始对话内容供表格记忆使用，长度: ${rawChatContent.length} 字符`);
+    metadata._rawChatContent = rawChatContent; // 将原始对话内容添加到元数据中
     
     // 尝试获取最近的聊天上下文
     let recentConversation: string = '';
@@ -438,12 +500,69 @@ export class MobileMemory {
         ? `${recentConversation}当前${userName}消息:\n${parsedMessages}`
         : parsedMessages);
 
-    // 获取提示词，传递自定义称呼
-    const [systemPrompt, userPrompt] = this.customPrompt
-      ? [this.customPrompt, `输入:\n${contextString}`]
-      : getFactRetrievalMessages(contextString, isMultiRound, { userName, aiName });
+    // 如果表格记忆功能已启用，获取表格数据
+    let tableData = null;
+    let useTableMemory = false;
+    if (this.isTableMemoryEnabled()) {
+      try {
+        const characterId = filters.agentId;
+        const conversationId = filters.runId;
+        if (characterId && conversationId) {
+          // 从表格记忆集成模块获取表格数据
+          const tableMemoryIntegration = require('./integration/table-memory-integration');
+          tableData = await tableMemoryIntegration.getTableDataForPrompt(characterId, conversationId);
+          useTableMemory = !!tableData;
+          
+          if (tableData) {
+            console.log('[MobileMemory] 获取到表格数据，将整合到提示词中', 
+              Array.isArray(tableData) ? `(${tableData.length}个表格)` : '');
+          } else {
+            // 如果没有表格数据，但有表格模板，可以考虑创建新表格
+            try {
+              const templates = await require('./plugins/table-memory').API.getSelectedTemplates();
+              if (templates && templates.length > 0) {
+                console.log(`[MobileMemory] 没有找到现有表格，但有${templates.length}个可用模板`);
+              }
+            } catch (err) {
+              console.log('[MobileMemory] 无法获取表格模板:', err);
+            }
+          }
+        }
+      } catch (error) {
+        console.warn('[MobileMemory] 获取表格数据失败:', error);
+      }
+    }
 
-    // 使用 LLM 提取事实
+    // 获取提示词，传递自定义称呼和表格数据
+    let systemPrompt, userPrompt;
+    if (this.customPrompt) {
+      // 如果有自定义提示词，使用自定义提示词
+      [systemPrompt, userPrompt] = [this.customPrompt, `输入:\n${contextString}`];
+      
+      // 如果启用表格记忆，尝试增强自定义提示词
+      if (useTableMemory && tableData) {
+        // 使用表格记忆集成模块的函数增强提示词
+        const tableMemoryIntegration = require('./integration/table-memory-integration');
+        [systemPrompt, userPrompt] = tableMemoryIntegration.enhancePromptsWithTableMemory(
+          systemPrompt, userPrompt, tableData, { userName, aiName });
+        console.log('[MobileMemory] 使用表格记忆增强了自定义提示词');
+      }
+    } else {
+      // 没有自定义提示词，使用标准提示词
+      if (useTableMemory && tableData) {
+        // 使用整合了表格记忆的提示词
+        const tableMemoryIntegration = require('./integration/table-memory-integration');
+        [systemPrompt, userPrompt] = tableMemoryIntegration.getFactRetrievalAndTableUpdateMessages(
+          contextString, tableData, isMultiRound, { userName, aiName });
+        console.log('[MobileMemory] 使用表格记忆增强了标准提示词');
+      } else {
+        // 使用标准提示词
+        [systemPrompt, userPrompt] = getFactRetrievalMessages(contextString, isMultiRound, { userName, aiName });
+      }
+    }
+
+    // 使用 LLM 提取事实（以及表格更新指令，如果启用）
+    console.log('[MobileMemory] 正在使用LLM提取事实' + (useTableMemory ? '和表格操作' : ''));
     const response = await this.llm.generateResponse(
       [
         { role: "user", content: systemPrompt },
@@ -454,14 +573,23 @@ export class MobileMemory {
 
     const cleanResponse = removeCodeBlocks(response);
     let facts = [];
+    let tableActions = null;
+    
     try {
       const parsed = JSON.parse(cleanResponse);
       facts = parsed.facts || [];
+      tableActions = parsed.tableActions || null;
+      
       // 记录提取的事实
       console.log(`[MobileMemory] 从用户消息中提取到 ${facts.length} 条事实:`);
       facts.forEach((fact: string, index: number) => {
         console.log(`  事实 #${index + 1}: ${fact}`);
       });
+      
+      // 如果有表格操作指令，记录日志
+      if (tableActions && Array.isArray(tableActions)) {
+        console.log(`[MobileMemory] LLM 返回了 ${tableActions.length} 条表格操作指令`);
+      }
     } catch (e) {
       console.error("[MobileMemory] 解析 LLM 响应失败:", e);
       return [];
@@ -616,8 +744,76 @@ export class MobileMemory {
     
     console.log(`[MobileMemory] 记忆处理完成: 添加=${addCount}, 更新=${updateCount}, 删除=${deleteCount}, 无变更=${noneCount}`);
     
-    return results;
-  }
+    // 处理表格操作指令（如果有）
+    if (useTableMemory && tableActions && Array.isArray(tableActions) && tableActions.length > 0) {
+      try {
+        // 获取角色ID和会话ID
+        const characterId = filters.agentId;
+        const conversationId = filters.runId;
+        
+        if (characterId && conversationId) {
+          console.log(`[MobileMemory] 处理${tableActions.length}条表格操作指令`);
+          // 使用表格记忆集成模块处理表格操作
+          const tableMemoryIntegration = require('./integration/table-memory-integration');
+          tableMemoryIntegration.processLLMResponseForTableMemory(
+            cleanResponse, 
+            characterId, 
+            conversationId
+          ).catch((error: Error) => {
+            console.error("[MobileMemory] 处理表格记忆时出错:", error);
+          });
+          
+          // 另外，尝试使用原始消息内容单独调用表格处理，确保对话内容被正确处理
+          if (metadata._rawChatContent) {
+            console.log("[MobileMemory] 尝试使用原始对话内容处理表格...");
+            tableMemoryIntegration.processChat(
+              metadata._rawChatContent,
+              characterId,
+              conversationId,
+              {
+                userName,
+                aiName,
+                isMultiRound
+              }
+            ).catch((error: Error) => {
+              console.error("[MobileMemory] 使用原始对话内容处理表格记忆时出错:", error);
+            });
+          }
+        }
+      } catch (error) {
+        console.error("[MobileMemory] 处理表格操作指令时出错:", error);
+      }
+    } else if (useTableMemory) {
+      console.log('[MobileMemory] LLM响应中未包含表格操作指令');
+      
+      // 即使LLM没有返回表格操作，也尝试使用原始对话内容进行表格处理
+      try {
+        const characterId = filters.agentId;
+        const conversationId = filters.runId;
+        
+        if (characterId && conversationId && metadata._rawChatContent) {
+          console.log("[MobileMemory] LLM未返回表格操作，尝试使用原始对话内容直接处理表格...");
+          const tableMemoryIntegration = require('./integration/table-memory-integration');
+          tableMemoryIntegration.processChat(
+            metadata._rawChatContent,
+            characterId,
+            conversationId,
+            {
+              userName,
+              aiName,
+              isMultiRound
+            }
+          ).catch((error: Error) => {
+            console.error("[MobileMemory] 使用原始对话内容处理表格记忆时出错:", error);
+          });
+        }
+      } catch (error) {
+        console.error("[MobileMemory] 尝试直接处理表格时出错:", error);
+      }
+    }
+
+    return results;  
+  });
 
   /**
    * 获取记忆

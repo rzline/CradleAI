@@ -1,4 +1,4 @@
-# Mem0 记忆系统 - React Native/Expo 移植技术文档
+# Mem0 记忆系统 - 技术文档
 
 ## 1. 概述
 

@@ -21,7 +21,7 @@ import ChatDialog from '@/components/ChatDialog';
 import ChatInput from '@/components/ChatInput';
 import Sidebar from '@/components/Sidebar';
 import SettingsSidebar from '@/components/SettingsSidebar';
-import MemoOverlay from '@/components/MemoOverlay';  // 替换原来的 MemoSheet 导入
+import MemoOverlay from '@/components/MemoOverlay';  // Import for memory enhancement plugin UI
 import SaveManager from '@/components/SaveManager'; // Import the SaveManager component
 import NovelAITestModal from '@/components/NovelAITestModal'; // 导入 NovelAI 测试组件
 import VNDBTestModal from '@/src/components/VNDBTestModal'; // 导入 VNDB 测试组件
@@ -1525,6 +1525,13 @@ useEffect(() => {
 
   const selectedGroup = selectedGroupId ? groups.find(g => g.groupId === selectedGroupId) : null;
 
+  const toggleMemoOverlay = () => {
+    setIsMemoSheetVisible(!isMemoSheetVisible);
+  };
+
+  const characterIdForMemo = selectedConversationId || '';
+  const conversationIdForMemo = selectedConversationId ? `conversation-${selectedConversationId}` : '';
+
   return (
     <View style={styles.outerContainer}>
       <StatusBar translucent backgroundColor="transparent" />
@@ -1788,7 +1795,9 @@ useEffect(() => {
               {/* 直接在主视图中渲染 MemoOverlay */}
               <MemoOverlay
                 isVisible={isMemoSheetVisible}
-                onClose={() => setIsMemoSheetVisible(false)}
+                onClose={toggleMemoOverlay}
+                characterId={characterIdForMemo}
+                conversationId={conversationIdForMemo}
               />
               
               {/* VNDB测试模态框 */}
