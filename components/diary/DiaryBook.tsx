@@ -602,18 +602,20 @@ const DiaryBook: React.FC<DiaryBookProps> = ({ character, onClose }) => {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: theme.colors.background,
+    backgroundColor: 'rgba(30,30,30,0.98)', // MemoOverlay深色
   },
   header: {
     flexDirection: 'row',
     alignItems: 'center',
     paddingHorizontal: 16,
-    paddingVertical: 12,
+    paddingTop: 32,
+    paddingBottom: 8,
     borderBottomWidth: 1,
-    borderBottomColor: theme.colors.primaryDark,
+    borderBottomColor: 'rgba(255,255,255,0.08)',
+    backgroundColor: 'transparent',
   },
   title: {
-    fontSize: 20,
+    fontSize: 18,
     fontWeight: 'bold',
     color: '#fff',
     flex: 1,
@@ -621,6 +623,9 @@ const styles = StyleSheet.create({
   },
   closeButton: {
     padding: 8,
+    borderRadius: 16,
+    backgroundColor: 'rgba(255,255,255,0.08)',
+    marginRight: 8,
   },
   rightHeader: {
     width: 40,
@@ -628,23 +633,28 @@ const styles = StyleSheet.create({
   tabs: {
     flexDirection: 'row',
     borderBottomWidth: 1,
-    borderBottomColor: theme.colors.primaryDark,
+    borderBottomColor: 'rgba(255,255,255,0.08)',
+    backgroundColor: 'transparent',
   },
   tab: {
     flex: 1,
-    paddingVertical: 12,
+    paddingVertical: 14,
     alignItems: 'center',
+    borderBottomWidth: 2,
+    borderBottomColor: 'transparent',
   },
   activeTab: {
-    borderBottomWidth: 2,
-    borderBottomColor: theme.colors.primary,
+    borderBottomColor: '#ff9f1c',
+    backgroundColor: 'rgba(255, 224, 195, 0.04)',
   },
   tabText: {
-    fontSize: 16,
+    fontSize: 15,
     color: '#ccc',
+    fontWeight: 'bold',
+    letterSpacing: 1,
   },
   activeTabText: {
-    color: theme.colors.primary,
+    color: '#ff9f1c',
     fontWeight: 'bold',
   },
   loadingContainer: {
@@ -814,6 +824,7 @@ const styles = StyleSheet.create({
   },
   settingsContainer: {
     flex: 1,
+    backgroundColor: 'transparent',
   },
   settingsContent: {
     padding: 16,
@@ -821,15 +832,18 @@ const styles = StyleSheet.create({
   },
   settingSection: {
     marginBottom: 24,
-    backgroundColor: '#333',
-    borderRadius: 12,
+    backgroundColor: 'rgba(60,60,60,0.6)',
+    borderRadius: 14,
     padding: 16,
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.06)',
   },
   settingHeading: {
-    fontSize: 18,
+    fontSize: 16,
     fontWeight: 'bold',
-    color: '#fff',
+    color: '#ff9f1c',
     marginBottom: 16,
+    letterSpacing: 1,
   },
   settingRow: {
     flexDirection: 'row',
@@ -839,8 +853,9 @@ const styles = StyleSheet.create({
   },
   settingLabel: {
     fontSize: 14,
-    color: '#ddd',
+    color: '#fff',
     marginBottom: 8,
+    fontWeight: 'bold',
   },
   settingDescription: {
     fontSize: 12,
@@ -848,11 +863,13 @@ const styles = StyleSheet.create({
     marginTop: 4,
   },
   textInput: {
-    backgroundColor: '#222',
-    borderRadius: 8,
+    backgroundColor: 'rgba(51,51,51,0.8)',
+    borderRadius: 10,
     padding: 12,
     color: '#fff',
     marginBottom: 16,
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.08)',
   },
   slider: {
     width: '100%',
@@ -900,17 +917,23 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
-    backgroundColor: theme.colors.primary,
-    paddingVertical: 12,
+    backgroundColor: '#ff9f1c',
+    paddingVertical: 14,
     borderRadius: 20,
     marginTop: 8,
     marginBottom: 20,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.18,
+    shadowRadius: 4,
+    elevation: 2,
   },
   saveButtonText: {
     color: '#fff',
     fontWeight: 'bold',
     fontSize: 16,
     marginLeft: 8,
+    letterSpacing: 1,
   },
   circleMemorySection: {
     marginTop: 16,
