@@ -10,7 +10,9 @@ import {
   Alert,
   Dimensions,
   FlatList,
-  ActivityIndicator
+  ActivityIndicator,
+  Platform,
+  StatusBar
 } from 'react-native';
 import { BlurView } from 'expo-blur';
 import { Ionicons, MaterialIcons } from '@expo/vector-icons';
@@ -564,9 +566,9 @@ const MemoOverlay: React.FC<MemoOverlayProps> = ({ isVisible, onClose, character
   const renderTemplateTab = () => (
     <View style={styles.tabContent}>
       <Text style={styles.tabTitle}>
-        Available Templates ({allTemplates.length})
+        可用模板 ({allTemplates.length})
         {selectedTemplateIds.length > 0 && (
-          <Text style={styles.selectedCount}> • {selectedTemplateIds.length} selected</Text>
+          <Text style={styles.selectedCount}> • {selectedTemplateIds.length} 已选</Text>
         )}
       </Text>
       
@@ -574,7 +576,7 @@ const MemoOverlay: React.FC<MemoOverlayProps> = ({ isVisible, onClose, character
       <View style={styles.helperTextContainer}>
         <Ionicons name="information-circle-outline" size={16} color="#ff9f1c" />
         <Text style={styles.helperText}>
-          You can select multiple templates to create several tables at once
+          您可以选择多个模板以一次创建多个表格. 这些表格会由AI自动填充,作为长期记忆.
         </Text>
       </View>
       
@@ -600,14 +602,14 @@ const MemoOverlay: React.FC<MemoOverlayProps> = ({ isVisible, onClose, character
             <Text style={styles.templateDesc}>{item.note}</Text>
             
             <View style={styles.templateMetadata}>
-              <Text style={styles.templateMetaText}>Type: <Text style={styles.metaValue}>{item.type}</Text></Text>
-              <Text style={styles.templateMetaText}>Columns: <Text style={styles.metaValue}>{item.columns.length}</Text></Text>
+              <Text style={styles.templateMetaText}>类型: <Text style={styles.metaValue}>{item.type}</Text></Text>
+              <Text style={styles.templateMetaText}>列数: <Text style={styles.metaValue}>{item.columns.length}</Text></Text>
             </View>
           </View>
         )}
         ListEmptyComponent={() => (
           <View style={styles.emptyState}>
-            <Text style={styles.emptyText}>No templates found</Text>
+            <Text style={styles.emptyText}>未找到模板</Text>
             <TouchableOpacity
               style={styles.actionButton}
               onPress={() => {
@@ -615,7 +617,7 @@ const MemoOverlay: React.FC<MemoOverlayProps> = ({ isVisible, onClose, character
                 initializePluginAsync();
               }}
             >
-              <Text style={styles.actionButtonText}>Initialize Default Templates</Text>
+              <Text style={styles.actionButtonText}>初始化默认模板</Text>
             </TouchableOpacity>
           </View>
         )}
@@ -633,7 +635,7 @@ const MemoOverlay: React.FC<MemoOverlayProps> = ({ isVisible, onClose, character
         >
           <MaterialIcons name="add-chart" size={20} color="#fff" />
           <Text style={styles.actionButtonText}>
-            Create {selectedTemplateIds.length} Table{selectedTemplateIds.length !== 1 ? 's' : ''}
+            创建 {selectedTemplateIds.length} 个表格
           </Text>
         </TouchableOpacity>
         
@@ -645,198 +647,126 @@ const MemoOverlay: React.FC<MemoOverlayProps> = ({ isVisible, onClose, character
               setSelectedTemplateIds([]);
             }}
           >
-            <Text style={styles.clearButtonText}>Clear Selection</Text>
+            <Text style={styles.clearButtonText}>清除选择</Text>
           </TouchableOpacity>
         )}
       </View>
     </View>
   );
 
-  // Render the tables tab with improved multi-table view
+  // Render the tables tab with improved tag-based table selection and full-width table
   const renderTablesTab = () => (
     <View style={styles.tabContent}>
-      <View style={styles.tablesContainer}>
-        <View style={styles.tablesList}>
-          <View style={styles.tablesHeader}>
-            <Text style={styles.tabTitle}>Tables ({tables.length})</Text>
+      {/* 表格选择Tag */}
+      <View style={styles.tableTagsContainer}>
+        {tables.length > 0 ? (
+          tables.map((table) => (
             <TouchableOpacity
-              style={styles.refreshButton}
-              onPress={handleRefreshTables}
-              disabled={loading}
+              key={table.uid}
+              style={[
+                styles.tableTag,
+                selectedTableId === table.uid && styles.tableTagSelected
+              ]}
+              onPress={() => handleSelectTable(table.uid)}
             >
-              <Ionicons 
-                name="refresh" 
-                size={20} 
-                color={loading ? "#666" : "#ff9f1c"} 
-              />
-            </TouchableOpacity>
-          </View>
-          
-          <ScrollView>
-            {tables.length > 0 ? (
-              <>
-                {/* Group tables by template type for better organization */}
-                {tables.map((table) => (
-                  <TouchableOpacity
-                    key={table.uid}
-                    style={[
-                      styles.tableListItem,
-                      selectedTableId === table.uid && styles.tableListItemSelected
-                    ]}
-                    onPress={() => handleSelectTable(table.uid)}
-                  >
-                    <Text style={styles.tableListItemName}>{table.name}</Text>
-                    <Text style={styles.tableIdText}>{table.uid}</Text>
-                    <View style={styles.tableListItemActions}>
-                      <TouchableOpacity
-                        style={styles.tableActionButton}
-                        onPress={() => handleRebuildTable(table.uid, 'rebuild_base')}
-                      >
-                        <Ionicons name="refresh" size={18} color="#ccc" />
-                      </TouchableOpacity>
-                      <TouchableOpacity
-                        style={styles.tableActionButton}
-                        onPress={() => handleDeleteTable(table.uid)}
-                      >
-                        <Ionicons name="trash" size={18} color="#ff6b6b" />
-                      </TouchableOpacity>
-                    </View>
-                  </TouchableOpacity>
-                ))}
-                
-                {/* Add batch operations section for multiple tables */}
-                {tables.length > 1 && (
-                  <View style={styles.batchOperationsContainer}>
-                    <Text style={styles.batchOperationsTitle}>Batch Operations</Text>
-                    <TouchableOpacity
-                      style={styles.batchOperationButton}
-                      onPress={() => {
-                        // Process all tables at once
-                        Alert.alert(
-                          'Update All Tables',
-                          'This will update all tables based on the conversation. Do you want to continue?',
-                          [
-                            { text: 'Cancel', style: 'cancel' },
-                            { 
-                              text: 'Update All', 
-                              onPress: async () => {
-                                setLoading(true);
-                                try {
-                                  // Sample chat content - in a real app, you'd fetch this
-                                  const chatContent = "This is sample chat content for updating all tables";
-                                  
-                                  // Use the appropriate API call to process all tables at once
-                                  const result = await TableMemory.API.processChat(chatContent, {
-                                    characterId: characterId || '',
-                                    conversationId: conversationId || characterId || '',
-                                    processMode: 'batch' // Use batch mode to process all tables at once
-                                  });
-                                  
-                                  if (result.updatedSheets.length > 0) {
-                                    Alert.alert('Success', `Updated ${result.updatedSheets.length} tables`);
-                                    loadData(true);
-                                  } else {
-                                    Alert.alert('Info', 'No tables were updated');
-                                  }
-                                } catch (error) {
-                                  console.error('[MemoOverlay] Batch update error:', error);
-                                  Alert.alert('Error', 'Failed to update tables');
-                                } finally {
-                                  setLoading(false);
-                                }
-                              }
-                            }
-                          ]
-                        );
-                      }}
-                    >
-                      <Ionicons name="layers" size={18} color="#ff9f1c" />
-                      <Text style={styles.batchOperationText}>Update All Tables</Text>
-                    </TouchableOpacity>
-                  </View>
-                )}
-              </>
-            ) : (
-              <View style={styles.emptyState}>
-                <Text style={styles.emptyText}>No tables found</Text>
-                <Text style={styles.emptySubtext}>Go to Templates tab to create tables</Text>
-              </View>
-            )}
-          </ScrollView>
-        </View>
-        
-        <View style={styles.tableDataContainer}>
-          <View style={styles.tablesHeader}>
-            <Text style={styles.tabTitle}>
-              {selectedTableId ? tables.find(t => t.uid === selectedTableId)?.name || 'Table Data' : 'Select a table to view data'}
-            </Text>
-            {selectedTableId && (
-              <Text style={styles.tableIdText}>{selectedTableId}</Text>
-            )}
-          </View>
-          
-          {selectedTableId && tableData.length > 0 ? (
-            <>
-              <ScrollView horizontal>
-                <ScrollView>
-                  <View style={styles.tableGrid}>
-                    {tableData.map((row, rowIndex) => (
-                      <View key={`row-${rowIndex}`} style={styles.tableRow}>
-                        {row.map((cell, colIndex) => (
-                          <TouchableOpacity
-                            key={`cell-${rowIndex}-${colIndex}`}
-                            style={[
-                              styles.tableCell,
-                              rowIndex === 0 && styles.tableHeaderCell,
-                              editingCell?.rowIndex === rowIndex && editingCell?.colIndex === colIndex && styles.tableCellEditing
-                            ]}
-                            onPress={() => rowIndex > 0 && handleEditCell(rowIndex, colIndex, cell)}
-                            disabled={rowIndex === 0}
-                          >
-                            <Text 
-                              style={[
-                                styles.tableCellText,
-                                rowIndex === 0 && styles.tableHeaderCellText
-                              ]}
-                              numberOfLines={2}
-                            >
-                              {cell}
-                            </Text>
-                          </TouchableOpacity>
-                        ))}
-                        
-                        {rowIndex > 0 && (
-                          <TouchableOpacity 
-                            style={styles.rowDeleteButton}
-                            onPress={() => handleDeleteRow(rowIndex)}
-                          >
-                            <Ionicons name="close-circle" size={18} color="#ff6b6b" />
-                          </TouchableOpacity>
-                        )}
-                      </View>
-                    ))}
-                  </View>
-                </ScrollView>
-              </ScrollView>
-              
+              <Text style={[
+                styles.tableTagText,
+                selectedTableId === table.uid && styles.tableTagTextSelected
+              ]}>
+                {table.name}
+              </Text>
               <TouchableOpacity
-                style={[styles.actionButton, styles.addRowButton]}
-                onPress={handleAddRow}
+                style={styles.tableTagDelete}
+                onPress={() => handleDeleteTable(table.uid)}
               >
-                <Ionicons name="add" size={20} color="#fff" />
-                <Text style={styles.actionButtonText}>Add Row</Text>
+                <Ionicons name="close-circle" size={16} color="#ff6b6b" />
               </TouchableOpacity>
-            </>
-          ) : selectedTableId ? (
-            <View style={styles.emptyState}>
-              <Text style={styles.emptyText}>No data in this table</Text>
-            </View>
-          ) : (
-            <View style={styles.emptyState}>
-              <Text style={styles.emptyText}>Select a table from the left</Text>
-            </View>
+            </TouchableOpacity>
+          ))
+        ) : (
+          <Text style={styles.emptyText}>暂无表格，请先在模板页创建</Text>
+        )}
+        <TouchableOpacity
+          style={styles.refreshButton}
+          onPress={handleRefreshTables}
+          disabled={loading}
+        >
+          <Ionicons
+            name="refresh"
+            size={20}
+            color={loading ? "#666" : "#ff9f1c"}
+          />
+        </TouchableOpacity>
+      </View>
+      {/* 表格内容 */}
+      <View style={styles.tableDataContainerFull}>
+        <View style={styles.tablesHeader}>
+          <Text style={styles.tabTitle}>
+            {selectedTableId ? tables.find(t => t.uid === selectedTableId)?.name || '表格数据' : '请选择表格'}
+          </Text>
+          {selectedTableId && (
+            <Text style={styles.tableIdText}>{selectedTableId}</Text>
           )}
         </View>
+        {selectedTableId && tableData.length > 0 ? (
+          <>
+            <ScrollView horizontal>
+              <ScrollView>
+                <View style={styles.tableGrid}>
+                  {tableData.map((row, rowIndex) => (
+                    <View key={`row-${rowIndex}`} style={styles.tableRow}>
+                      {row.map((cell, colIndex) => (
+                        <TouchableOpacity
+                          key={`cell-${rowIndex}-${colIndex}`}
+                          style={[
+                            styles.tableCell,
+                            rowIndex === 0 && styles.tableHeaderCell,
+                            editingCell?.rowIndex === rowIndex && editingCell?.colIndex === colIndex && styles.tableCellEditing
+                          ]}
+                          onPress={() => rowIndex > 0 && handleEditCell(rowIndex, colIndex, cell)}
+                          disabled={rowIndex === 0}
+                        >
+                          <Text
+                            style={[
+                              styles.tableCellText,
+                              rowIndex === 0 && styles.tableHeaderCellText
+                            ]}
+                            numberOfLines={2}
+                          >
+                            {cell}
+                          </Text>
+                        </TouchableOpacity>
+                      ))}
+                      {rowIndex > 0 && (
+                        <TouchableOpacity
+                          style={styles.rowDeleteButton}
+                          onPress={() => handleDeleteRow(rowIndex)}
+                        >
+                          <Ionicons name="close-circle" size={18} color="#ff6b6b" />
+                        </TouchableOpacity>
+                      )}
+                    </View>
+                  ))}
+                </View>
+              </ScrollView>
+            </ScrollView>
+            <TouchableOpacity
+              style={[styles.actionButton, styles.addRowButton]}
+              onPress={handleAddRow}
+            >
+              <Ionicons name="add" size={20} color="#fff" />
+              <Text style={styles.actionButtonText}>添加行</Text>
+            </TouchableOpacity>
+          </>
+        ) : selectedTableId ? (
+          <View style={styles.emptyState}>
+            <Text style={styles.emptyText}>该表格暂无数据</Text>
+          </View>
+        ) : (
+          <View style={styles.emptyState}>
+            <Text style={styles.emptyText}>请先选择左上方的表格标签</Text>
+          </View>
+        )}
       </View>
     </View>
   );
@@ -844,13 +774,13 @@ const MemoOverlay: React.FC<MemoOverlayProps> = ({ isVisible, onClose, character
   // Render the settings tab
   const renderSettingsTab = () => (
     <View style={styles.tabContent}>
-      <Text style={styles.tabTitle}>Memory Enhancement Settings</Text>
+      <Text style={styles.tabTitle}>记忆增强设置</Text>
       
       <View style={styles.settingItem}>
         <View style={styles.settingLabel}>
-          <Text style={styles.settingTitle}>Enable Table Memory</Text>
+          <Text style={styles.settingTitle}>启用表格记忆</Text>
           <Text style={styles.settingDescription}>
-            Turn on table memory enhancement for structured data storage
+            启用表格记忆增强以存储结构化数据
           </Text>
         </View>
         <TouchableOpacity
@@ -871,14 +801,14 @@ const MemoOverlay: React.FC<MemoOverlayProps> = ({ isVisible, onClose, character
       
       {selectedTableId && (
         <>
-          <Text style={styles.sectionTitle}>Table Maintenance</Text>
+          <Text style={styles.sectionTitle}>表格维护</Text>
           
           <TouchableOpacity
             style={styles.maintenanceButton}
             onPress={() => handleRebuildTable(selectedTableId, 'rebuild_base')}
           >
             <MaterialIcons name="build" size={20} color="#ccc" />
-            <Text style={styles.maintenanceButtonText}>Rebuild Table</Text>
+            <Text style={styles.maintenanceButtonText}>重建表格</Text>
           </TouchableOpacity>
           
           <TouchableOpacity
@@ -886,7 +816,7 @@ const MemoOverlay: React.FC<MemoOverlayProps> = ({ isVisible, onClose, character
             onPress={() => handleRebuildTable(selectedTableId, 'rebuild_fix_all')}
           >
             <MaterialIcons name="healing" size={20} color="#ccc" />
-            <Text style={styles.maintenanceButtonText}>Fix Table Data</Text>
+            <Text style={styles.maintenanceButtonText}>修复表格数据</Text>
           </TouchableOpacity>
           
           <TouchableOpacity
@@ -894,14 +824,14 @@ const MemoOverlay: React.FC<MemoOverlayProps> = ({ isVisible, onClose, character
             onPress={() => handleRebuildTable(selectedTableId, 'rebuild_simplify_history')}
           >
             <MaterialIcons name="compress" size={20} color="#ccc" />
-            <Text style={styles.maintenanceButtonText}>Simplify History</Text>
+            <Text style={styles.maintenanceButtonText}>简化历史记录</Text>
           </TouchableOpacity>
         </>
       )}
     </View>
   );
 
-  // Modal for editing cell value
+  // Modal for editing cell value (中文化)
   const renderCellEditModal = () => (
     <Modal
       visible={!!editingCell}
@@ -911,30 +841,28 @@ const MemoOverlay: React.FC<MemoOverlayProps> = ({ isVisible, onClose, character
     >
       <View style={styles.modalOverlay}>
         <View style={styles.cellEditContainer}>
-          <Text style={styles.cellEditTitle}>Edit Cell</Text>
-          
+          <Text style={styles.cellEditTitle}>编辑单元格</Text>
           <TextInput
             style={styles.cellEditInput}
             value={editingCell?.value || ''}
-            onChangeText={(text) => setEditingCell(prev => prev ? {...prev, value: text} : null)}
+            onChangeText={(text) => setEditingCell(prev => prev ? { ...prev, value: text } : null)}
             multiline
             autoFocus
-            placeholder="Enter cell value..."
+            placeholder="输入内容..."
             placeholderTextColor="#999"
           />
-          
           <View style={styles.cellEditActions}>
             <TouchableOpacity
               style={[styles.cellEditButton, styles.cellEditCancelButton]}
               onPress={handleCancelCellEdit}
             >
-              <Text style={styles.cellEditButtonText}>Cancel</Text>
+              <Text style={styles.cellEditButtonText}>取消</Text>
             </TouchableOpacity>
             <TouchableOpacity
               style={[styles.cellEditButton, styles.cellEditSaveButton]}
               onPress={handleSaveCellEdit}
             >
-              <Text style={styles.cellEditButtonText}>Save</Text>
+              <Text style={styles.cellEditButtonText}>保存</Text>
             </TouchableOpacity>
           </View>
         </View>
@@ -948,79 +876,74 @@ const MemoOverlay: React.FC<MemoOverlayProps> = ({ isVisible, onClose, character
       visible={isVisible}
       onRequestClose={onClose}
       animationType="slide"
+      statusBarTranslucent
     >
-      <View style={styles.container}>
-        <BlurView intensity={30} tint="dark" style={styles.blurView}>
+      <View style={styles.fullScreenContainer}>
+        <BlurView intensity={30} tint="dark" style={styles.fullScreenBlurView}>
           <View style={styles.header}>
-            <Text style={styles.title}>Memory Enhancement</Text>
+            <Text style={styles.title}>表格记忆增强</Text>
             <TouchableOpacity onPress={onClose} style={styles.closeButton}>
               <Ionicons name="close" size={28} color="#fff" />
             </TouchableOpacity>
           </View>
-          
           {loading && (
             <View style={styles.loadingOverlay}>
               <ActivityIndicator size="large" color="#ff9f1c" />
-              <Text style={styles.loadingText}>Loading...</Text>
+              <Text style={styles.loadingText}>加载中...</Text>
             </View>
           )}
-          
           <View style={styles.tabs}>
             <TouchableOpacity
               style={[styles.tab, activeTab === TabType.TEMPLATES && styles.activeTab]}
               onPress={() => setActiveTab(TabType.TEMPLATES)}
             >
-              <Ionicons 
-                name="list" 
-                size={20} 
-                color={activeTab === TabType.TEMPLATES ? '#ff9f1c' : '#ccc'} 
+              <Ionicons
+                name="list"
+                size={20}
+                color={activeTab === TabType.TEMPLATES ? '#ff9f1c' : '#ccc'}
               />
               <Text style={[styles.tabText, activeTab === TabType.TEMPLATES && styles.activeTabText]}>
-                Templates
+                模板
                 {selectedTemplateIds.length > 0 && (
                   <Text style={styles.tabBadge}> ({selectedTemplateIds.length})</Text>
                 )}
               </Text>
             </TouchableOpacity>
-            
             <TouchableOpacity
               style={[styles.tab, activeTab === TabType.TABLES && styles.activeTab]}
               onPress={() => setActiveTab(TabType.TABLES)}
             >
-              <Ionicons 
-                name="grid" 
-                size={20} 
-                color={activeTab === TabType.TABLES ? '#ff9f1c' : '#ccc'} 
+              <Ionicons
+                name="grid"
+                size={20}
+                color={activeTab === TabType.TABLES ? '#ff9f1c' : '#ccc'}
               />
               <Text style={[styles.tabText, activeTab === TabType.TABLES && styles.activeTabText]}>
-                Tables
+                表格
                 {tables.length > 0 && (
                   <Text style={styles.tabBadge}> ({tables.length})</Text>
                 )}
               </Text>
             </TouchableOpacity>
-            
             <TouchableOpacity
               style={[styles.tab, activeTab === TabType.SETTINGS && styles.activeTab]}
               onPress={() => setActiveTab(TabType.SETTINGS)}
             >
-              <Ionicons 
-                name="settings" 
-                size={20} 
-                color={activeTab === TabType.SETTINGS ? '#ff9f1c' : '#ccc'} 
+              <Ionicons
+                name="settings"
+                size={20}
+                color={activeTab === TabType.SETTINGS ? '#ff9f1c' : '#ccc'}
               />
               <Text style={[styles.tabText, activeTab === TabType.SETTINGS && styles.activeTabText]}>
-                Settings
+                设置
               </Text>
             </TouchableOpacity>
           </View>
-          
           <View style={styles.content}>
             {activeTab === TabType.TEMPLATES && renderTemplateTab()}
             {activeTab === TabType.TABLES && renderTablesTab()}
             {activeTab === TabType.SETTINGS && renderSettingsTab()}
           </View>
-          
           {renderCellEditModal()}
         </BlurView>
       </View>
@@ -1047,7 +970,14 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
-    padding: 16,
+    // 顶部安全距离
+    paddingTop: Platform.select({
+      ios: 44,
+      android: StatusBar.currentHeight || 24,
+      default: 24,
+    }),
+    paddingBottom: 8,
+    paddingHorizontal: 16,
     borderBottomWidth: 1,
     borderBottomColor: 'rgba(255, 255, 255, 0.1)',
   },
@@ -1500,6 +1430,57 @@ const styles = StyleSheet.create({
     color: '#ccc',
     marginLeft: 8,
     fontSize: 13,
+  },
+  // 全屏化
+  fullScreenContainer: {
+    flex: 1,
+    backgroundColor: 'rgba(0,0,0,0.7)',
+  },
+  fullScreenBlurView: {
+    flex: 1,
+    borderRadius: 0,
+    width: '100%',
+    height: '100%',
+    overflow: 'hidden',
+  },
+  // Tag样式
+  tableTagsContainer: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    alignItems: 'center',
+    marginBottom: 12,
+    gap: 8,
+  },
+  tableTag: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: 'rgba(60, 60, 60, 0.6)',
+    borderRadius: 16,
+    paddingHorizontal: 14,
+    paddingVertical: 6,
+    marginRight: 8,
+    marginBottom: 6,
+  },
+  tableTagSelected: {
+    backgroundColor: '#ff9f1c',
+  },
+  tableTagText: {
+    color: '#fff',
+    fontSize: 14,
+    fontWeight: 'bold',
+    marginRight: 4,
+  },
+  tableTagTextSelected: {
+    color: '#fff',
+  },
+  tableTagDelete: {
+    marginLeft: 4,
+  },
+  // 表格内容全宽
+  tableDataContainerFull: {
+    flex: 1,
+    paddingLeft: 0,
+    width: '100%',
   },
 });
 

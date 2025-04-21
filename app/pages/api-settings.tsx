@@ -824,7 +824,7 @@ const ApiSettings = () => {
 
             {useActivationCode && (
               <View style={styles.contentSection}>
-                <Text style={styles.inputLabel}>激活码</Text>
+                <Text style={styles.inputLabel}>测试入口</Text>
                 <TextInput
                   style={styles.input}
                   value={activationCode}
@@ -1059,8 +1059,7 @@ const ApiSettings = () => {
                   
                   <View style={styles.switchContainer}>
                     <Text style={styles.switchLabel}>
-                      启用模型负载均衡
-                      <Text style={styles.featureTag}> 推荐</Text>
+                      模型选择
                     </Text>
                     <Switch
                       value={useGeminiModelLoadBalancing}
@@ -1119,8 +1118,7 @@ const ApiSettings = () => {
                   
                   <View style={styles.switchContainer}>
                     <Text style={styles.switchLabel}>
-                      启用API密钥轮换
-                      <Text style={styles.featureTag}> 推荐</Text>
+                      密钥轮换
                     </Text>
                     <Switch
                       value={useGeminiKeyRotation}

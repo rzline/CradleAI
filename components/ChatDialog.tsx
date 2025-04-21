@@ -876,7 +876,7 @@ const ChatDialog: React.FC<ExtendedChatDialogProps> = ({
               isVisualNovel ? styles.visualNovelTTSButton : styles.ttsButton,
               ttsButtonBg
             ]}>
-              <ActivityIndicator size="small" color="#fff" />
+              <ActivityIndicator size="small" color="black" />
             </View>
             {!isVisualNovel && <Text style={styles.ttsLoadingText}>生成中...</Text>}
           </View>
@@ -891,15 +891,15 @@ const ChatDialog: React.FC<ExtendedChatDialogProps> = ({
             onPress={() => handlePlayAudio(message.id)}
           >
             {audioState.isPlaying ? (
-              <Ionicons name="pause" size={isVisualNovel ? 22 : 18} color="#fff" />
+              <Ionicons name="pause" size={isVisualNovel ? 22 : 18} color="black" />
             ) : audioState.isComplete ? (
-              <Ionicons name="refresh" size={isVisualNovel ? 22 : 18} color="#fff" />
+              <Ionicons name="refresh" size={isVisualNovel ? 22 : 18} color="black" />
             ) : (
-              <Ionicons name="play" size={isVisualNovel ? 22 : 18} color="#fff" />
+              <Ionicons name="play" size={isVisualNovel ? 22 : 18} color="black" />
             )}
             {ttsEnhancerEnabled && (
               <View style={isVisualNovel ? styles.visualNovelTTSEnhancerIndicator : styles.ttsEnhancerIndicator}>
-                <Ionicons name="sparkles-outline" size={isVisualNovel ? 12 : 10} color="#fff" />
+                <Ionicons name="sparkles-outline" size={isVisualNovel ? 12 : 10} color="black" />
               </View>
             )}
           </TouchableOpacity>
@@ -912,10 +912,10 @@ const ChatDialog: React.FC<ExtendedChatDialogProps> = ({
             ]}
             onPress={() => handleTTSButtonPress(message.id, message.text)}
           >
-            <Ionicons name="volume-high" size={isVisualNovel ? 22 : 18} color="#fff" />
+            <Ionicons name="volume-high" size={isVisualNovel ? 22 : 18} color="black" />
             {ttsEnhancerEnabled && (
               <View style={isVisualNovel ? styles.visualNovelTTSEnhancerIndicator : styles.ttsEnhancerIndicator}>
-                <Ionicons name="sparkles-outline" size={isVisualNovel ? 12 : 10} color="#fff" />
+                <Ionicons name="sparkles-outline" size={isVisualNovel ? 12 : 10} color="black" />
               </View>
             )}
           </TouchableOpacity>
@@ -1900,10 +1900,10 @@ const styles = StyleSheet.create({
     marginRight: 4,
   },
   ttsButtonActive: {
-    backgroundColor: '#FFD580', // 米黄色加深
+    backgroundColor: 'black', // 米黄色加深
   },
   ttsButtonEnhanced: {
-    backgroundColor: '#FFD580', // 米黄色加深
+    backgroundColor: 'black', // 米黄色加深
   },
   ttsButtonWithLabel: {
     flexDirection: 'row',

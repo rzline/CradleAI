@@ -26,6 +26,8 @@ import * as ImagePicker from 'expo-image-picker';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import ImageRegenerationModal from './ImageRegenerationModal';
 import { downloadAndSaveImage } from '@/utils/imageUtils';
+import { BlurView } from 'expo-blur';
+
 const { width, height } = Dimensions.get('window');
 
 interface CharacterImageGallerySidebarProps {
@@ -61,7 +63,7 @@ const CharacterImageGallerySidebar: React.FC<CharacterImageGallerySidebarProps> 
   character,
   onAddNewImage
 }) => {
-  const slideAnim = useRef(new Animated.Value(width)).current;
+  const slideAnim = useRef(new Animated.Value(height)).current;
   const [selectedImage, setSelectedImage] = useState<CharacterImage | null>(null);
   const [showEditor, setShowEditor] = useState(false);
   const [showFullImage, setShowFullImage] = useState(false);
@@ -145,7 +147,7 @@ const CharacterImageGallerySidebar: React.FC<CharacterImageGallerySidebarProps> 
       }).start();
     } else {
       Animated.timing(slideAnim, {
-        toValue: width,
+        toValue: height,
         duration: 300,
         useNativeDriver: true
       }).start();
@@ -463,415 +465,430 @@ const CharacterImageGallerySidebar: React.FC<CharacterImageGallerySidebarProps> 
   if (!visible) return null;
 
   return (
-    <View style={styles.overlay}>
-      <TouchableOpacity
-        style={styles.overlayBackdrop}
-        activeOpacity={1}
-        onPress={onClose}
-      />
-
-      <Animated.View
-        style={[
-          styles.sidebar,
-          { transform: [{ translateX: slideAnim }] }
-        ]}
-      >
-        <View style={[styles.header, { paddingTop: insets.top }]}>
-          <Text style={styles.headerTitle}>角色图库</Text>
-
-          <View style={styles.headerActions}>
-            <TouchableOpacity
-              style={styles.uploadButton}
-              onPress={pickImageFromDevice}
-              disabled={isUploading}
-            >
-              {isUploading ? (
-                <ActivityIndicator size="small" color="#fff" />
-              ) : (
-                <Ionicons name="cloud-upload-outline" size={22} color="#fff" />
-              )}
-            </TouchableOpacity>
-
-            <TouchableOpacity
-              style={styles.closeButton}
-              onPress={onClose}
-            >
-              <Ionicons name="close" size={24} color="#fff" />
-            </TouchableOpacity>
-          </View>
-        </View>
-
-        <View style={styles.content}>
-          {isLoading ? (
-            <View style={styles.loadingContainer}>
-              <ActivityIndicator size="large" color={theme.colors.primary} />
-              <Text style={styles.loadingText}>正在加载图像...</Text>
-            </View>
-          ) : allImages.length === 0 ? (
-            <View style={styles.emptyContainer}>
-              <Ionicons name="images-outline" size={60} color="#555" />
-              <Text style={styles.emptyText}>暂无图片</Text>
-              <Text style={styles.emptySubText}>此角色还没有相册图片</Text>
-            </View>
-          ) : (
-            <FlatList
-              data={allImages}
-              key={`gallery-${updateCounter}`}
-              keyExtractor={(item) => `${item.id}-${updateCounter}`}
-              numColumns={2}
-              contentContainerStyle={styles.galleryContainer}
-              extraData={updateCounter}
-              initialNumToRender={6}
-              maxToRenderPerBatch={10}
-              renderItem={({ item }) => (
-                <View style={styles.imageCard}>
-                  <TouchableOpacity
-                    style={styles.imageContainer}
-                    onPress={() => handleViewImage(item)}
-                  >
-                    {item.generationStatus === 'pending' ? (
-                      <View style={styles.pendingImageContainer}>
-                        <ActivityIndicator size="large" color="#fff" />
-                        <Text style={styles.pendingText}>生成中...</Text>
-                      </View>
-                    ) : downloadingImages[item.id] ? (
-                      <View style={styles.pendingImageContainer}>
-                        <ActivityIndicator size="small" color="#fff" />
-                        <Text style={styles.pendingText}>下载中...</Text>
-                      </View>
-                    ) : (
-                      <Image
-                        source={{ uri: item.localUri || item.url }}
-                        style={styles.thumbnail}
-                        resizeMode="cover"
-                        onError={(e) => console.log(`[图库侧栏] 加载图片失败: ${item.id}`, e.nativeEvent.error)}
-                      />
-                    )}
-
-                    {item.isAvatar && (
-                      <View style={styles.imageTypeOverlay}>
-                        <Text style={styles.imageTypeText}>头像</Text>
-                      </View>
-                    )}
-
-                    {item.isDefaultBackground && (
-                      <View style={styles.imageTypeOverlay}>
-                        <Text style={styles.imageTypeText}>背景</Text>
-                      </View>
-                    )}
-
-                    {item.isFavorite && (
-                      <View style={styles.favoriteOverlay}>
-                        <Ionicons name="heart" size={18} color="#FF6B6B" />
-                      </View>
-                    )}
-
-                    {item.generationStatus !== 'pending' && !downloadingImages[item.id] && (
-                      <TouchableOpacity
-                        style={styles.optionsButtonOverlay}
-                        onPress={() => showImageOptions(item)}
-                      >
-                        <View style={styles.optionsButton}>
-                          <Ionicons name="ellipsis-horizontal" size={18} color="#fff" />
-                        </View>
-                      </TouchableOpacity>
-                    )}
-                  </TouchableOpacity>
-                </View>
-              )}
-              onRefresh={() => {
-                if (isLoading) return;
-                setUpdateCounter(prev => prev + 1);
-              }}
-              refreshing={isLoading}
-            />
-          )}
-        </View>
-
-        {showNotification && (
-          <Animated.View 
-            style={[
-              styles.notification, 
-              { 
-                opacity: notificationAnim,
-                transform: [
-                  { 
-                    translateY: notificationAnim.interpolate({
-                      inputRange: [0, 1],
-                      outputRange: [-20, 0]
-                    }) 
-                  }
-                ],
-                top: insets.top + 60
-              }
-            ]}
-          >
-            <View style={styles.notificationIconContainer}>
-              <Ionicons name="checkmark-circle" size={24} color="rgb(255, 224, 195)" />
-            </View>
-            <View style={styles.notificationContent}>
-              <Text style={styles.notificationTitle}>{notificationMessage.title}</Text>
-              <Text style={styles.notificationMessage}>{notificationMessage.message}</Text>
-            </View>
-          </Animated.View>
-        )}
-      </Animated.View>
-
-      {selectedImage && (
-        <ImageEditorModal
-          visible={showEditor}
-          onClose={() => setShowEditor(false)}
-          image={selectedImage}
-          character={character}
-          apiKey={apiKey}
-          onSuccess={(newImage) => {
-            handleEditSuccess(newImage);
-            setUpdateCounter(prev => prev + 1);
-          }}
-        />
-      )}
-
-      <Modal
-        visible={showFullImage}
-        transparent={true}
-        onRequestClose={() => setShowFullImage(false)}
-        animationType="fade"
-      >
-        <View style={styles.fullImageContainer}>
-          <TouchableOpacity
-            style={styles.fullImageCloseButton}
-            onPress={() => setShowFullImage(false)}
-          >
-            <Ionicons name="close" size={28} color="#fff" />
-          </TouchableOpacity>
-
-          {fullImageUri && (
-            <Image
-              source={{ uri: fullImageUri }}
-              style={styles.fullImage}
-              resizeMode="contain"
-            />
-          )}
-        </View>
-      </Modal>
-
-      <Modal
-        visible={showOptionsMenu}
-        transparent={true}
-        onRequestClose={() => setShowOptionsMenu(false)}
-        animationType="fade"
-      >
+    <Modal
+      visible={visible}
+      transparent
+      animationType="slide"
+      onRequestClose={onClose}
+      statusBarTranslucent
+    >
+      <View style={styles.fullScreenContainer}>
         <TouchableOpacity
-          style={styles.modalOverlay}
+          style={styles.overlayBackdrop}
           activeOpacity={1}
-          onPress={() => setShowOptionsMenu(false)}
+          onPress={onClose}
+        />
+        <Animated.View
+          style={[
+            styles.bottomSheet,
+            { transform: [{ translateY: slideAnim }] }
+          ]}
         >
-          <View style={styles.optionsMenuContainer}>
-            <Text style={styles.optionsMenuTitle}>图像选项</Text>
-
-            {activeImage && (
-              <>
+          <BlurView intensity={30} tint="dark" style={styles.blurView}>
+            <View style={styles.header}>
+              <Text style={styles.headerTitle}>角色图库</Text>
+              <View style={styles.headerActions}>
                 <TouchableOpacity
-                  style={styles.menuItem}
-                  onPress={() => {
-                    handleViewImage(activeImage);
-                    setShowOptionsMenu(false);
-                  }}
+                  style={styles.uploadButton}
+                  onPress={pickImageFromDevice}
+                  disabled={isUploading}
                 >
-                  <Ionicons name="eye-outline" size={22} color="#FFF" />
-                  <Text style={styles.menuItemText}>查看大图</Text>
+                  {isUploading ? (
+                    <ActivityIndicator size="small" color="#fff" />
+                  ) : (
+                    <Ionicons name="cloud-upload-outline" size={22} color="#fff" />
+                  )}
                 </TouchableOpacity>
-
                 <TouchableOpacity
-                  style={styles.menuItem}
-                  onPress={() => {
-                    onToggleFavorite(activeImage.id);
-                    setShowOptionsMenu(false);
-                  }}
+                  style={styles.closeButton}
+                  onPress={onClose}
                 >
-                  <Ionicons
-                    name={activeImage.isFavorite ? "heart" : "heart-outline"}
-                    size={22}
-                    color={activeImage.isFavorite ? "#FF6B6B" : "#FFF"}
-                  />
-                  <Text style={styles.menuItemText}>
-                    {activeImage.isFavorite ? "取消收藏" : "收藏图片"}
-                  </Text>
+                  <Ionicons name="close" size={24} color="#fff" />
                 </TouchableOpacity>
+              </View>
+            </View>
+            <View style={styles.content}>
+              {isLoading ? (
+                <View style={styles.loadingContainer}>
+                  <ActivityIndicator size="large" color="#ff9f1c" />
+                  <Text style={styles.loadingText}>正在加载图像...</Text>
+                </View>
+              ) : allImages.length === 0 ? (
+                <View style={styles.emptyContainer}>
+                  <Ionicons name="images-outline" size={60} color="#555" />
+                  <Text style={styles.emptyText}>暂无图片</Text>
+                  <Text style={styles.emptySubText}>此角色还没有相册图片</Text>
+                </View>
+              ) : (
+                <FlatList
+                  data={allImages}
+                  key={`gallery-${updateCounter}`}
+                  keyExtractor={(item) => `${item.id}-${updateCounter}`}
+                  numColumns={2}
+                  contentContainerStyle={styles.galleryContainer}
+                  extraData={updateCounter}
+                  initialNumToRender={6}
+                  maxToRenderPerBatch={10}
+                  renderItem={({ item }) => (
+                    <View style={styles.imageCard}>
+                      <TouchableOpacity
+                        style={styles.imageContainer}
+                        onPress={() => handleViewImage(item)}
+                      >
+                        {item.generationStatus === 'pending' ? (
+                          <View style={styles.pendingImageContainer}>
+                            <ActivityIndicator size="large" color="#fff" />
+                            <Text style={styles.pendingText}>生成中...</Text>
+                          </View>
+                        ) : downloadingImages[item.id] ? (
+                          <View style={styles.pendingImageContainer}>
+                            <ActivityIndicator size="small" color="#fff" />
+                            <Text style={styles.pendingText}>下载中...</Text>
+                          </View>
+                        ) : (
+                          <Image
+                            source={{ uri: item.localUri || item.url }}
+                            style={styles.thumbnail}
+                            resizeMode="cover"
+                            onError={(e) => console.log(`[图库侧栏] 加载图片失败: ${item.id}`, e.nativeEvent.error)}
+                          />
+                        )}
 
-                <TouchableOpacity
-                  style={styles.menuItem}
-                  onPress={() => {
-                    handleEdit(activeImage);
-                    setShowOptionsMenu(false);
+                        {item.isAvatar && (
+                          <View style={styles.imageTypeOverlay}>
+                            <Text style={styles.imageTypeText}>头像</Text>
+                          </View>
+                        )}
+
+                        {item.isDefaultBackground && (
+                          <View style={styles.imageTypeOverlay}>
+                            <Text style={styles.imageTypeText}>背景</Text>
+                          </View>
+                        )}
+
+                        {item.isFavorite && (
+                          <View style={styles.favoriteOverlay}>
+                            <Ionicons name="heart" size={18} color="#FF6B6B" />
+                          </View>
+                        )}
+
+                        {item.generationStatus !== 'pending' && !downloadingImages[item.id] && (
+                          <TouchableOpacity
+                            style={styles.optionsButtonOverlay}
+                            onPress={() => showImageOptions(item)}
+                          >
+                            <View style={styles.optionsButton}>
+                              <Ionicons name="ellipsis-horizontal" size={18} color="#fff" />
+                            </View>
+                          </TouchableOpacity>
+                        )}
+                      </TouchableOpacity>
+                    </View>
+                  )}
+                  onRefresh={() => {
+                    if (isLoading) return;
+                    setUpdateCounter(prev => prev + 1);
                   }}
-                >
-                  <Ionicons name="brush-outline" size={22} color="#FFF" />
-                  <Text style={styles.menuItemText}>编辑图片</Text>
-                </TouchableOpacity>
+                  refreshing={isLoading}
+                />
+              )}
+            </View>
+            {showNotification && (
+              <Animated.View 
+                style={[
+                  styles.notification, 
+                  { 
+                    opacity: notificationAnim,
+                    transform: [
+                      { 
+                        translateY: notificationAnim.interpolate({
+                          inputRange: [0, 1],
+                          outputRange: [-20, 0]
+                        }) 
+                      }
+                    ],
+                    top: 60
+                  }
+                ]}
+              >
+                <View style={styles.notificationIconContainer}>
+                  <Ionicons name="checkmark-circle" size={24} color="rgb(255, 224, 195)" />
+                </View>
+                <View style={styles.notificationContent}>
+                  <Text style={styles.notificationTitle}>{notificationMessage.title}</Text>
+                  <Text style={styles.notificationMessage}>{notificationMessage.message}</Text>
+                </View>
+              </Animated.View>
+            )}
+          </BlurView>
+        </Animated.View>
+        {selectedImage && (
+          <ImageEditorModal
+            visible={showEditor}
+            onClose={() => setShowEditor(false)}
+            image={selectedImage}
+            character={character}
+            apiKey={apiKey}
+            onSuccess={(newImage) => {
+              handleEditSuccess(newImage);
+              setUpdateCounter(prev => prev + 1);
+            }}
+          />
+        )}
 
-                {Platform.OS !== 'web' && (
+        <Modal
+          visible={showFullImage}
+          transparent={true}
+          onRequestClose={() => setShowFullImage(false)}
+          animationType="fade"
+        >
+          <View style={styles.fullImageContainer}>
+            <TouchableOpacity
+              style={styles.fullImageCloseButton}
+              onPress={() => setShowFullImage(false)}
+            >
+              <Ionicons name="close" size={28} color="#fff" />
+            </TouchableOpacity>
+
+            {fullImageUri && (
+              <Image
+                source={{ uri: fullImageUri }}
+                style={styles.fullImage}
+                resizeMode="contain"
+              />
+            )}
+          </View>
+        </Modal>
+
+        <Modal
+          visible={showOptionsMenu}
+          transparent={true}
+          onRequestClose={() => setShowOptionsMenu(false)}
+          animationType="fade"
+        >
+          <TouchableOpacity
+            style={styles.modalOverlay}
+            activeOpacity={1}
+            onPress={() => setShowOptionsMenu(false)}
+          >
+            <View style={styles.optionsMenuContainer}>
+              <Text style={styles.optionsMenuTitle}>图像选项</Text>
+
+              {activeImage && (
+                <>
                   <TouchableOpacity
                     style={styles.menuItem}
                     onPress={() => {
-                      handleSaveImageToDevice(activeImage);
+                      handleViewImage(activeImage);
                       setShowOptionsMenu(false);
                     }}
                   >
-                    <Ionicons name="download-outline" size={22} color="#FFF" />
-                    <Text style={styles.menuItemText}>保存到相册</Text>
+                    <Ionicons name="eye-outline" size={22} color="#FFF" />
+                    <Text style={styles.menuItemText}>查看大图</Text>
                   </TouchableOpacity>
-                )}
 
-                {Platform.OS !== 'web' && (
                   <TouchableOpacity
                     style={styles.menuItem}
-                    onPress={async () => {
-                      const imageUri = activeImage.localUri || activeImage.url;
-                      if (imageUri && await Sharing.isAvailableAsync()) {
-                        try {
-                          let shareableUri = imageUri;
-                          if (imageUri.startsWith('http')) {
-                            const fileUri = `${FileSystem.documentDirectory}share_temp_${Date.now()}.jpg`;
-                            const downloadResult = await FileSystem.downloadAsync(imageUri, fileUri);
-                            shareableUri = downloadResult.uri;
-                          }
-                          await Sharing.shareAsync(shareableUri, {
-                            mimeType: 'image/jpeg',
-                            dialogTitle: '分享图片'
-                          });
-                        } catch (error) {
-                          console.error("分享图片失败:", error);
-                          Alert.alert("分享失败", "无法分享图片");
-                        }
-                      } else {
-                        Alert.alert("分享功能不可用", "您的设备不支持分享功能");
-                      }
+                    onPress={() => {
+                      onToggleFavorite(activeImage.id);
                       setShowOptionsMenu(false);
                     }}
                   >
-                    <Ionicons name="share-social-outline" size={22} color="#FFF" />
-                    <Text style={styles.menuItemText}>分享图片</Text>
+                    <Ionicons
+                      name={activeImage.isFavorite ? "heart" : "heart-outline"}
+                      size={22}
+                      color={activeImage.isFavorite ? "#FF6B6B" : "#FFF"}
+                    />
+                    <Text style={styles.menuItemText}>
+                      {activeImage.isFavorite ? "取消收藏" : "收藏图片"}
+                    </Text>
                   </TouchableOpacity>
-                )}
 
-                <TouchableOpacity
-                  style={styles.menuItem}
-                  onPress={() => {
-                    handleRegenerateImage(activeImage);
-                    setShowOptionsMenu(false);
-                  }}
-                >
-                  <Ionicons name="refresh-outline" size={22} color="#FFF" />
-                  <Text style={styles.menuItemText}>重新生成</Text>
-                </TouchableOpacity>
+                  <TouchableOpacity
+                    style={styles.menuItem}
+                    onPress={() => {
+                      handleEdit(activeImage);
+                      setShowOptionsMenu(false);
+                    }}
+                  >
+                    <Ionicons name="brush-outline" size={22} color="#FFF" />
+                    <Text style={styles.menuItemText}>编辑图片</Text>
+                  </TouchableOpacity>
 
-                <TouchableOpacity
-                  style={styles.menuItem}
-                  onPress={() => {
-                    onSetAsBackground(activeImage.id);
-                    setShowOptionsMenu(false);
-                  }}
-                >
-                  <Ionicons name="copy-outline" size={22} color="#FFF" />
-                  <Text style={styles.menuItemText}>设为背景</Text>
-                </TouchableOpacity>
+                  {Platform.OS !== 'web' && (
+                    <TouchableOpacity
+                      style={styles.menuItem}
+                      onPress={() => {
+                        handleSaveImageToDevice(activeImage);
+                        setShowOptionsMenu(false);
+                      }}
+                    >
+                      <Ionicons name="download-outline" size={22} color="#FFF" />
+                      <Text style={styles.menuItemText}>保存到相册</Text>
+                    </TouchableOpacity>
+                  )}
 
-                <TouchableOpacity
-                  style={styles.menuItem}
-                  onPress={() => {
-                    handleSetAsAvatar(activeImage.id);
-                    setShowOptionsMenu(false);
-                  }}
-                >
-                  <Ionicons name="person-outline" size={22} color="#FFF" />
-                  <Text style={styles.menuItemText}>设为头像</Text>
-                </TouchableOpacity>
+                  {Platform.OS !== 'web' && (
+                    <TouchableOpacity
+                      style={styles.menuItem}
+                      onPress={async () => {
+                        const imageUri = activeImage.localUri || activeImage.url;
+                        if (imageUri && await Sharing.isAvailableAsync()) {
+                          try {
+                            let shareableUri = imageUri;
+                            if (imageUri.startsWith('http')) {
+                              const fileUri = `${FileSystem.documentDirectory}share_temp_${Date.now()}.jpg`;
+                              const downloadResult = await FileSystem.downloadAsync(imageUri, fileUri);
+                              shareableUri = downloadResult.uri;
+                            }
+                            await Sharing.shareAsync(shareableUri, {
+                              mimeType: 'image/jpeg',
+                              dialogTitle: '分享图片'
+                            });
+                          } catch (error) {
+                            console.error("分享图片失败:", error);
+                            Alert.alert("分享失败", "无法分享图片");
+                          }
+                        } else {
+                          Alert.alert("分享功能不可用", "您的设备不支持分享功能");
+                        }
+                        setShowOptionsMenu(false);
+                      }}
+                    >
+                      <Ionicons name="share-social-outline" size={22} color="#FFF" />
+                      <Text style={styles.menuItemText}>分享图片</Text>
+                    </TouchableOpacity>
+                  )}
 
-                <TouchableOpacity
-                  style={[styles.menuItem, styles.deleteMenuItem]}
-                  onPress={() => {
-                    onDelete(activeImage.id);
-                    setShowOptionsMenu(false);
-                  }}
-                >
-                  <Ionicons name="trash-outline" size={22} color="#FF6B6B" />
-                  <Text style={[styles.menuItemText, styles.deleteMenuItemText]}>删除图片</Text>
-                </TouchableOpacity>
-              </>
-            )}
-          </View>
-        </TouchableOpacity>
-      </Modal>
+                  <TouchableOpacity
+                    style={styles.menuItem}
+                    onPress={() => {
+                      handleRegenerateImage(activeImage);
+                      setShowOptionsMenu(false);
+                    }}
+                  >
+                    <Ionicons name="refresh-outline" size={22} color="#FFF" />
+                    <Text style={styles.menuItemText}>重新生成</Text>
+                  </TouchableOpacity>
 
-      {showRegenerationModal && character && (
-        <ImageRegenerationModal
-          visible={showRegenerationModal}
-          character={character}
-          onClose={() => setShowRegenerationModal(false)}
-          onSuccess={(newImage) => {
-            if (onAddNewImage) {
-              onAddNewImage(newImage);
-            }
-            setShowRegenerationModal(false);
-          }}
-          existingImageConfig={regenerationImageConfig}
-        />
-      )}
-    </View>
+                  <TouchableOpacity
+                    style={styles.menuItem}
+                    onPress={() => {
+                      onSetAsBackground(activeImage.id);
+                      setShowOptionsMenu(false);
+                    }}
+                  >
+                    <Ionicons name="copy-outline" size={22} color="#FFF" />
+                    <Text style={styles.menuItemText}>设为背景</Text>
+                  </TouchableOpacity>
+
+                  <TouchableOpacity
+                    style={styles.menuItem}
+                    onPress={() => {
+                      handleSetAsAvatar(activeImage.id);
+                      setShowOptionsMenu(false);
+                    }}
+                  >
+                    <Ionicons name="person-outline" size={22} color="#FFF" />
+                    <Text style={styles.menuItemText}>设为头像</Text>
+                  </TouchableOpacity>
+
+                  <TouchableOpacity
+                    style={[styles.menuItem, styles.deleteMenuItem]}
+                    onPress={() => {
+                      onDelete(activeImage.id);
+                      setShowOptionsMenu(false);
+                    }}
+                  >
+                    <Ionicons name="trash-outline" size={22} color="#FF6B6B" />
+                    <Text style={[styles.menuItemText, styles.deleteMenuItemText]}>删除图片</Text>
+                  </TouchableOpacity>
+                </>
+              )}
+            </View>
+          </TouchableOpacity>
+        </Modal>
+
+        {showRegenerationModal && character && (
+          <ImageRegenerationModal
+            visible={showRegenerationModal}
+            character={character}
+            onClose={() => setShowRegenerationModal(false)}
+            onSuccess={(newImage) => {
+              if (onAddNewImage) {
+                onAddNewImage(newImage);
+              }
+              setShowRegenerationModal(false);
+            }}
+            existingImageConfig={regenerationImageConfig}
+          />
+        )}
+      </View>
+    </Modal>
   );
 };
 
 const styles = StyleSheet.create({
-  overlay: {
-    ...StyleSheet.absoluteFillObject,
-    zIndex: 1000,
+  fullScreenContainer: {
+    flex: 1,
+    backgroundColor: 'rgba(0,0,0,0.7)',
+    justifyContent: 'flex-end',
   },
   overlayBackdrop: {
     ...StyleSheet.absoluteFillObject,
     backgroundColor: 'rgba(0,0,0,0.5)',
   },
-  sidebar: {
+  bottomSheet: {
+    width: '100%',
+    height: height * 0.88,
+    borderTopLeftRadius: 24,
+    borderTopRightRadius: 24,
+    overflow: 'hidden',
     position: 'absolute',
-    top: 0,
+    bottom: 0,
+    left: 0,
     right: 0,
-    width: width * 0.75,
-    height: '100%',
-    backgroundColor: '#222',
-    elevation: 10,
-    shadowColor: '#000',
-    shadowOffset: { width: -2, height: 0 },
-    shadowOpacity: 0.5,
-    shadowRadius: 5,
+    backgroundColor: 'transparent',
+  },
+  blurView: {
+    flex: 1,
+    borderTopLeftRadius: 24,
+    borderTopRightRadius: 24,
+    overflow: 'hidden',
+    backgroundColor: 'rgba(30,30,30,0.98)',
   },
   header: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
-    padding: 16,
+    paddingTop: 24,
+    paddingBottom: 8,
+    paddingHorizontal: 16,
     borderBottomWidth: 1,
-    borderBottomColor: 'rgba(255,255,255,0.1)',
-    backgroundColor: '#282828',
+    borderBottomColor: 'rgba(255,255,255,0.08)',
+    backgroundColor: 'transparent',
   },
   headerTitle: {
     color: '#fff',
-    fontSize: 20,
+    fontSize: 18,
     fontWeight: 'bold',
+    flex: 1,
   },
   headerActions: {
     flexDirection: 'row',
     alignItems: 'center',
   },
   closeButton: {
-    padding: 4,
+    padding: 8,
+    marginLeft: 8,
   },
   uploadButton: {
-    padding: 4,
-    marginRight: 12,
-    height: 32,
-    width: 32,
-    borderRadius: 16,
-    backgroundColor: 'rgba(255,255,255,0.1)',
+    padding: 8,
+    marginRight: 8,
+    height: 36,
+    width: 36,
+    borderRadius: 18,
+    backgroundColor: 'rgba(255,255,255,0.08)',
     justifyContent: 'center',
     alignItems: 'center',
   },
@@ -908,21 +925,27 @@ const styles = StyleSheet.create({
     padding: 16,
   },
   imageCard: {
-    width: imageSize,
+    width: (width - 64) / 2,
     marginHorizontal: 8,
     marginBottom: 16,
-    borderRadius: 8,
-    backgroundColor: '#333',
+    borderRadius: 14,
+    backgroundColor: 'rgba(60,60,60,0.6)',
     overflow: 'hidden',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.18,
+    shadowRadius: 4,
+    elevation: 2,
   },
   imageContainer: {
     width: '100%',
-    height: imageSize * 1.5,
+    height: ((width - 64) / 2) * 1.5,
     position: 'relative',
   },
   thumbnail: {
     width: '100%',
     height: '100%',
+    borderRadius: 12,
   },
   favoriteOverlay: {
     position: 'absolute',
@@ -932,73 +955,13 @@ const styles = StyleSheet.create({
     borderRadius: 12,
     padding: 4,
   },
-  fullImageContainer: {
-    flex: 1,
-    backgroundColor: 'rgba(0,0,0,0.9)',
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
-  fullImage: {
-    width: '100%',
-    height: '90%',
-  },
-  fullImageCloseButton: {
-    position: 'absolute',
-    top: 40,
-    right: 20,
-    width: 40,
-    height: 40,
-    borderRadius: 20,
-    backgroundColor: 'rgba(0,0,0,0.5)',
-    justifyContent: 'center',
-    alignItems: 'center',
-    zIndex: 10,
-  },
-  modalOverlay: {
-    flex: 1,
-    backgroundColor: 'rgba(0,0,0,0.5)',
-    justifyContent: 'flex-end',
-    alignItems: 'center',
-  },
-  optionsMenuContainer: {
-    width: '100%',
-    backgroundColor: '#282828',
-    borderTopLeftRadius: 16,
-    borderTopRightRadius: 16,
-    padding: 16,
-    paddingBottom: 32,
-  },
-  optionsMenuTitle: {
-    color: '#fff',
-    fontSize: 18,
-    fontWeight: 'bold',
-    marginBottom: 16,
-    textAlign: 'center',
-  },
-  menuItem: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    paddingVertical: 16,
-    borderBottomWidth: 1,
-    borderBottomColor: 'rgba(255,255,255,0.1)',
-  },
-  menuItemText: {
-    color: '#fff',
-    fontSize: 16,
-    marginLeft: 16,
-  },
-  deleteMenuItem: {
-    borderBottomWidth: 0,
-  },
-  deleteMenuItemText: {
-    color: '#FF6B6B',
-  },
   pendingImageContainer: {
     width: '100%',
     height: '100%',
     backgroundColor: 'rgba(0,0,0,0.5)',
     justifyContent: 'center',
     alignItems: 'center',
+    borderRadius: 12,
   },
   pendingText: {
     color: '#fff',
@@ -1009,15 +972,15 @@ const styles = StyleSheet.create({
     position: 'absolute',
     top: 8,
     left: 8,
-    backgroundColor: 'rgba(0,0,0,0.6)',
+    backgroundColor: '#ff9f1c',
     borderRadius: 12,
     paddingVertical: 4,
-    paddingHorizontal: 8,
+    paddingHorizontal: 10,
   },
   imageTypeText: {
     color: '#fff',
     fontSize: 10,
-    fontWeight: '500',
+    fontWeight: '600',
   },
   optionsButtonOverlay: {
     position: 'absolute',
@@ -1066,6 +1029,67 @@ const styles = StyleSheet.create({
   notificationMessage: {
     color: '#ffffff',
     fontSize: 14,
+  },
+  fullImageContainer: {
+    flex: 1,
+    backgroundColor: 'rgba(0,0,0,0.9)',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  fullImage: {
+    width: '100%',
+    height: '90%',
+  },
+  fullImageCloseButton: {
+    position: 'absolute',
+    top: 40,
+    right: 20,
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    backgroundColor: 'rgba(0,0,0,0.5)',
+    justifyContent: 'center',
+    alignItems: 'center',
+    zIndex: 10,
+  },
+  modalOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(0,0,0,0.5)',
+    justifyContent: 'flex-end',
+    alignItems: 'center',
+  },
+  optionsMenuContainer: {
+    width: '100%',
+    backgroundColor: 'rgba(40,40,40,0.98)',
+    borderTopLeftRadius: 20,
+    borderTopRightRadius: 20,
+    padding: 16,
+    paddingBottom: 32,
+  },
+  optionsMenuTitle: {
+    color: '#fff',
+    fontSize: 18,
+    fontWeight: 'bold',
+    marginBottom: 16,
+    textAlign: 'center',
+  },
+  menuItem: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingVertical: 16,
+    borderBottomWidth: 1,
+    borderBottomColor: 'rgba(255,255,255,0.08)',
+  },
+  menuItemText: {
+    color: '#fff',
+    fontSize: 16,
+    marginLeft: 16,
+  },
+  deleteMenuItem: {
+    borderBottomWidth: 0,
+  },
+  deleteMenuItemText: {
+    color: '#FF6B6B',
   },
 });
 

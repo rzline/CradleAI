@@ -14,7 +14,8 @@ import {
   SafeAreaView,
   Dimensions,
   KeyboardAvoidingView,
-  Share
+  Share,
+  StatusBar
 } from 'react-native';
 import Slider from '@react-native-community/slider';
 import { Ionicons, MaterialCommunityIcons, } from '@expo/vector-icons';
@@ -245,14 +246,11 @@ const MemoryProcessingControl: React.FC<MemoryProcessingControlProps> = ({
   const handleIntervalChange = (value: number) => {
     const roundedValue = Math.round(value);
     setCurrentInterval(roundedValue);
-  };
-
-  const handleIntervalSave = () => {
-    setMemoryProcessingInterval(currentInterval);
+    setMemoryProcessingInterval(roundedValue);
     const mem0Service = Mem0Service.getInstance();
     if (mem0Service.setProcessingInterval) {
-      mem0Service.setProcessingInterval(currentInterval);
-      console.log(`[MemoryProcessingControl] Memory processing interval set to ${currentInterval}`);
+      mem0Service.setProcessingInterval(roundedValue);
+      console.log(`[MemoryProcessingControl] Memory processing interval set to ${roundedValue}`);
     }
   };
 
@@ -584,219 +582,222 @@ const MemoryProcessingControl: React.FC<MemoryProcessingControlProps> = ({
       animationType="slide"
       onRequestClose={onClose}
       statusBarTranslucent
+      transparent
     >
-      <SafeAreaView style={styles.fullScreenContainer}>
-        <View style={styles.header}>
-          <View style={styles.headerContent}>
+      <View style={styles.overlayBackground}>
+        <SafeAreaView style={styles.fullScreenContainer}>
+          <View style={styles.header}>
+            <View style={styles.headerContent}>
+              <Text style={styles.headerTitle}>向量记忆</Text>
+            </View>
+            
+            {(character || selectedCharacterId) && (
+              <View style={styles.characterInfo}>
+                <Text style={styles.characterInfoText}>
+                  {character?.name || '角色'} - ID: {selectedCharacterId || characterId}
+                </Text>
+                {characterMemoryCount > 0 && (
+                  <View style={styles.memoryCountBadge}>
+                    <Text style={styles.memoryCountText}>{characterMemoryCount} 条记忆</Text>
+                  </View>
+                )}
+              </View>
+            )}
           </View>
-          
-          {(character || selectedCharacterId) && (
-            <View style={styles.characterInfo}>
-              <Text style={styles.characterInfoText}>
-                {character?.name || '角色'} - ID: {selectedCharacterId || characterId}
+
+          <View style={styles.tabContainer}>
+            <TouchableOpacity
+              style={[styles.tabButton, activeTab === 'memories' && styles.activeTabButton]}
+              onPress={() => setActiveTab('memories')}
+            >
+              <MaterialCommunityIcons
+                name="brain"
+                size={22}
+                color={activeTab === 'memories' ? '#ff9f1c' : '#aaa'}
+              />
+              <Text style={[styles.tabText, activeTab === 'memories' && styles.activeTabText]}>
+                记忆
               </Text>
-              {characterMemoryCount > 0 && (
-                <View style={styles.memoryCountBadge}>
-                  <Text style={styles.memoryCountText}>{characterMemoryCount} 条记忆</Text>
-                </View>
-              )}
-            </View>
-          )}
-        </View>
+            </TouchableOpacity>
+            
+            <TouchableOpacity
+              style={[styles.tabButton, activeTab === 'stats' && styles.activeTabButton]}
+              onPress={() => setActiveTab('stats')}
+            >
+              <Ionicons
+                name="stats-chart"
+                size={22}
+                color={activeTab === 'stats' ? '#ff9f1c' : '#aaa'}
+              />
+              <Text style={[styles.tabText, activeTab === 'stats' && styles.activeTabText]}>
+                统计
+              </Text>
+            </TouchableOpacity>
 
-        <View style={styles.tabContainer}>
-          <TouchableOpacity
-            style={[styles.tabButton, activeTab === 'memories' && styles.activeTabButton]}
-            onPress={() => setActiveTab('memories')}
-          >
-            <MaterialCommunityIcons
-              name="brain"
-              size={22}
-              color={activeTab === 'memories' ? 'rgb(255, 224, 195)' : '#aaa'}
-            />
-            <Text style={[styles.tabText, activeTab === 'memories' && styles.activeTabText]}>
-              记忆
-            </Text>
-          </TouchableOpacity>
-          
-          <TouchableOpacity
-            style={[styles.tabButton, activeTab === 'stats' && styles.activeTabButton]}
-            onPress={() => setActiveTab('stats')}
-          >
-            <Ionicons
-              name="stats-chart"
-              size={22}
-              color={activeTab === 'stats' ? 'rgb(255, 224, 195)' : '#aaa'}
-            />
-            <Text style={[styles.tabText, activeTab === 'stats' && styles.activeTabText]}>
-              统计
-            </Text>
-          </TouchableOpacity>
-
-          <TouchableOpacity
-            style={[styles.tabButton, activeTab === 'settings' && styles.activeTabButton]}
-            onPress={() => setActiveTab('settings')}
-          >
-            <Ionicons
-              name="settings-outline"
-              size={22}
-              color={activeTab === 'settings' ? 'rgb(255, 224, 195)' : '#aaa'}
-            />
-            <Text style={[styles.tabText, activeTab === 'settings' && styles.activeTabText]}>
-              设置
-            </Text>
-          </TouchableOpacity>
-        </View>
-
-        <View style={styles.contentContainer}>
-          {activeTab === 'memories' && (
-            <MemoriesPanel
-              memories={memoryFacts}
-              isLoading={isLoadingFacts}
-              isRefreshing={isRefreshing}
-              onRefresh={handleRefresh}
-              onEditMemory={handleEditMemory}
-              onDeleteMemory={handleDeleteMemory}
-              onAddMemory={handleAddMemory}
-              characterId={selectedCharacterId || characterId}
-              searchQuery={factSearchQuery}
-              onSearchQueryChange={handleSearchQueryChange}
-              onSearchSubmit={handleSearchSubmit}
-              expandedMemoryId={expandedMemoryId}
-              toggleMemoryExpansion={toggleMemoryExpansion}
-            />
-          )}
-          
-          {activeTab === 'settings' && (
-            <SettingsPanel
-              currentInterval={currentInterval}
-              memoryEnabled={memoryEnabled}
-              setMemoryEnabled={setMemoryEnabled}
-              onIntervalChange={handleIntervalChange}
-              onSaveInterval={handleIntervalSave}
-              onProcessNow={handleProcessNow}
-              characterId={selectedCharacterId || characterId}
-              conversationId={selectedConversationId || conversationId}
-            />
-          )}
-          
-          {activeTab === 'stats' && (
-            <StatsPanel
-              dbStats={dbStats}
-              characterMemoryCount={characterMemoryCount}
-              characterName={character?.name || '当前角色'}
-              characterId={selectedCharacterId || characterId || ''}
-              onRefresh={fetchDbStats}
-              onExportMemories={handleExportMemories}
-              onImportMemories={handleImportMemories}
-              isExporting={isExporting}
-              isImporting={isImporting}
-            />
-          )}
-        </View>
-
-        {dbSizeWarningMessage && (
-          <View style={[
-            styles.dbSizeWarning, 
-            parseFloat(dbStats.dbSizeMB) >= DB_SIZE_ALERT_THRESHOLD ? styles.dbSizeAlert : {}
-          ]}>
-            <Ionicons name="warning" size={18} color="white" />
-            <Text style={styles.dbSizeWarningText}>{dbSizeWarningMessage}</Text>
+            <TouchableOpacity
+              style={[styles.tabButton, activeTab === 'settings' && styles.activeTabButton]}
+              onPress={() => setActiveTab('settings')}
+            >
+              <Ionicons
+                name="settings-outline"
+                size={22}
+                color={activeTab === 'settings' ? '#ff9f1c' : '#aaa'}
+              />
+              <Text style={[styles.tabText, activeTab === 'settings' && styles.activeTabText]}>
+                设置
+              </Text>
+            </TouchableOpacity>
           </View>
-        )}
 
-        <Modal
-          visible={!!editingMemory}
-          transparent={true}
-          animationType="fade"
-          onRequestClose={() => setEditingMemory(null)}
-        >
-          <KeyboardAvoidingView 
-            style={styles.modalOverlay}
-            behavior={Platform.OS === 'ios' ? 'padding' : undefined}
-          >
-            <View style={styles.editModalContainer}>
-              <View style={styles.editModalHeader}>
-                <Text style={styles.editModalTitle}>编辑记忆</Text>
-                <TouchableOpacity onPress={() => setEditingMemory(null)}>
-                  <Ionicons name="close" size={24} color="#333" />
-                </TouchableOpacity>
-              </View>
-              
-              <TextInput
-                style={styles.editModalInput}
-                value={editingContent}
-                onChangeText={setEditingContent}
-                multiline
-                placeholder="编辑记忆内容..."
-                placeholderTextColor="#999"
+          <View style={styles.contentContainer}>
+            {activeTab === 'memories' && (
+              <MemoriesPanel
+                memories={memoryFacts}
+                isLoading={isLoadingFacts}
+                isRefreshing={isRefreshing}
+                onRefresh={handleRefresh}
+                onEditMemory={handleEditMemory}
+                onDeleteMemory={handleDeleteMemory}
+                onAddMemory={handleAddMemory}
+                characterId={selectedCharacterId || characterId}
+                searchQuery={factSearchQuery}
+                onSearchQueryChange={handleSearchQueryChange}
+                onSearchSubmit={handleSearchSubmit}
+                expandedMemoryId={expandedMemoryId}
+                toggleMemoryExpansion={toggleMemoryExpansion}
               />
-              
-              <View style={styles.editModalButtons}>
-                <TouchableOpacity 
-                  style={[styles.editModalButton, styles.cancelButton]}
-                  onPress={() => setEditingMemory(null)}
-                >
-                  <Text style={styles.editModalButtonText}>取消</Text>
-                </TouchableOpacity>
-                
-                <TouchableOpacity 
-                  style={[styles.editModalButton, styles.saveButton]}
-                  onPress={handleSaveEditedMemory}
-                >
-                  <Text style={styles.editModalButtonText}>保存</Text>
-                </TouchableOpacity>
-              </View>
-            </View>
-          </KeyboardAvoidingView>
-        </Modal>
+            )}
+            
+            {activeTab === 'settings' && (
+              <SettingsPanel
+                currentInterval={currentInterval}
+                memoryEnabled={memoryEnabled}
+                setMemoryEnabled={setMemoryEnabled}
+                onIntervalChange={handleIntervalChange}
+                onProcessNow={handleProcessNow}
+                characterId={selectedCharacterId || characterId}
+                conversationId={selectedConversationId || conversationId}
+              />
+            )}
+            
+            {activeTab === 'stats' && (
+              <StatsPanel
+                dbStats={dbStats}
+                characterMemoryCount={characterMemoryCount}
+                characterName={character?.name || '当前角色'}
+                characterId={selectedCharacterId || characterId || ''}
+                onRefresh={fetchDbStats}
+                onExportMemories={handleExportMemories}
+                onImportMemories={handleImportMemories}
+                isExporting={isExporting}
+                isImporting={isImporting}
+              />
+            )}
+          </View>
 
-        <Modal
-          visible={isCreatingNew}
-          transparent={true}
-          animationType="fade"
-          onRequestClose={() => setIsCreatingNew(false)}
-        >
-          <KeyboardAvoidingView 
-            style={styles.modalOverlay}
-            behavior={Platform.OS === 'ios' ? 'padding' : undefined}
-          >
-            <View style={styles.editModalContainer}>
-              <View style={styles.editModalHeader}>
-                <Text style={styles.editModalTitle}>新建记忆</Text>
-                <TouchableOpacity onPress={() => setIsCreatingNew(false)}>
-                  <Ionicons name="close" size={24} color="#333" />
-                </TouchableOpacity>
-              </View>
-              
-              <TextInput
-                style={styles.editModalInput}
-                value={newMemoryContent}
-                onChangeText={setNewMemoryContent}
-                multiline
-                placeholder="输入新记忆内容..."
-                placeholderTextColor="#999"
-              />
-              
-              <View style={styles.editModalButtons}>
-                <TouchableOpacity 
-                  style={[styles.editModalButton, styles.cancelButton]}
-                  onPress={() => setIsCreatingNew(false)}
-                >
-                  <Text style={styles.editModalButtonText}>取消</Text>
-                </TouchableOpacity>
-                
-                <TouchableOpacity 
-                  style={[styles.editModalButton, styles.saveButton]}
-                  onPress={handleSaveNewMemory}
-                >
-                  <Text style={styles.editModalButtonText}>创建</Text>
-                </TouchableOpacity>
-              </View>
+          {dbSizeWarningMessage && (
+            <View style={[
+              styles.dbSizeWarning, 
+              parseFloat(dbStats.dbSizeMB) >= DB_SIZE_ALERT_THRESHOLD ? styles.dbSizeAlert : {}
+            ]}>
+              <Ionicons name="warning" size={18} color="white" />
+              <Text style={styles.dbSizeWarningText}>{dbSizeWarningMessage}</Text>
             </View>
-          </KeyboardAvoidingView>
-        </Modal>
-      </SafeAreaView>
+          )}
+
+          <Modal
+            visible={!!editingMemory}
+            transparent={true}
+            animationType="fade"
+            onRequestClose={() => setEditingMemory(null)}
+          >
+            <KeyboardAvoidingView 
+              style={styles.modalOverlay}
+              behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+            >
+              <View style={styles.editModalContainer}>
+                <View style={styles.editModalHeader}>
+                  <Text style={styles.editModalTitle}>编辑记忆</Text>
+                  <TouchableOpacity onPress={() => setEditingMemory(null)}>
+                    <Ionicons name="close" size={24} color="#333" />
+                  </TouchableOpacity>
+                </View>
+                
+                <TextInput
+                  style={styles.editModalInput}
+                  value={editingContent}
+                  onChangeText={setEditingContent}
+                  multiline
+                  placeholder="编辑记忆内容..."
+                  placeholderTextColor="#999"
+                />
+                
+                <View style={styles.editModalButtons}>
+                  <TouchableOpacity 
+                    style={[styles.editModalButton, styles.cancelButton]}
+                    onPress={() => setEditingMemory(null)}
+                  >
+                    <Text style={styles.editModalButtonText}>取消</Text>
+                  </TouchableOpacity>
+                  
+                  <TouchableOpacity 
+                    style={[styles.editModalButton, styles.saveButton]}
+                    onPress={handleSaveEditedMemory}
+                  >
+                    <Text style={styles.editModalButtonText}>保存</Text>
+                  </TouchableOpacity>
+                </View>
+              </View>
+            </KeyboardAvoidingView>
+          </Modal>
+
+          <Modal
+            visible={isCreatingNew}
+            transparent={true}
+            animationType="fade"
+            onRequestClose={() => setIsCreatingNew(false)}
+          >
+            <KeyboardAvoidingView 
+              style={styles.modalOverlay}
+              behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+            >
+              <View style={styles.editModalContainer}>
+                <View style={styles.editModalHeader}>
+                  <Text style={styles.editModalTitle}>新建记忆</Text>
+                  <TouchableOpacity onPress={() => setIsCreatingNew(false)}>
+                    <Ionicons name="close" size={24} color="#333" />
+                  </TouchableOpacity>
+                </View>
+                
+                <TextInput
+                  style={styles.editModalInput}
+                  value={newMemoryContent}
+                  onChangeText={setNewMemoryContent}
+                  multiline
+                  placeholder="输入新记忆内容..."
+                  placeholderTextColor="#999"
+                />
+                
+                <View style={styles.editModalButtons}>
+                  <TouchableOpacity 
+                    style={[styles.editModalButton, styles.cancelButton]}
+                    onPress={() => setIsCreatingNew(false)}
+                  >
+                    <Text style={styles.editModalButtonText}>取消</Text>
+                  </TouchableOpacity>
+                  
+                  <TouchableOpacity 
+                    style={[styles.editModalButton, styles.saveButton]}
+                    onPress={handleSaveNewMemory}
+                  >
+                    <Text style={styles.editModalButtonText}>创建</Text>
+                  </TouchableOpacity>
+                </View>
+              </View>
+            </KeyboardAvoidingView>
+          </Modal>
+        </SafeAreaView>
+      </View>
     </Modal>
   );
 };
@@ -806,7 +807,6 @@ interface SettingsPanelProps {
   memoryEnabled: boolean;
   setMemoryEnabled: (enabled: boolean) => void;
   onIntervalChange: (value: number) => void;
-  onSaveInterval: () => void;
   onProcessNow: () => void;
   characterId?: string;
   conversationId?: string;
@@ -817,13 +817,12 @@ const SettingsPanel: React.FC<SettingsPanelProps> = ({
   memoryEnabled,
   setMemoryEnabled,
   onIntervalChange,
-  onSaveInterval,
   onProcessNow,
   characterId,
   conversationId
 }) => {
   return (
-    <ScrollView style={styles.settingsScrollView}>
+    <ScrollView style={styles.statsScrollView}>
       <View style={styles.settingsContainer}>
         {characterId && conversationId && (
           <View style={styles.settingsInfoSection}>
@@ -840,8 +839,8 @@ const SettingsPanel: React.FC<SettingsPanelProps> = ({
             <Switch
               value={memoryEnabled}
               onValueChange={setMemoryEnabled}
-              trackColor={{ false: '#767577', true: 'rgba(255, 224, 195, 0.7)' }}
-              thumbColor={memoryEnabled ? 'rgb(255, 224, 195)' : '#f4f3f4'}
+              trackColor={{ false: '#767577', true: 'rgba(255, 159, 28, 0.7)' }}
+              thumbColor={memoryEnabled ? '#ff9f1c' : '#f4f3f4'}
             />
           </View>
           <Text style={styles.settingDescription}>
@@ -864,31 +863,17 @@ const SettingsPanel: React.FC<SettingsPanelProps> = ({
               step={1}
               value={currentInterval}
               onValueChange={onIntervalChange}
-              minimumTrackTintColor="rgb(255, 224, 195)"
+              minimumTrackTintColor="#ff9f1c"
               maximumTrackTintColor="#767577"
-              thumbTintColor="rgb(255, 224, 195)"
+              thumbTintColor="#ff9f1c"
             />
             <Text style={styles.sliderValue}>20</Text>
           </View>
           
           <View style={styles.currentValueContainer}>
             <Text style={styles.currentValueLabel}>当前设置:</Text>
-            <Text style={styles.currentValue}>{currentInterval} 轮</Text>
-            
-            {currentInterval === 1 && (
-              <View style={styles.warningBadge}>
-                <Text style={styles.warningText}>单轮处理会增加API调用次数!</Text>
-              </View>
-            )}
+            <Text style={styles.currentValue}>{currentInterval} 轮</Text>        
           </View>
-          
-          <TouchableOpacity 
-            style={styles.actionButton} 
-            onPress={onSaveInterval}
-          >
-            <Ionicons name="save-outline" size={18} color="#fff" style={styles.buttonIcon} />
-            <Text style={styles.buttonText}>保存设置</Text>
-          </TouchableOpacity>
         </View>
         
         <View style={styles.settingSection}>
@@ -898,7 +883,7 @@ const SettingsPanel: React.FC<SettingsPanelProps> = ({
           </Text>
           
           <TouchableOpacity 
-            style={[styles.actionButton, { backgroundColor: theme.colors.primary }]} 
+            style={[styles.actionButton, { backgroundColor: '#ff9f1c' }]} 
             onPress={onProcessNow}
           >
             <MaterialCommunityIcons name="brain" size={18} color="#fff" style={styles.buttonIcon} />
@@ -968,7 +953,7 @@ const MemoriesPanel: React.FC<MemoriesPanelProps> = ({
             <MaterialCommunityIcons 
               name="brain" 
               size={18} 
-              color="rgb(255, 224, 195)" 
+              color="#ff9f1c" 
             />
           </View>
           
@@ -1075,7 +1060,7 @@ const MemoriesPanel: React.FC<MemoriesPanelProps> = ({
             disabled={isRefreshing || isLoading}
           >
             {isRefreshing ? (
-              <ActivityIndicator size="small" color="rgb(255, 224, 195)" />
+              <ActivityIndicator size="small" color="#ff9f1c" />
             ) : (
               <Ionicons name="refresh" size={24} color="#fff" />
             )}
@@ -1092,7 +1077,7 @@ const MemoriesPanel: React.FC<MemoriesPanelProps> = ({
 
       {isLoading ? (
         <View style={styles.loadingContainer}>
-          <ActivityIndicator size="large" color="rgb(255, 224, 195)" />
+          <ActivityIndicator size="large" color="#ff9f1c" />
           <Text style={styles.loadingText}>加载记忆中...</Text>
         </View>
       ) : memories.length === 0 ? (
@@ -1153,7 +1138,7 @@ const StatsPanel: React.FC<StatsPanelProps> = ({
         
         <View style={styles.settingSection}>
           <View style={styles.statHeader}>
-            <Ionicons name="analytics-outline" size={24} color="rgb(255, 224, 195)" />
+            <Ionicons name="analytics-outline" size={24} color="#ff9f1c" />
             <Text style={styles.settingSectionTitle}>向量数据库统计</Text>
           </View>
           
@@ -1180,7 +1165,7 @@ const StatsPanel: React.FC<StatsPanelProps> = ({
         {characterId && (
           <View style={styles.settingSection}>
             <View style={styles.statHeader}>
-              <MaterialCommunityIcons name="brain" size={24} color="rgb(255, 224, 195)" />
+              <MaterialCommunityIcons name="brain" size={24} color="#ff9f1c" />
               <Text style={styles.settingSectionTitle}>{characterName}的记忆统计</Text>
             </View>
             
@@ -1240,7 +1225,7 @@ const StatsPanel: React.FC<StatsPanelProps> = ({
         
         <View style={styles.settingSection}>
           <View style={styles.statHeader}>
-            <Ionicons name="information-circle-outline" size={24} color="rgb(255, 224, 195)" />
+            <Ionicons name="information-circle-outline" size={24} color="#ff9f1c" />
             <Text style={styles.settingSectionTitle}>建议值</Text>
           </View>
           
@@ -1279,24 +1264,40 @@ const formatTimestamp = (timestamp?: string) => {
 };
 
 const styles = StyleSheet.create({
+  overlayBackground: {
+    ...StyleSheet.absoluteFillObject,
+    backgroundColor: 'rgba(0,0,0,0.7)',
+    zIndex: 9999,
+    justifyContent: 'flex-start',
+  },
   fullScreenContainer: {
     flex: 1,
-    backgroundColor: '#121212',
+    backgroundColor: 'transparent',
   },
   header: {
-    backgroundColor: 'rgba(40, 40, 40, 0.9)',
-    paddingTop: 10,
-    paddingBottom: 15,
-    paddingHorizontal: 20,
-    borderBottomWidth: 1,
-  },
-  headerContent: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
+    paddingTop: Platform.select({
+      ios: 44,
+      android: StatusBar.currentHeight || 24,
+      default: 24,
+    }),
+    paddingBottom: 8,
+    paddingHorizontal: 16,
+    borderBottomWidth: 1,
+    borderBottomColor: 'rgba(255, 255, 255, 0.1)',
+    backgroundColor: 'transparent',
   },
-  closeButton: {
-    padding: 5,
+  headerTitle: {
+    fontSize: 18,
+    fontWeight: 'bold',
+    color: '#fff',
+    marginRight: 16,
+  },
+  headerContent: {
+    flexDirection: 'row',
+    alignItems: 'center',
   },
   characterInfo: {
     marginTop: 8,
@@ -1308,213 +1309,62 @@ const styles = StyleSheet.create({
     fontSize: 14,
   },
   memoryCountBadge: {
-    backgroundColor: 'rgba(255, 224, 195, 0.3)',
+    backgroundColor: 'rgba(255, 159, 28, 0.3)',
     borderRadius: 12,
     paddingHorizontal: 8,
     paddingVertical: 2,
     marginLeft: 8,
   },
   memoryCountText: {
-    color: 'rgb(255, 224, 195)',
+    color: '#ff9f1c',
     fontSize: 12,
     fontWeight: '500',
   },
   tabContainer: {
     flexDirection: 'row',
-    backgroundColor: 'rgba(40, 40, 40, 0.9)',
-    padding: 8,
-    marginBottom: 2,
     borderBottomWidth: 1,
-    borderBottomColor: 'rgba(255, 255, 255, 0.05)',
+    borderBottomColor: 'rgba(255, 255, 255, 0.1)',
+    backgroundColor: 'transparent',
   },
   tabButton: {
     flex: 1,
+    padding: 12,
     flexDirection: 'row',
-    alignItems: 'center',
     justifyContent: 'center',
-    paddingVertical: 12,
-    borderRadius: 12,
+    alignItems: 'center',
+    borderBottomWidth: 2,
+    borderBottomColor: 'transparent',
+    backgroundColor: 'transparent',
+    borderRadius: 0,
   },
   activeTabButton: {
-    backgroundColor: 'rgba(255, 224, 195, 0.2)',
-    borderColor: 'rgb(255, 224, 195)',
-    borderWidth: 1,
+    borderBottomColor: '#ff9f1c',
+    backgroundColor: 'transparent',
   },
   tabText: {
-    color: '#aaa',
+    color: '#ccc',
     marginLeft: 8,
-    fontSize: 16,
-    fontWeight: '500',
+    fontSize: 14,
   },
   activeTabText: {
-    color: 'rgb(255, 224, 195)',
+    color: '#ff9f1c',
     fontWeight: 'bold',
   },
   contentContainer: {
     flex: 1,
-    backgroundColor: '#121212',
-  },
-  
-  memoriesContainer: {
-    flex: 1,
-    padding: 12,
-  },
-  memoriesHeader: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    marginBottom: 12,
-  },
-  searchContainer: {
-    flex: 1,
-    flexDirection: 'row',
-    backgroundColor: 'rgba(60, 60, 60, 0.8)',
-    borderRadius: 12,
-    overflow: 'hidden',
-  },
-  searchInput: {
-    flex: 1,
-    height: 44,
-    paddingHorizontal: 12,
-    color: '#fff',
-    fontSize: 16,
-  },
-  searchButton: {
-    backgroundColor: 'rgba(255, 224, 195, 0.3)',
-    paddingHorizontal: 12,
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
-  memoryActionsHeader: {
-    flexDirection: 'row',
-    marginLeft: 8,
-  },
-  refreshButton: {
-    width: 44,
-    height: 44,
-    backgroundColor: 'rgba(60, 60, 60, 0.8)',
-    borderRadius: 12,
-    justifyContent: 'center',
-    alignItems: 'center',
-    marginRight: 8,
-  },
-  addButton: {
-    width: 44,
-    height: 44,
-    backgroundColor: 'rgba(255, 224, 195, 0.3)',
-    borderRadius: 12,
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
-  memoriesList: {
-    flex: 1,
-  },
-  memoryItem: {
-    backgroundColor: 'rgba(60, 60, 60, 0.8)',
-    borderRadius: 15,
-    marginBottom: 12,
-    overflow: 'hidden',
-    borderWidth: 1,
-    borderColor: 'rgba(255, 255, 255, 0.05)',
-  },
-  expandedMemoryItem: {
-    backgroundColor: 'rgba(70, 70, 70, 0.8)',
-  },
-  memoryHeader: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    padding: 12,
-  },
-  memoryIconContainer: {
-    marginRight: 12,
-  },
-  memoryContent: {
-    flex: 1,
-  },
-  memoryText: {
-    color: '#fff',
-    fontSize: 15,
-  },
-  memoryDetails: {
-    padding: 12,
-    paddingTop: 0,
-    borderTopWidth: 1,
-    borderTopColor: 'rgba(255, 255, 255, 0.05)',
-  },
-  memoryMetadata: {
-    flexDirection: 'row',
-    marginTop: 12,
-  },
-  metadataLabel: {
-    width: 80,
-    fontSize: 14,
-    color: '#aaa',
-  },
-  metadataValue: {
-    flex: 1,
-    fontSize: 14,
-    color: '#ddd',
-  },
-  memoryActions: {
-    flexDirection: 'row',
-    justifyContent: 'flex-end',
-    marginTop: 15,
-  },
-  memoryAction: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    paddingVertical: 8,
-    paddingHorizontal: 12,
-    borderRadius: 8,
-    marginLeft: 8,
-  },
-  editAction: {
-    backgroundColor: 'rgba(255, 224, 195, 0.3)',
-  },
-  deleteAction: {
-    backgroundColor: '#e74c3c',
-  },
-  actionText: {
-    color: '#fff',
-    marginLeft: 5,
-    fontSize: 14,
-    fontWeight: '500',
-  },
-  loadingContainer: {
-    flex: 1,
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
-  loadingText: {
-    color: '#ddd',
-    marginTop: 12,
-  },
-  emptyContainer: {
-    flex: 1,
-    justifyContent: 'center',
-    alignItems: 'center',
-    padding: 20,
-  },
-  emptyText: {
-    color: '#aaa',
-    fontSize: 16,
-    textAlign: 'center',
-    marginTop: 12,
-  },
-  
-  settingsScrollView: {
-    flex: 1,
+    backgroundColor: 'transparent',
   },
   settingsContainer: {
     padding: 16,
   },
   settingsInfoSection: {
-    backgroundColor: 'rgba(60, 60, 60, 0.8)',
-    borderRadius: 15,
+    backgroundColor: 'rgba(60, 60, 60, 0.6)',
+    borderRadius: 10,
     padding: 15,
     marginBottom: 16,
   },
   settingsInfoTitle: {
-    color: 'rgb(255, 224, 195)',
+    color: '#ff9f1c',
     fontWeight: '600',
     fontSize: 16,
     marginBottom: 8,
@@ -1525,15 +1375,15 @@ const styles = StyleSheet.create({
     fontFamily: Platform.OS === 'ios' ? 'Menlo' : 'monospace',
   },
   settingSection: {
-    backgroundColor: 'rgba(60, 60, 60, 0.8)',
-    borderRadius: 15,
+    backgroundColor: 'rgba(60, 60, 60, 0.6)',
+    borderRadius: 10,
     padding: 15,
     marginBottom: 16,
   },
   settingSectionTitle: {
-    color: 'rgb(255, 224, 195)',
-    fontSize: 18,
-    fontWeight: '600',
+    color: '#ff9f1c',
+    fontSize: 16,
+    fontWeight: 'bold',
     marginBottom: 12,
   },
   settingRow: {
@@ -1544,11 +1394,11 @@ const styles = StyleSheet.create({
   },
   settingLabel: {
     color: '#fff',
-    fontSize: 16,
+    fontSize: 15,
   },
   settingDescription: {
-    color: '#aaa',
-    fontSize: 14,
+    color: '#ccc',
+    fontSize: 13,
     lineHeight: 20,
     marginBottom: 16,
   },
@@ -1573,50 +1423,191 @@ const styles = StyleSheet.create({
     marginBottom: 20,
   },
   currentValueLabel: {
-    fontSize: 16,
+    fontSize: 15,
     color: '#fff',
   },
   currentValue: {
-    fontSize: 24,
-    color: 'rgb(255, 224, 195)',
+    fontSize: 20,
+    color: '#ff9f1c',
     fontWeight: 'bold',
     marginLeft: 8,
   },
-  warningBadge: {
-    backgroundColor: 'rgba(255, 59, 48, 0.2)',
-    borderRadius: 8,
-    paddingVertical: 4,
-    paddingHorizontal: 8,
-    marginLeft: 10,
-  },
-  warningText: {
-    color: '#ff3b30',
-    fontSize: 12,
-    fontWeight: '500',
-  },
   actionButton: {
-    backgroundColor: '#34c759',
-    borderRadius: 10,
-    paddingVertical: 14,
+    backgroundColor: '#ff9f1c',
+    borderRadius: 8,
+    padding: 12,
     alignItems: 'center',
-    flexDirection: 'row',
     justifyContent: 'center',
+    flexDirection: 'row',
   },
   buttonIcon: {
     marginRight: 8,
   },
   buttonText: {
     color: '#fff',
-    fontSize: 16,
-    fontWeight: '600',
+    fontSize: 15,
+    fontWeight: 'bold',
   },
-  cautionText: {
-    color: '#ff9500',
+  memoriesContainer: {
+    flex: 1,
+    padding: 16,
+  },
+  memoriesHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginBottom: 12,
+  },
+  searchContainer: {
+    flex: 1,
+    flexDirection: 'row',
+    backgroundColor: 'rgba(60, 60, 60, 0.6)',
+    borderRadius: 10,
+    overflow: 'hidden',
+  },
+  searchInput: {
+    flex: 1,
+    height: 44,
+    paddingHorizontal: 12,
+    color: '#fff',
+    fontSize: 15,
+    backgroundColor: 'transparent',
+  },
+  searchButton: {
+    backgroundColor: 'rgba(255, 159, 28, 0.2)',
+    paddingHorizontal: 12,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  memoryActionsHeader: {
+    flexDirection: 'row',
+    marginLeft: 8,
+  },
+  refreshButton: {
+    width: 44,
+    height: 44,
+    backgroundColor: 'rgba(60, 60, 60, 0.6)',
+    borderRadius: 10,
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginRight: 8,
+  },
+  addButton: {
+    width: 44,
+    height: 44,
+    backgroundColor: 'rgba(255, 159, 28, 0.2)',
+    borderRadius: 10,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  memoriesList: {
+    flex: 1,
+  },
+  memoryItem: {
+    backgroundColor: 'rgba(60, 60, 60, 0.6)',
+    borderRadius: 10,
+    marginBottom: 12,
+    overflow: 'hidden',
+    borderWidth: 1,
+    borderColor: 'rgba(255, 255, 255, 0.05)',
+  },
+  expandedMemoryItem: {
+    backgroundColor: 'rgba(70, 70, 70, 0.8)',
+  },
+  memoryHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    padding: 12,
+  },
+  memoryIconContainer: {
+    marginRight: 12,
+  },
+  memoryContent: {
+    flex: 1,
+  },
+  memoryText: {
+    color: '#fff',
     fontSize: 14,
-    marginTop: 10,
-    textAlign: 'center',
   },
-  
+  memoryDetails: {
+    padding: 12,
+    paddingTop: 0,
+    borderTopWidth: 1,
+    borderTopColor: 'rgba(255, 255, 255, 0.05)',
+  },
+  memoryMetadata: {
+    flexDirection: 'row',
+    marginTop: 12,
+  },
+  metadataLabel: {
+    width: 80,
+    fontSize: 13,
+    color: '#aaa',
+  },
+  metadataValue: {
+    flex: 1,
+    fontSize: 13,
+    color: '#ddd',
+  },
+  memoryActions: {
+    flexDirection: 'row',
+    justifyContent: 'flex-end',
+    marginTop: 15,
+  },
+  memoryAction: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingVertical: 8,
+    paddingHorizontal: 12,
+    borderRadius: 8,
+    marginLeft: 8,
+  },
+  editAction: {
+    backgroundColor: 'rgba(255, 159, 28, 0.2)',
+  },
+  deleteAction: {
+    backgroundColor: '#e74c3c',
+  },
+  actionText: {
+    color: '#fff',
+    marginLeft: 5,
+    fontSize: 13,
+    fontWeight: 'bold',
+  },
+  loadingContainer: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  loadingText: {
+    color: '#ddd',
+    marginTop: 12,
+  },
+  emptyContainer: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+    padding: 20,
+  },
+  emptyText: {
+    color: '#888',
+    fontSize: 15,
+    textAlign: 'center',
+    marginTop: 12,
+  },
+  createMemoryButton: {
+    backgroundColor: '#ff9f1c',
+    paddingVertical: 10,
+    paddingHorizontal: 16,
+    borderRadius: 8,
+    marginTop: 16,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+  },
+  createMemoryButtonText: {
+    color: '#fff',
+    fontWeight: 'bold',
+  },
   statsScrollView: {
     flex: 1,
   },
@@ -1629,9 +1620,9 @@ const styles = StyleSheet.create({
     marginBottom: 16,
   },
   statTitle: {
-    color: 'rgb(255, 224, 195)',
-    fontSize: 18,
-    fontWeight: '600',
+    color: '#ff9f1c',
+    fontSize: 16,
+    fontWeight: 'bold',
     marginLeft: 8,
   },
   statItem: {
@@ -1641,15 +1632,15 @@ const styles = StyleSheet.create({
   },
   statLabel: {
     color: '#aaa',
-    fontSize: 16,
+    fontSize: 14,
   },
   statValue: {
     color: '#fff',
-    fontSize: 16,
-    fontWeight: '600',
+    fontSize: 14,
+    fontWeight: 'bold',
   },
   dbSizeWarningBox: {
-    backgroundColor: 'rgba(243, 156, 18, 0.2)',
+    backgroundColor: 'rgba(255, 159, 28, 0.1)',
     borderRadius: 8,
     padding: 12,
     flexDirection: 'row',
@@ -1657,14 +1648,13 @@ const styles = StyleSheet.create({
     marginTop: 8,
   },
   dbSizeWarningBoxText: {
-    color: '#f39c12',
-    fontSize: 14,
+    color: '#ff9f1c',
+    fontSize: 13,
     marginLeft: 8,
     flex: 1,
   },
-  
   dbSizeWarning: {
-    backgroundColor: 'rgba(243, 156, 18, 0.9)',
+    backgroundColor: 'rgba(255, 159, 28, 0.9)',
     padding: 10,
     flexDirection: 'row',
     alignItems: 'center',
@@ -1676,65 +1666,6 @@ const styles = StyleSheet.create({
     color: 'white',
     marginLeft: 8,
     flex: 1,
-  },
-  
-  modalOverlay: {
-    flex: 1,
-    backgroundColor: 'rgba(0, 0, 0, 0.7)',
-    justifyContent: 'center',
-    alignItems: 'center',
-    padding: 20,
-  },
-  editModalContainer: {
-    backgroundColor: '#282828',
-    width: '100%',
-    maxWidth: 500,
-    borderRadius: 15,
-    padding: 20,
-    borderColor: 'rgba(255, 224, 195, 0.3)',
-    borderWidth: 1,
-  },
-  editModalHeader: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    marginBottom: 20,
-  },
-  editModalTitle: {
-    fontSize: 20,
-    fontWeight: 'bold',
-    color: 'rgb(255, 224, 195)',
-  },
-  editModalInput: {
-    backgroundColor: 'rgba(60, 60, 60, 0.8)',
-    borderRadius: 12,
-    padding: 12,
-    fontSize: 16,
-    color: '#fff',
-    minHeight: 120,
-    textAlignVertical: 'top',
-  },
-  editModalButtons: {
-    flexDirection: 'row',
-    justifyContent: 'flex-end',
-    marginTop: 20,
-  },
-  editModalButton: {
-    paddingVertical: 10,
-    paddingHorizontal: 20,
-    borderRadius: 12,
-    marginLeft: 10,
-  },
-  cancelButton: {
-    backgroundColor: '#555',
-  },
-  saveButton: {
-    backgroundColor: 'rgba(255, 224, 195, 0.3)',
-  },
-  editModalButtonText: {
-    color: 'white',
-    fontSize: 16,
-    fontWeight: '500',
   },
   dataBackupSection: {
     marginTop: 16,
@@ -1752,34 +1683,79 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
     padding: 12,
-    borderRadius: 10,
+    borderRadius: 8,
     flex: 0.48,
+    backgroundColor: '#ff9f1c',
   },
   exportButton: {
-    backgroundColor: 'rgba(255, 224, 195, 0.3)',
+    backgroundColor: '#ff9f1c',
   },
   importButton: {
-    backgroundColor: 'rgba(255, 224, 195, 0.2)',
+    backgroundColor: 'rgba(255, 159, 28, 0.2)',
   },
   backupButtonText: {
     color: '#fff',
     fontSize: 14,
-    fontWeight: '600',
+    fontWeight: 'bold',
     marginLeft: 8,
   },
-  createMemoryButton: {
-    backgroundColor: 'rgba(255, 224, 195, 0.3)',
-    paddingVertical: 10,
-    paddingHorizontal: 16,
-    borderRadius: 8,
-    marginTop: 16,
-    flexDirection: 'row',
+  modalOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(0, 0, 0, 0.7)',
+    justifyContent: 'center',
     alignItems: 'center',
-    gap: 8,
+    padding: 20,
   },
-  createMemoryButtonText: {
+  editModalContainer: {
+    backgroundColor: '#333',
+    width: '100%',
+    maxWidth: 400,
+    borderRadius: 10,
+    padding: 20,
+    borderColor: 'rgba(255, 159, 28, 0.3)',
+    borderWidth: 1,
+  },
+  editModalHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 20,
+  },
+  editModalTitle: {
+    fontSize: 16,
+    fontWeight: 'bold',
+    color: '#ff9f1c',
+  },
+  editModalInput: {
+    backgroundColor: '#444',
+    borderRadius: 6,
+    padding: 12,
+    fontSize: 15,
     color: '#fff',
-    fontWeight: '600',
+    minHeight: 100,
+    textAlignVertical: 'top',
+  },
+  editModalButtons: {
+    flexDirection: 'row',
+    justifyContent: 'flex-end',
+    marginTop: 20,
+  },
+  editModalButton: {
+    paddingVertical: 10,
+    paddingHorizontal: 20,
+    borderRadius: 8,
+    marginLeft: 10,
+  },
+  cancelButton: {
+    backgroundColor: '#555',
+  },
+  saveButton: {
+    backgroundColor: '#ff9f1c',
+  },
+  editModalButtonText: {
+    color: 'white',
+    fontSize: 15,
+    fontWeight: 'bold',
   },
 });
 

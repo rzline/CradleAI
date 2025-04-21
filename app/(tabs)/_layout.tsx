@@ -131,7 +131,7 @@ export default function TabLayout() {
           <Tabs.Screen
             name="Character"
             options={{
-              title: '角色卡',
+              title: '角色',
               headerShown: false,
               tabBarIcon: ({ color, focused }) => (
                 <Ionicons
@@ -142,7 +142,7 @@ export default function TabLayout() {
               ),
             }}
           />
-          <Tabs.Screen
+          {/* <Tabs.Screen
             name="cradle"
             options={{
               title: '摇篮',
@@ -155,11 +155,11 @@ export default function TabLayout() {
                 />
               ),
             }}
-          />
+          /> */}
           <Tabs.Screen
             name="profile"
             options={{
-              title: '我',
+              title: '我的',
               headerShown: false,
               tabBarIcon: ({ color, focused }) => (
                 <Ionicons

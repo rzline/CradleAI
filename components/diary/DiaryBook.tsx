@@ -691,12 +691,18 @@ const styles = StyleSheet.create({
     paddingBottom: 80,
   },
   diaryEntryContainer: {
-    backgroundColor: '#333',
-    borderRadius: 12,
+    backgroundColor: 'rgba(60,60,60,0.6)', // 标准MemoOverlay卡片色
+    borderRadius: 14,
     marginBottom: 16,
     padding: 16,
-    borderLeftWidth: 3,
-    borderLeftColor: theme.colors.primary,
+    borderLeftWidth: 4,
+    borderLeftColor: '#ff9f1c', // MemoOverlay主色
+    // 统一阴影
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.18,
+    shadowRadius: 4,
+    elevation: 2,
   },
   diaryEntryHeader: {
     flexDirection: 'row',
@@ -704,34 +710,35 @@ const styles = StyleSheet.create({
     marginBottom: 8,
   },
   diaryEntryDate: {
-    color: '#ccc',
+    color: '#fff', // 更亮
     fontSize: 14,
   },
   todayIndicator: {
-    color: theme.colors.primary,
+    color: '#ff9f1c',
     fontWeight: 'bold',
   },
   diaryEntryTimeAgo: {
-    color: '#999',
+    color: '#ff9f1c',
     fontSize: 12,
   },
   diaryEntryGoal: {
     flexDirection: 'row',
     alignItems: 'center',
     marginBottom: 12,
-    backgroundColor: 'rgba(255, 215, 0, 0.1)',
+    backgroundColor: 'rgba(255, 224, 195, 0.12)', // MemoOverlay通知色
     paddingVertical: 4,
     paddingHorizontal: 8,
-    borderRadius: 4,
+    borderRadius: 6,
     alignSelf: 'flex-start',
   },
   diaryEntryGoalText: {
-    color: '#FFD700',
+    color: '#ff9f1c',
     fontSize: 12,
     marginLeft: 4,
+    fontWeight: 'bold',
   },
   diaryEntryContent: {
-    backgroundColor: '#222',
+    backgroundColor: 'rgba(30,30,30,0.98)', // MemoOverlay深色
     borderRadius: 8,
     padding: 12,
   },
@@ -740,35 +747,53 @@ const styles = StyleSheet.create({
     fontSize: 15,
     lineHeight: 24,
   },
-  // Add styles for entry actions container
   entryActionsContainer: {
     flexDirection: 'row',
     justifyContent: 'flex-end',
     marginTop: 12,
     gap: 10,
   },
-  // Style for delete button
   deleteButton: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: 'rgba(244, 67, 54, 0.8)',
+    backgroundColor: 'rgba(255, 107, 107, 0.8)',
     paddingVertical: 6,
-    paddingHorizontal: 10,
-    borderRadius: 4,
+    paddingHorizontal: 12,
+    borderRadius: 6,
   },
-  // Style for regenerate button
   regenerateButton: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: 'rgba(33, 150, 243, 0.8)',
+    backgroundColor: '#ff9f1c',
     paddingVertical: 6,
-    paddingHorizontal: 10,
-    borderRadius: 4,
+    paddingHorizontal: 12,
+    borderRadius: 6,
   },
   entryActionButtonText: {
     color: '#fff',
     fontSize: 12,
     marginLeft: 4,
+    fontWeight: 'bold',
+  },
+  reflectionWeights: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    marginBottom: 12,
+    gap: 6,
+  },
+  weightTag: {
+    backgroundColor: 'rgba(255, 224, 195, 0.12)', // MemoOverlay通知色
+    paddingVertical: 2,
+    paddingHorizontal: 10,
+    borderRadius: 14,
+  },
+  weightTagText: {
+    color: '#ff9f1c',
+    fontSize: 12,
+    fontWeight: 'bold',
+  },
+  circleMemoryTag: {
+    backgroundColor: 'rgba(138, 43, 226, 0.18)',
   },
   floatingButton: {
     position: 'absolute',
@@ -886,25 +911,6 @@ const styles = StyleSheet.create({
     fontWeight: 'bold',
     fontSize: 16,
     marginLeft: 8,
-  },
-  reflectionWeights: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    marginBottom: 12,
-    gap: 6,
-  },
-  weightTag: {
-    backgroundColor: 'rgba(255, 255, 255, 0.1)',
-    paddingVertical: 2,
-    paddingHorizontal: 8,
-    borderRadius: 12,
-  },
-  weightTagText: {
-    color: '#ddd',
-    fontSize: 12,
-  },
-  circleMemoryTag: {
-    backgroundColor: 'rgba(138, 43, 226, 0.2)',
   },
   circleMemorySection: {
     marginTop: 16,

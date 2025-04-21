@@ -21,6 +21,7 @@ import {
   Modal,
 } from 'react-native';
 import { Ionicons, MaterialIcons, MaterialCommunityIcons, Feather, AntDesign } from '@expo/vector-icons';
+import { LinearGradient } from 'expo-linear-gradient';
 import { useCharacters } from '@/constants/CharactersContext';
 import { CirclePost, CircleComment, CircleLike, Character,} from '@/shared/types';
 import ForwardSheet from '@/components/ForwardSheet';
@@ -42,6 +43,7 @@ import { ImageManager } from '@/utils/ImageManager';
 const { width } = Dimensions.get('window');
 const CARD_WIDTH = width - 32;
 const AVATAR_SIZE = 48;
+const HEADER_HEIGHT = 90;
 
 // 多个测试帖子模板，用于随机选择
 const TEST_POST_TEMPLATES = [
@@ -1062,6 +1064,48 @@ const Explore: React.FC = () => {
     </View>
   );
 
+  // 新的顶部栏，完全对齐TopBarWithBackground.tsx
+  const renderHeader = () => (
+    <View style={[styles.topBarContainer, { height: HEADER_HEIGHT, paddingTop: Platform.OS === 'ios' ? 44 : (StatusBar.currentHeight || 0) }]}>
+      <View style={styles.topBarOverlay} />
+      <View style={styles.topBarContent}>
+        <View style={styles.topBarTitleContainer}>
+          <Text style={styles.topBarTitle}>朋友圈</Text>
+        </View>
+        <View style={styles.topBarActions}>
+          <TouchableOpacity 
+            style={styles.topBarActionButton}
+            onPress={() => setShowInteractionSettings(true)}
+            disabled={isLoading}
+          >
+            <Ionicons name="settings-outline" size={22} color={theme.colors.buttonText} />
+          </TouchableOpacity>
+          <TouchableOpacity 
+            style={styles.topBarActionButton}
+            onPress={() => setShowUserPostModal(true)}
+            disabled={isLoading}
+          >
+            <Feather name="plus" size={24} color={theme.colors.buttonText} />
+          </TouchableOpacity>
+          <TouchableOpacity 
+            style={[
+              styles.topBarActionButton,
+              (publishingPost || isLoading) && styles.topBarActionButtonDisabled
+            ]} 
+            onPress={() => setShowPublishCharacterSelector(true)}
+            disabled={publishingPost || isLoading}
+          >
+            {publishingPost ? (
+              <ActivityIndicator size="small" color={theme.colors.text} />
+            ) : (
+              <MaterialIcons name="auto-awesome" size={22} color={theme.colors.buttonText} />
+            )}
+          </TouchableOpacity>
+        </View>
+      </View>
+    </View>
+  );
+
   // Comment rendering
   const renderComment = useCallback((comment: CircleComment) => {
     const hasThoughts = !!comment.thoughts;
@@ -1715,14 +1759,7 @@ const Explore: React.FC = () => {
         source={require('@/assets/images/default-background.jpeg')}
         style={styles.backgroundImage}
       >
-        {/* 更新顶部栏样式与Character页面一致 */}
-        <View style={styles.header}>
-          <View style={styles.headerContent}>
-            <Text style={styles.headerTitle}>朋友圈</Text>
-            {renderCircleHeaderButtons()}
-          </View>
-        </View>
-
+        {renderHeader()}
         {/* Circle Tab Content */}
         {activeTab === 'circle' && (
           <>
@@ -2291,6 +2328,55 @@ const styles = StyleSheet.create({
     fontSize: 14,
     marginTop: 8,
     textAlign: 'center',
+  },
+
+  // 新增顶部栏样式，完全对齐TopBarWithBackground
+  topBarContainer: {
+    position: 'relative',
+    width: '100%',
+    zIndex: 100,
+  },
+  topBarOverlay: {
+    ...StyleSheet.absoluteFillObject,
+    backgroundColor: 'rgba(0,0,0,0.3)',
+  },
+  topBarContent: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingHorizontal: 12,
+    height: '100%',
+  },
+  topBarMenuButton: {
+    padding: 8,
+  },
+  topBarTitleContainer: {
+    flex: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingHorizontal: 8,
+  },
+  topBarTitle: {
+    color: '#fff',
+    fontSize: 18,
+    fontWeight: '600',
+    textShadowColor: 'rgba(0, 0, 0, 0.75)',
+    textShadowOffset: { width: 1, height: 1 },
+    textShadowRadius: 2,
+  },
+  topBarActions: {
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
+  topBarActionButton: {
+    padding: 8,
+    marginLeft: 4,
+    backgroundColor: 'rgba(255,255,255,0.1)',
+    borderRadius: 20,
+  },
+  topBarActionButtonDisabled: {
+    opacity: 0.5,
   },
 });
 

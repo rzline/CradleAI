@@ -34,6 +34,10 @@ import { theme } from '@/constants/theme';
 import { NodeSTManager } from '@/utils/NodeSTManager';
 import { Video, ResizeMode, AVPlaybackStatus } from 'expo-av'; // Import Video component from expo-av
 import DiaryBook from '@/components/diary/DiaryBook'; // Import the DiaryBook component
+import { LinearGradient } from 'expo-linear-gradient';
+import CharacterEditDialog from '@/components/CharacterEditDialog';
+import CharacterImageGallerySidebar from '@/components/CharacterImageGallerySidebar';
+import ImageRegenerationModal from '@/components/ImageRegenerationModal';
 
 const VIEW_MODE_SMALL = 'small';
 const VIEW_MODE_LARGE = 'large';
@@ -52,6 +56,8 @@ const COLOR_CARD_BG = '#333333';
 const COLOR_BUTTON = 'rgb(255, 224, 195)';
 const COLOR_TEXT = '#FFFFFF';
 
+const HEADER_HEIGHT = 90;
+
 const CharactersScreen: React.FC = () => {
   const { characters, isLoading, setIsLoading, deleteCharacters } = useCharacters();
   const router = useRouter();
@@ -68,6 +74,19 @@ const CharactersScreen: React.FC = () => {
 
   // Add loading state for import process
   const [importLoading, setImportLoading] = useState(false);
+
+  // New states for gallery sidebar, image generation, and character editing
+  const [showGallerySidebar, setShowGallerySidebar] = useState(false);
+  const [gallerySidebarCharacter, setGallerySidebarCharacter] = useState<Character | null>(null);
+
+  const [showImageGenModal, setShowImageGenModal] = useState(false);
+  const [imageGenCharacter, setImageGenCharacter] = useState<Character | null>(null);
+
+  const [showEditDialog, setShowEditDialog] = useState(false);
+  const [editDialogCharacter, setEditDialogCharacter] = useState<Character | null>(null);
+
+  // State for managing character images
+  const [characterImages, setCharacterImages] = useState<Record<string, any[]>>({});
 
   const appState = useRef(AppState.currentState);
   const [appStateVisible, setAppStateVisible] = useState(appState.current);
@@ -388,6 +407,76 @@ const CharactersScreen: React.FC = () => {
     });
   };
 
+  const handleAddNewImage = (characterId: string, newImage: any) => {
+    setCharacterImages(prev => ({
+      ...prev,
+      [characterId]: [...(prev[characterId] || []), newImage]
+    }));
+  };
+
+  const handleOpenGallerySidebar = (character: Character) => {
+    setGallerySidebarCharacter(character);
+    setShowGallerySidebar(true);
+  };
+
+  const handleOpenImageGen = (character: Character) => {
+    setImageGenCharacter(character);
+    setShowImageGenModal(true);
+  };
+
+  const handleOpenEditDialog = (character: Character) => {
+    setEditDialogCharacter(character);
+    setShowEditDialog(true);
+  };
+
+  const handleImageGenSuccess = (image: any) => {
+    if (imageGenCharacter) {
+      handleAddNewImage(imageGenCharacter.id, image);
+    }
+  };
+
+  const renderHeader = () => (
+    <View style={[styles.topBarContainer, { height: HEADER_HEIGHT, paddingTop: Platform.OS === 'ios' ? 44 : (StatusBar.currentHeight || 0) }]}>
+      <LinearGradient
+        colors={['#333', '#282828']}
+        style={styles.topBarBackground}
+      />
+      <View style={styles.topBarOverlay} />
+      <View style={styles.topBarContent}>
+        <View style={styles.topBarTitleContainer}>
+          <Text style={styles.topBarTitle}>角色管理</Text>
+        </View>
+        <View style={styles.topBarActions}>
+          <TouchableOpacity style={styles.topBarActionButton} onPress={handleViewModeToggle}>
+            <Ionicons 
+              name={
+                viewMode === VIEW_MODE_LARGE 
+                  ? "grid-outline" 
+                  : viewMode === VIEW_MODE_SMALL 
+                    ? "albums-outline"
+                    : "apps-outline"
+              } 
+              size={22} 
+              color={COLOR_BUTTON} 
+            />
+          </TouchableOpacity>
+          <TouchableOpacity style={styles.topBarActionButton} onPress={handleAddPress}>
+            <Ionicons name="add" size={24} color={COLOR_BUTTON} />
+          </TouchableOpacity>
+          <TouchableOpacity
+            style={[
+              styles.topBarActionButton,
+              isManaging && styles.topBarActiveActionButton
+            ]}
+            onPress={handleManage}
+          >
+            <FontAwesome name="wrench" size={20} color={isManaging ? '#282828' : COLOR_BUTTON} />
+          </TouchableOpacity>
+        </View>
+      </View>
+    </View>
+  );
+
   const renderItem = useMemo(
     () => ({ item }: { item: any }) => (
       <CharacterCard
@@ -398,9 +487,12 @@ const CharactersScreen: React.FC = () => {
         onPress={handleCharacterPress}
         onOpenDiary={handleOpenDiaryBook}
         viewMode={viewMode}
+        // 新增：传递图库和图片生成入口
+        onOpenGallerySidebar={handleOpenGallerySidebar}
+        onOpenImageGen={handleOpenImageGen}
       />
     ),
-    [isManaging, selectedCharacters, toggleSelectCharacter, handleCharacterPress, viewMode]
+    [isManaging, selectedCharacters, toggleSelectCharacter, handleCharacterPress, viewMode, handleOpenGallerySidebar, handleOpenImageGen]
   );
 
   const keyExtractor = useMemo(() => (item: any) => item.id, []);
@@ -486,6 +578,43 @@ const CharactersScreen: React.FC = () => {
     );
   };
 
+  const renderManageFloatingButtons = () => {
+    if (!isManaging) return null;
+    return (
+      <>
+        {/* 编辑按钮 */}
+        <TouchableOpacity
+          style={[
+            styles.floatingButton,
+            { bottom: 88, backgroundColor: theme.colors.primary }
+          ]}
+          onPress={() => {
+            // 只允许单选编辑
+            const char = characters.find(c => selectedCharacters[0] === c.id);
+            if (char) handleOpenEditDialog(char);
+          }}
+          disabled={selectedCharacters.length !== 1}
+        >
+          <Ionicons name="construct-outline" size={24} color="black" />
+        </TouchableOpacity>
+        {/* 图库按钮 */}
+        <TouchableOpacity
+          style={[
+            styles.floatingButton,
+            { bottom: 154, backgroundColor: theme.colors.primary }
+          ]}
+          onPress={() => {
+            const char = characters.find(c => selectedCharacters[0] === c.id);
+            if (char) handleOpenGallerySidebar(char);
+          }}
+          disabled={selectedCharacters.length !== 1}
+        >
+          <Ionicons name="images-outline" size={24} color="black" />
+        </TouchableOpacity>
+      </>
+    );
+  };
+
   if (isLoading) {
     return (
       <SafeAreaView style={styles.safeArea}>
@@ -505,35 +634,7 @@ const CharactersScreen: React.FC = () => {
     <SafeAreaView style={styles.safeArea}>
       <StatusBar barStyle="light-content" backgroundColor={COLOR_BACKGROUND} />
 
-      <View style={styles.header}>
-        <View style={styles.headerContent}>
-          <Text style={styles.headerTitle}>角色管理</Text>
-          <View style={styles.headerButtons}>
-            <TouchableOpacity style={styles.headerButton} onPress={handleViewModeToggle}>
-              <Ionicons 
-                name={
-                  viewMode === VIEW_MODE_LARGE 
-                    ? "grid-outline" 
-                    : viewMode === VIEW_MODE_SMALL 
-                      ? "albums-outline"
-                      : "apps-outline"
-                } 
-                size={22} 
-                color={COLOR_BUTTON} 
-              />
-            </TouchableOpacity>
-            <TouchableOpacity style={styles.headerButton} onPress={handleAddPress}>
-              <Ionicons name="add" size={24} color={COLOR_BUTTON} />
-            </TouchableOpacity>
-            <TouchableOpacity
-              style={[styles.headerButton, isManaging && styles.activeHeaderButton]}
-              onPress={handleManage}
-            >
-              <FontAwesome name="wrench" size={20} color={isManaging ? '#282828' : COLOR_BUTTON} />
-            </TouchableOpacity>
-          </View>
-        </View>
-      </View>
+      {renderHeader()}
 
       {renderAddMenu()}
 
@@ -550,6 +651,7 @@ const CharactersScreen: React.FC = () => {
       {renderCreationModal()}
 
       {renderDeleteButton()}
+      {renderManageFloatingButtons()}
 
       {/* Add Diary Book Modal */}
       {showDiaryBook && selectedCharacterId && (
@@ -564,6 +666,66 @@ const CharactersScreen: React.FC = () => {
             onClose={handleCloseDiaryBook} 
           />
         </Modal>
+      )}
+
+      {/* 图库侧栏 */}
+      {showGallerySidebar && gallerySidebarCharacter && (
+        <CharacterImageGallerySidebar
+          visible={showGallerySidebar}
+          onClose={() => setShowGallerySidebar(false)}
+          images={characterImages[gallerySidebarCharacter.id] || []}
+          onToggleFavorite={imageId => {
+            setCharacterImages(prev => ({
+              ...prev,
+              [gallerySidebarCharacter.id]: prev[gallerySidebarCharacter.id].map(img =>
+                img.id === imageId ? { ...img, isFavorite: !img.isFavorite } : img
+              )
+            }));
+          }}
+          onDelete={imageId => {
+            setCharacterImages(prev => ({
+              ...prev,
+              [gallerySidebarCharacter.id]: prev[gallerySidebarCharacter.id].filter(img => img.id !== imageId)
+            }));
+          }}
+          onSetAsBackground={imageId => {
+            // 可扩展：设置背景
+          }}
+          onSetAsAvatar={imageId => {
+            // 可扩展：设置头像
+          }}
+          isLoading={false}
+          character={{
+            ...gallerySidebarCharacter,
+            inCradleSystem: gallerySidebarCharacter.inCradleSystem || false
+          }}
+          onAddNewImage={img => handleAddNewImage(gallerySidebarCharacter.id, img)}
+        />
+      )}
+
+      {/* 图片生成 */}
+      {showImageGenModal && imageGenCharacter && (
+        <ImageRegenerationModal
+          visible={showImageGenModal}
+          character={{
+            ...imageGenCharacter,
+            inCradleSystem: imageGenCharacter?.inCradleSystem || false
+          }}
+          onClose={() => setShowImageGenModal(false)}
+          onSuccess={img => {
+            handleImageGenSuccess(img);
+            setShowImageGenModal(false);
+          }}
+        />
+      )}
+
+      {/* 角色编辑 */}
+      {showEditDialog && editDialogCharacter && (
+        <CharacterEditDialog
+          isVisible={showEditDialog}
+          character={editDialogCharacter}
+          onClose={() => setShowEditDialog(false)}
+        />
       )}
 
       {/* Import Loading Modal */}
@@ -593,153 +755,190 @@ const CharacterCard: React.FC<{
   onPress: (id: string) => void;
   onOpenDiary: (id: string) => void;
   viewMode: 'small' | 'large' | 'vertical';
-}> = React.memo(({ item, isManaging, isSelected, onSelect, onPress, onOpenDiary, viewMode }) => {
-  const isLargeView = viewMode === VIEW_MODE_LARGE;
-  const isVerticalView = viewMode === VIEW_MODE_VERTICAL;
-  const videoRef = useRef<Video | null>(null);
-  const [isVideoReady, setIsVideoReady] = useState(false);
-  const [videoError, setVideoError] = useState<string | null>(null);
+  // 新增props
+  onOpenGallerySidebar: (character: Character) => void;
+  onOpenImageGen: (character: Character) => void;
+}> = React.memo(
+  ({
+    item,
+    isManaging,
+    isSelected,
+    onSelect,
+    onPress,
+    onOpenDiary,
+    viewMode,
+    onOpenGallerySidebar,
+    onOpenImageGen
+  }) => {
+    const isLargeView = viewMode === VIEW_MODE_LARGE;
+    const isVerticalView = viewMode === VIEW_MODE_VERTICAL;
+    const videoRef = useRef<Video | null>(null);
+    const [isVideoReady, setIsVideoReady] = useState(false);
+    const [videoError, setVideoError] = useState<string | null>(null);
 
-  // Remove the view mode condition to allow videos in all view modes
-  const shouldShowVideo = item.dynamicPortraitEnabled && item.dynamicPortraitVideo;
+    // Remove the view mode condition to allow videos in all view modes
+    const shouldShowVideo = item.dynamicPortraitEnabled && item.dynamicPortraitVideo;
 
-  const cardStyle = isLargeView
-    ? {
-        width: LARGE_CARD_WIDTH,
-        height: LARGE_CARD_HEIGHT,
-        marginBottom: 16,
-      }
-    : isVerticalView
-    ? {
-        width: VERTICAL_CARD_WIDTH,
-        height: VERTICAL_CARD_HEIGHT,
-        margin: 8,
-      }
-    : {
-        width: CARD_WIDTH,
-        height: CARD_HEIGHT,
-        margin: 8,
-      };
+    const cardStyle = isLargeView
+      ? {
+          width: LARGE_CARD_WIDTH,
+          height: LARGE_CARD_HEIGHT,
+          marginBottom: 16,
+        }
+      : isVerticalView
+      ? {
+          width: VERTICAL_CARD_WIDTH,
+          height: VERTICAL_CARD_HEIGHT,
+          margin: 8,
+        }
+      : {
+          width: CARD_WIDTH,
+          height: CARD_HEIGHT,
+          margin: 8,
+        };
 
-  const handleCardPress = () => {
-    if (isManaging) {
-      onSelect(item.id);
-    } else {
-      onPress(item.id);
-    }
-  };
-
-  // Handle video playback status updates
-  const handlePlaybackStatusUpdate = (status: AVPlaybackStatus) => {
-    if (status.isLoaded) {
-      setIsVideoReady(true);
-      if (videoError) setVideoError(null);
-    } else if (status.error) {
-      console.error('Video playback error:', status.error);
-      setVideoError(status.error);
-    }
-  };
-
-  // Reset video state when component unmounts or item/viewMode changes
-  useEffect(() => {
-    setIsVideoReady(false);
-    setVideoError(null);
-    
-    return () => {
-      if (videoRef.current) {
-        videoRef.current.unloadAsync().catch(err => 
-          console.error('Error unloading video:', err)
-        );
+    const handleCardPress = () => {
+      if (isManaging) {
+        onSelect(item.id);
+      } else {
+        onPress(item.id);
       }
     };
-  }, [item.id, viewMode]);
 
-  return (
-    <TouchableOpacity
-      style={[styles.card, cardStyle, isManaging && styles.manageCard]}
-      onPress={handleCardPress}
-      onLongPress={() => onSelect(item.id)}
-    >
-      {shouldShowVideo ? (
-        // Render video for all view modes
-        <>
-          <Video
-            ref={videoRef}
-            source={{ uri: item.dynamicPortraitVideo! }}
-            style={styles.videoBackground}
-            resizeMode={ResizeMode.COVER}
-            isLooping
-            shouldPlay
-            isMuted
-            onPlaybackStatusUpdate={handlePlaybackStatusUpdate}
-            onError={(error) => {
-              console.error('Video error in character card:', error);
-              setVideoError(error?.toString() || 'Failed to load video');
-            }}
-            useNativeControls={false}
+    // Handle video playback status updates
+    const handlePlaybackStatusUpdate = (status: AVPlaybackStatus) => {
+      if (status.isLoaded) {
+        setIsVideoReady(true);
+        if (videoError) setVideoError(null);
+      } else if (status.error) {
+        console.error('Video playback error:', status.error);
+        setVideoError(status.error);
+      }
+    };
+
+    // Reset video state when component unmounts or item/viewMode changes
+    useEffect(() => {
+      setIsVideoReady(false);
+      setVideoError(null);
+      
+      return () => {
+        if (videoRef.current) {
+          videoRef.current.unloadAsync().catch(err => 
+            console.error('Error unloading video:', err)
+          );
+        }
+      };
+    }, [item.id, viewMode]);
+
+    return (
+      <TouchableOpacity
+        style={[styles.card, cardStyle, isManaging && styles.manageCard]}
+        onPress={handleCardPress}
+        onLongPress={() => onSelect(item.id)}
+      >
+        {shouldShowVideo ? (
+          // Render video for all view modes
+          <>
+            <Video
+              ref={videoRef}
+              source={{ uri: item.dynamicPortraitVideo! }}
+              style={styles.videoBackground}
+              resizeMode={ResizeMode.COVER}
+              isLooping
+              shouldPlay
+              isMuted
+              onPlaybackStatusUpdate={handlePlaybackStatusUpdate}
+              onError={(error) => {
+                console.error('Video error in character card:', error);
+                setVideoError(error?.toString() || 'Failed to load video');
+              }}
+              useNativeControls={false}
+            />
+            
+            {/* Show loading indicator while video is loading */}
+            {!isVideoReady && !videoError && (
+              <View style={styles.videoLoadingContainer}>
+                <ActivityIndicator size="small" color="#ffffff" />
+              </View>
+            )}
+            
+            {/* Show fallback image if video failed to load */}
+            {videoError && (
+              <Image
+                source={
+                  item.backgroundImage
+                    ? { uri: item.backgroundImage }
+                    : require('@/assets/images/default-avatar.png')
+                }
+                style={styles.imageBackground}
+                resizeMode="cover"
+                defaultSource={require('@/assets/images/default-avatar.png')}
+              />
+            )}
+          </>
+        ) : (
+          <Image
+            source={
+              item.backgroundImage
+                ? { uri: item.backgroundImage }
+                : require('@/assets/images/default-avatar.png')
+            }
+            style={styles.imageBackground}
+            resizeMode="cover"
+            defaultSource={require('@/assets/images/default-avatar.png')}
           />
-          
-          {/* Show loading indicator while video is loading */}
-          {!isVideoReady && !videoError && (
-            <View style={styles.videoLoadingContainer}>
-              <ActivityIndicator size="small" color="#ffffff" />
+        )}
+
+        <View style={styles.cardOverlay}>
+          <Text style={styles.cardName}>{item.name}</Text>
+          {/* 右下角按钮组 */}
+          {!isManaging && (
+            <View style={{ flexDirection: 'row', gap: 6 }}>
+              {/* 日记 */}
+              <TouchableOpacity
+                style={styles.diaryButton}
+                onPress={e => {
+                  e.stopPropagation();
+                  onOpenDiary(item.id);
+                }}
+              >
+                <Ionicons name="book-outline" size={18} color="#fff" />
+              </TouchableOpacity>
+              {/* 图库 */}
+              <TouchableOpacity
+                style={styles.diaryButton}
+                onPress={e => {
+                  e.stopPropagation();
+                  onOpenGallerySidebar(item);
+                }}
+              >
+                <Ionicons name="images-outline" size={18} color="#fff" />
+              </TouchableOpacity>
+              {/* 图片生成 */}
+              <TouchableOpacity
+                style={styles.diaryButton}
+                onPress={e => {
+                  e.stopPropagation();
+                  onOpenImageGen(item);
+                }}
+              >
+                <Ionicons name="color-wand-outline" size={18} color="#fff" />
+              </TouchableOpacity>
             </View>
           )}
-          
-          {/* Show fallback image if video failed to load */}
-          {videoError && (
-            <Image
-              source={
-                item.backgroundImage
-                  ? { uri: item.backgroundImage }
-                  : require('@/assets/images/default-avatar.png')
-              }
-              style={styles.imageBackground}
-              resizeMode="cover"
-              defaultSource={require('@/assets/images/default-avatar.png')}
-            />
-          )}
-        </>
-      ) : (
-        <Image
-          source={
-            item.backgroundImage
-              ? { uri: item.backgroundImage }
-              : require('@/assets/images/default-avatar.png')
-          }
-          style={styles.imageBackground}
-          resizeMode="cover"
-          defaultSource={require('@/assets/images/default-avatar.png')}
-        />
-      )}
-
-      <View style={styles.cardOverlay}>
-        <Text style={styles.cardName}>{item.name}</Text>
-        
-        {/* Add diary button if not in managing mode */}
-        {!isManaging && (
-          <TouchableOpacity 
-            style={styles.diaryButton}
-            onPress={(e) => {
-              e.stopPropagation();
-              onOpenDiary(item.id);
-            }}
-          >
-            <Ionicons name="book-outline" size={18} color="#fff" />
-          </TouchableOpacity>
-        )}
-      </View>
-
-      {isManaging && (
-        <View
-          style={[styles.checkboxContainer, isSelected && styles.checkboxSelected]}
-        >
-          {isSelected && <Ionicons name="checkmark" size={16} color="white" />}
         </View>
-      )}
-    </TouchableOpacity>
-  );
-});
+
+        {isManaging && (
+          <View
+            style={[styles.checkboxContainer, isSelected && styles.checkboxSelected]}
+          >
+            {isSelected && <Ionicons name="checkmark" size={16} color="black" />}
+          </View>
+        )}
+      </TouchableOpacity>
+    );
+  }
+);
 
 interface Styles {
   safeArea: ViewStyle;
@@ -774,6 +973,16 @@ interface Styles {
   importLoadingOverlay: ViewStyle;
   importLoadingBox: ViewStyle;
   importLoadingText: TextStyle;
+  topBarContainer: ViewStyle;
+  topBarBackground: ViewStyle;
+  topBarOverlay: ViewStyle;
+  topBarContent: ViewStyle;
+  topBarMenuButton: ViewStyle;
+  topBarTitleContainer: ViewStyle;
+  topBarTitle: TextStyle;
+  topBarActions: ViewStyle;
+  topBarActionButton: ViewStyle;
+  topBarActiveActionButton: ViewStyle;
 }
 
 const styles = StyleSheet.create<Styles>({
@@ -999,8 +1208,58 @@ const styles = StyleSheet.create<Styles>({
     fontWeight: '500',
     textAlign: 'center',
   },
+  topBarContainer: {
+    position: 'relative',
+    width: '100%',
+    zIndex: 100,
+  },
+  topBarBackground: {
+    ...StyleSheet.absoluteFillObject,
+    width: '100%',
+    height: '100%',
+  },
+  topBarOverlay: {
+    ...StyleSheet.absoluteFillObject,
+    backgroundColor: 'rgba(0,0,0,0.3)',
+  },
+  topBarContent: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingHorizontal: 12,
+    height: '100%',
+  },
+  topBarMenuButton: {
+    padding: 8,
+  },
+  topBarTitleContainer: {
+    flex: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingHorizontal: 8,
+  },
+  topBarTitle: {
+    color: '#fff',
+    fontSize: 18,
+    fontWeight: '600',
+    textShadowColor: 'rgba(0, 0, 0, 0.75)',
+    textShadowOffset: { width: 1, height: 1 },
+    textShadowRadius: 2,
+  },
+  topBarActions: {
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
+  topBarActionButton: {
+    padding: 8,
+    marginLeft: 4,
+    backgroundColor: 'rgba(255,255,255,0.1)',
+    borderRadius: 20,
+  },
+  topBarActiveActionButton: {
+    backgroundColor: COLOR_BUTTON,
+  },
 });
 
 export default CharactersScreen;
-
-

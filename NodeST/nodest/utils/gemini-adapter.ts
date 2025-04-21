@@ -410,36 +410,66 @@ export class GeminiAdapter {
      */
     private async executeGenerateContentWithCloudService(contents: ChatMessage[]): Promise<string> {
         console.log('[Gemini适配器] 使用云服务生成内容');
-        
         try {
-            // Convert Gemini-style messages to standard format expected by cloud service
-            const standardMessages = contents.map(msg => {
-                // Get text from message parts
-                let contentText = '';
-                if (msg.parts && Array.isArray(msg.parts)) {
-                    contentText = msg.parts.map(part => {
-                        if (typeof part === 'object' && part.text) {
-                            return part.text;
+            // 检查是否需要将合成内容（如记忆/表格/搜索）单独插入为倒数第二条消息
+            let standardMessages: { role: string; content: string }[] = [];
+            if (contents.length >= 2) {
+                const penultimate = contents[contents.length - 2];
+                const last = contents[contents.length - 1];
+                // 检查倒数第二条是否为合成内容（如<mem>、<websearch>、【角色长期记忆表格】等）
+                const penultimateText = penultimate.parts?.[0]?.text || "";
+                const isMemoryOrSearch =
+                    /<mem>[\s\S]*<\/mem>/i.test(penultimateText) ||
+                    /<websearch>[\s\S]*<\/websearch>/i.test(penultimateText) ||
+                    penultimateText.includes("【角色长期记忆表格】");
+                if (isMemoryOrSearch) {
+                    // 转换历史消息
+                    for (let i = 0; i < contents.length - 2; i++) {
+                        const msg = contents[i];
+                        let contentText = '';
+                        if (msg.parts && Array.isArray(msg.parts)) {
+                            contentText = msg.parts.map(part => (typeof part === 'object' && part.text) ? part.text : '').join(' ').trim();
                         }
-                        return '';
-                    }).join(' ').trim();
+                        let role = msg.role;
+                        standardMessages.push({ role, content: contentText });
+                    }
+                    // 插入合成内容为model
+                    standardMessages.push({
+                        role: "model",
+                        content: penultimateText
+                    });
+                    // 用户消息始终为最后一条
+                    let userText = last.parts?.[0]?.text || "";
+                    standardMessages.push({
+                        role: last.role === 'model' ? 'user' : last.role,
+                        content: userText
+                    });
+                } else {
+                    // 没有特殊合成内容，按原有逻辑转换
+                    standardMessages = contents.map(msg => {
+                        let contentText = '';
+                        if (msg.parts && Array.isArray(msg.parts)) {
+                            contentText = msg.parts.map(part => (typeof part === 'object' && part.text) ? part.text : '').join(' ').trim();
+                        } 
+                        let role = msg.role;
+                        return { role, content: contentText };
+                    });
                 }
-                
-                // Map Gemini roles to standard roles
-                let role = msg.role;
-                if (role === 'model') role = 'assistant';
-                
-                return {
-                    role: role,
-                    content: contentText
-                };
-            });
-            
+            } else {
+                // 消息不足两条，按原有逻辑转换
+                standardMessages = contents.map(msg => {
+                    let contentText = '';
+                    if (msg.parts && Array.isArray(msg.parts)) {
+                        contentText = msg.parts.map(part => (typeof part === 'object' && part.text) ? part.text : '').join(' ').trim();
+                    }
+                    let role = msg.role;
+                    return { role, content: contentText };
+                });
+            }
+
             console.log('[Gemini适配器] 转换后的消息格式:', JSON.stringify(standardMessages, null, 2));
-            
             const startTime = Date.now();
-            
-            // Use the generateChatCompletion method for cloud service
+
             const response = await CloudServiceProvider.generateChatCompletion(
                 standardMessages,
                 {
@@ -448,7 +478,7 @@ export class GeminiAdapter {
                     max_tokens: 8192
                 }
             );
-            
+
             const endTime = Date.now();
             console.log(`[Gemini适配器] 云服务请求完成，耗时: ${endTime - startTime}ms`);
             console.log(`[Gemini适配器] 云服务响应状态: ${response.status} ${response.statusText}`);
@@ -469,7 +499,7 @@ export class GeminiAdapter {
                     console.log(`[Gemini适配器] 响应前100个字符: ${responseText.substring(0, 100)}...`);
                     
                     this.conversationHistory.push({
-                        role: "assistant",
+                        role: "model",
                         parts: [{ text: responseText }]
                     });
                     return responseText;
@@ -631,7 +661,6 @@ export class GeminiAdapter {
                     
                     // Map Gemini roles to standard roles
                     let role = msg.role;
-                    if (role === 'model') role = 'assistant';
                     
                     return {
                         role: role,
@@ -711,7 +740,7 @@ export class GeminiAdapter {
                 console.log(`[Gemini适配器] 响应前100个字符: ${responseText.substring(0, 100)}...`);
                 
                 this.conversationHistory.push({
-                    role: "assistant",
+                    role: "model",
                     parts: [{ text: responseText }]
                 });
                 return responseText;
@@ -729,7 +758,7 @@ export class GeminiAdapter {
                 }
                 
                 this.conversationHistory.push({
-                    role: "assistant",
+                    role: "model",
                     parts: [{ text: responseText }]
                 });
                 return responseText;
@@ -1644,7 +1673,7 @@ export class GeminiAdapter {
             // Step 1: 准备记忆部分
             console.log(`[Gemini适配器] 处理记忆部分，发现 ${memoryResults.results.length} 条记忆`);
             
-            let memorySection = `<mem>\n系统检索到的记忆内容：\n`;
+            let memorySection = `<mem>\n[系统检索到的记忆内容]：\n`;
             // 格式化记忆结果
             memoryResults.results.forEach((item: any, index: number) => {
                 memorySection += `${index + 1}. ${item.memory}\n`;
@@ -1690,35 +1719,29 @@ export class GeminiAdapter {
             // Step 3: 构建融合提示词
             console.log(`[Gemini适配器] 构建融合提示词，结合记忆和网络搜索结果`);
             
-            let combinedPrompt = `${userQuery}\n\n`;
-            
-            // 添加记忆和搜索结果
-            combinedPrompt += memorySection;
-            combinedPrompt += searchSection;
-            
-            // 添加融合的响应指南
-            combinedPrompt += `<response_guidelines>
-- 请结合上面的记忆内容和联网搜索结果，全面回答用户的问题。
-- **首先**，在回复中用<mem></mem>标签包裹你对记忆内容的引用和回忆过程，例如:
-  <mem>我记得你之前提到过关于这个话题，当时我们讨论了...</mem>
-- **然后**，用<websearch></websearch>标签包裹你对网络搜索结果的解释和引用，例如:
-  <websearch>根据最新的网络信息，关于这个问题的专业观点是...</websearch>
-- 确保回复能够同时**有效整合记忆和网络信息**，让内容更加全面和有用。
-- 回复的语气和风格必须与角色人设保持一致。
-- - **不要在回复中使用多组<mem>或<websearch>标签，整个回复只能有一组<mem>或<websearch>标签。**
-</response_guidelines>`;
+            let combinedPrompt = memorySection + searchSection + `<response_guidelines>
+            - 我会结合上面的记忆内容和联网搜索结果，全面回答用户的问题。
+            - **首先**，我会在回复中用<mem></mem>标签包裹我对记忆内容的引用和回忆过程，例如:
+              <mem>我记得你之前提到过关于这个话题，当时我们讨论了...</mem>
+            - **然后**，我会用<websearch></websearch>标签包裹我对网络搜索结果的解释和引用，例如:
+              <websearch>根据最新的网络信息，关于这个问题的专业观点是...</websearch>
+            - 确保回复能够同时**有效整合记忆和网络信息**，让内容更加全面和有用。
+            - 我回复的语气和风格一定会与角色人设保持一致。
+            - 我**不会在回复中使用多组<mem>或<websearch>标签，整个回复只能有一组<mem>或<websearch>标签。**
+      </response_guidelines>`;
             
             // 记录融合提示词的长度
             console.log(`[Gemini适配器] 融合提示词构建完成，长度: ${combinedPrompt.length}`);
             
             // 使用标准的生成内容方法生成最终回复
-            // 保持原始请求结构，只修改用户消息内容
+            // 插入顺序：历史消息 + model(记忆/搜索内容) + 用户消息
             const finalPrompt: ChatMessage[] = [
-                ...contents.slice(0, -1), // 保留之前的对话历史，除了最后一条
+                ...contents.slice(0, -1),
                 {
-                    role: "user",
+                    role: "model",
                     parts: [{ text: combinedPrompt }]
-                }
+                },
+                contents[contents.length - 1]
             ];
             
             return await this.generateContent(finalPrompt);
@@ -1789,7 +1812,7 @@ export class GeminiAdapter {
                     const tableData = await getCharacterTablesData(characterId, conversationId);
                     console.log('[Gemini适配器][表格记忆] getCharacterTablesData 返回:', tableData);
                     if (tableData.success && tableData.tables.length > 0) {
-                        tableMemoryText += `【角色长期记忆表格】\n`;
+                        tableMemoryText += `[角色长期记忆表格]\n`;
                         tableData.tables.forEach(table => {
                             const headerRow = '| ' + table.headers.join(' | ') + ' |';
                             const sepRow = '| ' + table.headers.map(() => '---').join(' | ') + ' |';
@@ -1826,24 +1849,25 @@ export class GeminiAdapter {
 
             // 添加响应指南
             combinedPrompt += `<response_guidelines>
-- 除了对用户消息的回应之外，**务必** 结合记忆内容进行回复。
-- **根据角色设定，聊天上下文和记忆内容**，输出你对检索记忆的回忆过程，并用<mem></mem>包裹。
+- 除了对用户消息的回应之外，我**一定** 会结合记忆内容进行回复。
+- **我会根据角色设定，聊天上下文和记忆内容**，输出我对检索记忆的回忆过程，并用<mem></mem>包裹。
   - 示例: <mem>我想起起您上次提到过类似的问题，当时...</mem>
-- 确保回复保持角色人设的一致性。
-- - **不要在回复中使用多组<mem>，整个回复只能有一组<mem>标签。**
+- 我会确保回复保持角色人设的一致性。
+- - **我不会在回复中使用多组<mem>，整个回复只能有一组<mem>标签。**
 </response_guidelines>`;
 
             // Log prepared prompt
             console.log('[Gemini适配器] 准备了带记忆结果的提示:', combinedPrompt.substring(0, 200) + '...');
 
             // 使用标准的生成内容方法生成最终回复
-            // 保持原始请求结构，只修改用户消息内容
+            // 插入顺序：历史消息 + model(记忆内容) + 用户消息
             const finalPrompt: ChatMessage[] = [
-                ...contents.slice(0, -1), // 保留之前的对话历史，除了最后一条
+                ...contents.slice(0, -1),
                 {
-                    role: "user",
+                    role: "model",
                     parts: [{ text: combinedPrompt }]
-                }
+                },
+                contents[contents.length - 1]
             ];
 
             return await this.generateContent(finalPrompt);
@@ -1906,20 +1930,21 @@ export class GeminiAdapter {
             
             // 添加响应指南
             combinedPrompt += `<response_guidelines>
-- 除了对用户消息的回应之外，**务必** 结合联网搜索内容进行回复。
-- **根据角色设定和聊天上下文**，输出你对联网检索结果的解释，并用<websearch></websearch>包裹。
+- 除了对用户消息的回应之外，我**一定** 会结合联网搜索内容进行回复。
+- **我会根据角色设定和聊天上下文**，输出我对联网检索结果的解释，并用<websearch></websearch>包裹。
   - 示例: <websearch>根据网络信息，[相关领域的专家]认为... 这可能对您有帮助。</websearch>
-- 确保回复保持角色人设的一致性。
+- 我会确保回复保持角色人设的一致性。
 </response_guidelines>`;
             
             // 使用标准的生成内容方法生成最终回复
-            // 保持原始请求结构，只修改用户消息内容
+            // 插入顺序：历史消息 + model(搜索内容) + 用户消息
             const finalPrompt: ChatMessage[] = [
-                ...contents.slice(0, -1), // 保留之前的对话历史，除了最后一条
+                ...contents.slice(0, -1),
                 {
-                    role: "user",
+                    role: "model",
                     parts: [{ text: combinedPrompt }]
-                }
+                },
+                contents[contents.length - 1]
             ];
             
             return await this.generateContent(finalPrompt);
@@ -1928,13 +1953,14 @@ export class GeminiAdapter {
             
             // 如果搜索失败，通知用户并使用标准方式回答
             const fallbackPrompt: ChatMessage[] = [
-                ...contents.slice(0, -1), // 保留之前的对话历史，除了最后一条
+                ...contents.slice(0, -1),
                 {
-                    role: "user",
+                    role: "model",
                     parts: [{ 
                         text: `${searchQuery}\n\n(注意：搜索引擎尝试搜索相关信息，但搜索功能暂时不可用。请根据你已有的知识回答我的问题。)` 
                     }]
-                }
+                },
+                contents[contents.length - 1]
             ];
             
             return await this.generateContent(fallbackPrompt);

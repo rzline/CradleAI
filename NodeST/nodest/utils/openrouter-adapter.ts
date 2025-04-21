@@ -388,30 +388,22 @@ export class OpenRouterAdapter {
       // Step 3: 构建融合提示词
       console.log(`【OpenRouterAdapter】 构建融合提示词，结合记忆和网络搜索结果`);
       
-      let combinedPrompt = `${searchQuery}\n\n`;
-      
-      // 添加记忆和搜索结果
-      combinedPrompt += memorySection;
-      combinedPrompt += searchSection;
-      
-      // 添加融合的响应指南
-      combinedPrompt += `<response_guidelines>
-- 请结合上面的记忆内容和联网搜索结果，全面回答用户的问题。
-- **首先**，在回复中用<mem></mem>标签包裹你对记忆内容的引用和回忆过程，例如:
-  <mem>我记得你之前提到过关于这个话题，当时我们讨论了...</mem>
-- **然后**，用<websearch></websearch>标签包裹你对网络搜索结果的解释和引用，例如:
-  <websearch>根据最新的网络信息，关于这个问题的专业观点是...</websearch>
-- 确保回复能够同时**有效整合记忆和网络信息**，让内容更加全面和有用。
-- 回复的语气和风格必须与角色人设保持一致。
-</response_guidelines>`;
+      let combinedPrompt = memorySection + searchSection + `<response_guidelines>
+            - 我会结合上面的记忆内容和联网搜索结果，全面回答用户的问题。
+            - **首先**，我会在回复中用<mem></mem>标签包裹我对记忆内容的引用和回忆过程，例如:
+              <mem>我记得你之前提到过关于这个话题，当时我们讨论了...</mem>
+            - **然后**，我会用<websearch></websearch>标签包裹我对网络搜索结果的解释和引用，例如:
+              <websearch>根据最新的网络信息，关于这个问题的专业观点是...</websearch>
+            - 确保回复能够同时**有效整合记忆和网络信息**，让内容更加全面和有用。
+            - 我回复的语气和风格一定会与角色人设保持一致。
+            - 我**不会在回复中使用多组<mem>或<websearch>标签，整个回复只能有一组<mem>或<websearch>标签。**
+      </response_guidelines>`;
       
       // 记录融合提示词的长度
       console.log(`【OpenRouterAdapter】 融合提示词构建完成，长度: ${combinedPrompt.length}`);
       
-      // 将搜索结果转换为适当的格式
+      // 插入顺序：历史消息 + assistant(记忆/搜索内容) + 用户消息
       let formattedContents = [];
-      
-      // 转换历史消息
       for (let i = 0; i < contents.length - 1; i++) {
         const msg = contents[i];
         if (msg.content || (msg.parts && msg.parts[0]?.text)) {
@@ -421,13 +413,16 @@ export class OpenRouterAdapter {
           });
         }
       }
-      
-      // 添加最后的用户查询和组合提示词
       formattedContents.push({
-        role: "user",
+        role: "assistant",
         content: combinedPrompt
       });
-      
+      const lastMsg = contents[contents.length - 1];
+      formattedContents.push({
+        role: lastMsg.role,
+        content: lastMsg.content || (lastMsg.parts && lastMsg.parts[0]?.text) || ""
+      });
+
       // 使用组合提示词生成最终回复
       return await this.askLLM(formattedContents);
     } catch (error) {
@@ -534,19 +529,18 @@ export class OpenRouterAdapter {
 
       // 添加响应指南
       combinedPrompt += `<response_guidelines>
-- 除了对用户消息的回应之外，**务必** 结合记忆内容进行回复。
-- **根据角色设定，聊天上下文和记忆内容**，输出你对检索记忆的回忆过程，并用<mem></mem>包裹。
-  - 示例: <mem>我想起您上次提到过类似的问题，当时...</mem>
-- 确保回复保持角色人设的一致性。
+- 除了对用户消息的回应之外，我**一定** 会结合记忆内容进行回复。
+- **我会根据角色设定，聊天上下文和记忆内容**，输出我对检索记忆的回忆过程，并用<mem></mem>包裹。
+  - 示例: <mem>我想起起您上次提到过类似的问题，当时...</mem>
+- 我会确保回复保持角色人设的一致性。
+- - **我不会在回复中使用多组<mem>，整个回复只能有一组<mem>标签。**
 </response_guidelines>`;
 
       // 记录准备的提示词
       console.log('【OpenRouterAdapter】 准备了带记忆结果的提示:', combinedPrompt.substring(0, 200) + '...');
 
-      // 将记忆提示转换为适当的格式
+      // 插入顺序：历史消息 + assistant(记忆内容) + 用户消息
       let formattedContents = [];
-
-      // 转换历史消息
       for (let i = 0; i < contents.length - 1; i++) {
         const msg = contents[i];
         if (msg.content || (msg.parts && msg.parts[0]?.text)) {
@@ -556,11 +550,14 @@ export class OpenRouterAdapter {
           });
         }
       }
-
-      // 添加最后的用户查询和记忆结果
       formattedContents.push({
-        role: "user",
+        role: "assistant",
         content: combinedPrompt
+      });
+      const lastMsg = contents[contents.length - 1];
+      formattedContents.push({
+        role: lastMsg.role,
+        content: lastMsg.content || (lastMsg.parts && lastMsg.parts[0]?.text) || ""
       });
 
       // 使用记忆提示词生成最终回复
@@ -613,10 +610,8 @@ export class OpenRouterAdapter {
       // 构建带有搜索结果的提示词
       const searchPrompt = `${searchQuery}\n\n<websearch>\n搜索引擎返回的联网检索结果：\n${formattedResults}\n</websearch>\n\n请基于以上搜索结果回答用户的问题。`;
       
-      // 将搜索结果转换为适当的格式
+      // 插入顺序：历史消息 + assistant(搜索内容) + 用户消息
       let formattedContents = [];
-      
-      // 转换历史消息
       for (let i = 0; i < contents.length - 1; i++) {
         const msg = contents[i];
         if (msg.content || (msg.parts && msg.parts[0]?.text)) {
@@ -626,13 +621,16 @@ export class OpenRouterAdapter {
           });
         }
       }
-      
-      // 添加带搜索结果的提示词
       formattedContents.push({
-        role: "user",
+        role: "assistant",
         content: searchPrompt
       });
-      
+      const lastMsg = contents[contents.length - 1];
+      formattedContents.push({
+        role: lastMsg.role,
+        content: lastMsg.content || (lastMsg.parts && lastMsg.parts[0]?.text) || ""
+      });
+
       // 使用搜索结果生成回复
       return await this.askLLM(formattedContents);
     } catch (error) {

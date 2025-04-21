@@ -473,7 +473,7 @@ export async function processChat(
     userName?: string; 
     aiName?: string; 
     isMultiRound?: boolean;
-    chatContent?: string; // 添加chatContent选项，允许直接传入已提取的对话内容
+    chatContent?: string;
   } = {}
 ): Promise<{ success: boolean; updatedSheets: string[] }> {
   if (!tableMemoryEnabled) {
@@ -482,7 +482,6 @@ export async function processChat(
   }
   
   try {
-    // FIXED: Ensure consistent ID handling and prevent type mismatches
     const safeCharacterId = String(characterId);
     const safeConversationId = conversationId ? String(conversationId) : safeCharacterId;
     
@@ -492,27 +491,50 @@ export async function processChat(
     const existingTables = await TableMemory.API.getCharacterSheets(safeCharacterId, safeConversationId);
     console.log(`[TableMemoryIntegration] Found ${existingTables.length} existing tables`);
     
-    // 准备消息内容 - 如果提供了chatContent则直接使用，否则从messages提取
-    let messageContent: string;
-    
-    if (options.chatContent) {
-      // 使用已提取的对话内容
-      messageContent = options.chatContent;
-      console.log('[TableMemoryIntegration] 使用预先提取的对话内容');
-    } else if (typeof messages === 'string') {
-      // 如果是纯文本，直接使用
-      messageContent = messages;
-    } else {
-      // 从消息数组提取内容
-      messageContent = messages.map(m => {
-        const role = m.role === 'assistant' ? (options.aiName || 'AI') : (options.userName || '用户');
-        const content = typeof m.content === 'string' ? m.content : JSON.stringify(m.content);
-        return `${role}: ${content}`;
-      }).join('\n\n');
+    // 优先使用 options.chatContent，如果没有则尝试自动获取最近的消息内容
+    let messageContent: string | undefined = options.chatContent;
+    if (!messageContent) {
+      if (typeof messages === 'string') {
+        messageContent = messages;
+      } else if (messages && Array.isArray(messages) && messages.length > 0) {
+        // 从消息数组提取内容
+        messageContent = messages.map(m => {
+          const role = m.role === 'assistant' ? (options.aiName || 'AI') : (options.userName || '用户');
+          const content = typeof m.content === 'string' ? m.content : JSON.stringify(m.content);
+          return `${role}: ${content}`;
+        }).join('\n\n');
+      } else {
+        // 自动调用 StorageAdapter 获取最近的消息
+        try {
+          const { StorageAdapter } = require('../../NodeST/nodest/utils/storage-adapter');
+          const recentMessages = await StorageAdapter.getRecentMessages(safeConversationId, 20);
+          if (recentMessages && recentMessages.length > 0) {
+            interface MessagePart {
+              text: string;
+            }
+
+            interface RecentMessage {
+              role: string;
+              parts?: MessagePart[];
+              content?: string;
+            }
+
+            messageContent = recentMessages.map((msg: RecentMessage) => {
+              const role: string = msg.role === 'model' || msg.role === 'assistant' ? (options.aiName || 'AI') : (options.userName || '用户');
+              // 兼容 parts 数组
+              const content: string = msg.parts?.[0]?.text || msg.content || '';
+              return `${role}: ${content}`;
+            }).join('\n\n');
+            console.log('[TableMemoryIntegration] 自动从StorageAdapter获取最近对话内容');
+          }
+        } catch (err) {
+          console.warn('[TableMemoryIntegration] 获取StorageAdapter最近消息失败:', err);
+        }
+      }
     }
     
     // 记录日志
-    console.log(`[TableMemoryIntegration] 准备处理消息内容(前50字符): ${messageContent.substring(0, 50)}...`);
+    console.log(`[TableMemoryIntegration] 准备处理消息内容(前50字符): ${messageContent?.substring(0, 50) ?? '[无内容]'}...`);
     
     // 将消息传递给插件的processChat方法
     const result = await TableMemory.API.processChat(messages, {
@@ -521,7 +543,7 @@ export async function processChat(
       userName: options.userName,
       aiName: options.aiName,
       isMultiRound: options.isMultiRound,
-      chatContent: options.chatContent // 显式传递 chatContent
+      chatContent: messageContent // 显式传递 chatContent
     });
     
     return {

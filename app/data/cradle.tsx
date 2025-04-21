@@ -46,6 +46,7 @@ interface UserContextProps {
   updateAvatar: (uri: string) => Promise<void>;
 }
 
+const HEADER_HEIGHT = 90;
 
 // Updated tabs - removed settings and import tabs
 const TABS = [
@@ -1601,6 +1602,21 @@ const handleSetAsAvatar = async (imageId: string) => {
     };
   }, []);
 
+  // 新的顶部栏，完全对齐TopBarWithBackground.tsx
+  const renderHeader = () => (
+    <View style={[styles.topBarContainer, { height: HEADER_HEIGHT, paddingTop: Platform.OS === 'ios' ? 44 : (StatusBar.currentHeight || 0) }]}>
+      <View style={styles.topBarOverlay} />
+      <View style={styles.topBarContent}>
+        <View style={styles.topBarTitleContainer}>
+          <Text style={styles.topBarTitle}>摇篮</Text>
+        </View>
+        <View style={styles.topBarActions}>
+          {/* 可根据需要添加更多按钮 */}
+        </View>
+      </View>
+    </View>
+  );
+
   return (
     <KeyboardAvoidingView 
       style={[styles.safeArea, { paddingTop: insets.top }]}
@@ -1608,15 +1624,7 @@ const handleSetAsAvatar = async (imageId: string) => {
       keyboardVerticalOffset={Platform.OS === "ios" ? 64 : 0}
     >
       <StatusBar barStyle="light-content" />
-      
-      {/* Header with simplified design */}
-      <View style={styles.header}>
-        <View style={styles.headerTitleContainer}>
-          <Text style={styles.headerTitle}>摇篮</Text>
-        </View>
-        {renderTabs()}
-      </View>
-      
+      {renderHeader()}
       {/* Main content area - only show main tab */}
       <View style={styles.tabContentContainer}>
         {renderMainTab()}
@@ -1828,46 +1836,6 @@ const styles = StyleSheet.create({
     color: '#aaa',
     fontSize: 14,
   },
-  header: {
-    backgroundColor: '#282828',
-    borderBottomWidth: 1,
-    borderBottomColor: 'rgba(255,255,255,0.1)',
-  },
-  headerTitleContainer: {
-    paddingHorizontal: 16,
-    paddingVertical: 16,
-  },
-  headerTitle: {
-    fontSize: 22,
-    fontWeight: 'bold',
-    color: '#fff',
-  },
-  tabsContainer: {
-    flexDirection: 'row',
-  },
-  tab: {
-    flex: 1,
-    paddingVertical: 12,
-    alignItems: 'center',
-    position: 'relative',
-  },
-  activeTab: {
-    backgroundColor: 'rgba(255,255,255,0.05)',
-  },
-  activeTabText: {
-    color: '#fff',
-    fontWeight: '600',
-  },
-  activeTabIndicator: {
-    position: 'absolute',
-    bottom: 0,
-    left: 0,
-    right: 0,
-    height: 3,
-    backgroundColor: theme.colors.primary,
-    borderTopLeftRadius: 3,
-    borderTopRightRadius: 3,
-  },
   tabContentContainer: {
     flex: 1,
   },
@@ -1878,31 +1846,6 @@ const styles = StyleSheet.create({
   tabPageContent: {
     flexGrow: 1,
     paddingBottom: 24,
-  },
-  statusBar: {
-    backgroundColor: 'rgba(0,0,0,0.2)',
-    paddingVertical: 8,
-    paddingHorizontal: 16,
-  },
-  statusContainer: {
-    flexDirection: 'row',
-    alignItems: 'center',
-  },
-  statusIndicator: {
-    width: 8,
-    height: 8,
-    borderRadius: 4,
-    marginRight: 8,
-  },
-  statusActive: {
-    backgroundColor: '#4CAF50',
-  },
-  statusInactive: {
-    backgroundColor: '#F44336',
-  },
-  statusText: {
-    color: '#ddd',
-    fontSize: 14,
   },
   mainContent: {
     flex: 1,
@@ -2325,5 +2268,41 @@ const styles = StyleSheet.create({
   actionsGradient: {
     paddingVertical: 8,
     paddingHorizontal: 6,
+  },
+  // 新增顶部栏样式，完全对齐TopBarWithBackground
+  topBarContainer: {
+    position: 'relative',
+    width: '100%',
+    zIndex: 100,
+  },
+  topBarOverlay: {
+    ...StyleSheet.absoluteFillObject,
+    backgroundColor: 'rgba(0,0,0,0.3)',
+  },
+  topBarContent: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: 12,
+    height: '100%',
+  },
+  topBarTitleContainer: {
+    alignItems: 'flex-start',
+    justifyContent: 'center',
+    paddingHorizontal: 0,
+    flex: 1,
+  },
+  topBarTitle: {
+    color: '#fff',
+    fontSize: 18,
+    fontWeight: '600',
+    textShadowColor: 'rgba(0, 0, 0, 0.75)',
+    textShadowOffset: { width: 1, height: 1 },
+    textShadowRadius: 2,
+    textAlign: 'left',
+  },
+  topBarActions: {
+    flexDirection: 'row',
+    alignItems: 'center',
   },
 });

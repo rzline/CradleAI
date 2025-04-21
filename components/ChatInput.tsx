@@ -1226,14 +1226,6 @@ const styles = StyleSheet.create({
     shadowRadius: 5,
     maxHeight: 250, // Made slightly smaller to save space
   },
-  menuCloseButton: {
-    alignSelf: 'center',
-    padding: 6, // Reduced padding to save space
-    marginTop: 2,
-    marginBottom: 2,
-    borderRadius: 15,
-    backgroundColor: 'rgba(255, 255, 255, 0.15)',
-  },
   actionMenuScroll: {
     paddingHorizontal: 8,
   },

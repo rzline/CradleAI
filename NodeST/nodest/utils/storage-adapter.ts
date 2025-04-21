@@ -86,7 +86,7 @@ export class StorageAdapter {
    * @param count Maximum number of messages to retrieve (default: 20)
    * @returns Array of recent chat messages
    */
-  static async getRecentMessages(conversationId: string, count: number = 20): Promise<ChatMessage[]> {
+  static async getRecentMessages(conversationId: string, count: number = 10): Promise<ChatMessage[]> {
     const cleanMessages = await this.getCleanChatHistory(conversationId);
     return cleanMessages.slice(Math.max(0, cleanMessages.length - count));
   }

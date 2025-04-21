@@ -12,8 +12,10 @@ import {
   KeyboardAvoidingView,
   Platform,
   Image,
+  Dimensions,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
+import { BlurView } from 'expo-blur';
 import { Character, CradleCharacter } from '@/shared/types';
 import { useUser } from '@/constants/UserContext';
 import { NodeSTManager } from '@/utils/NodeSTManager';
@@ -1684,12 +1686,10 @@ ${JSON.stringify(characterJsonData, null, 2)}
       animationType="slide"
       transparent={true}
       onRequestClose={onClose}
+      statusBarTranslucent
     >
-      <KeyboardAvoidingView
-        behavior={Platform.OS === "ios" ? "padding" : "height"}
-        style={styles.container}
-      >
-        <View style={styles.modalContent}>
+      <View style={styles.fullScreenContainer}>
+        <BlurView intensity={30} tint="dark" style={styles.fullScreenBlurView}>
           {/* Header */}
           <View style={styles.header}>
             <Text style={styles.headerTitle}>编辑角色：{character.name}</Text>
@@ -1708,7 +1708,7 @@ ${JSON.stringify(characterJsonData, null, 2)}
               </TouchableOpacity>
             </View>
           </View>
-          
+
           {/* Action buttons bar */}
           <View style={styles.actionBar}>
             <TouchableOpacity
@@ -1732,7 +1732,6 @@ ${JSON.stringify(characterJsonData, null, 2)}
                 预览更改{hasChanges ? ' ✓' : ''}
               </Text>
             </TouchableOpacity>
-            
             <TouchableOpacity
               style={[
                 styles.actionButton,
@@ -1754,7 +1753,6 @@ ${JSON.stringify(characterJsonData, null, 2)}
                 应用更改{hasChanges ? ' ✓' : ''}
               </Text>
             </TouchableOpacity>
-            
             <TouchableOpacity
               style={[
                 styles.actionButton,
@@ -1783,18 +1781,14 @@ ${JSON.stringify(characterJsonData, null, 2)}
             <>
               {/* Chat area with background image */}
               <View style={styles.chatAreaContainer}>
-                {/* Character background image as chat background */}
                 {getBackgroundImage() && (
                   <Image
                     source={{ uri: getBackgroundImage() || undefined }}
                     style={styles.chatBackgroundImage}
-                    blurRadius={5} // Apply a slight blur to improve readability
+                    blurRadius={5}
                   />
                 )}
-                
-                {/* Semi-transparent overlay for better readability */}
                 <View style={styles.chatBackgroundOverlay} />
-                
                 <ScrollView
                   ref={scrollViewRef}
                   style={styles.chatArea}
@@ -1803,13 +1797,12 @@ ${JSON.stringify(characterJsonData, null, 2)}
                   {renderChatBubbles()}
                   {isProcessing && (
                     <View style={styles.loadingContainer}>
-                      <ActivityIndicator size="small" color="#4CAF50" />
+                      <ActivityIndicator size="small" color="#ff9f1c" />
                       <Text style={styles.loadingText}>处理中...</Text>
                     </View>
                   )}
                 </ScrollView>
               </View>
-
               {/* Input area */}
               <View style={styles.inputContainer}>
                 <TextInput
@@ -1831,45 +1824,50 @@ ${JSON.stringify(characterJsonData, null, 2)}
                   <Ionicons 
                     name="send" 
                     size={24} 
-                    color={input.trim() && !isProcessing ? "#4CAF50" : "#666"} 
+                    color={input.trim() && !isProcessing ? "#ff9f1c" : "#666"} 
                   />
                 </TouchableOpacity>
               </View>
             </>
           )}
-        </View>
-      </KeyboardAvoidingView>
+        </BlurView>
+      </View>
     </Modal>
   );
 }
 
 const styles = StyleSheet.create({
-  container: {
+  fullScreenContainer: {
     flex: 1,
-    backgroundColor: 'rgba(0,0,0,0.5)',
+    backgroundColor: 'rgba(0,0,0,0.7)',
   },
-  modalContent: {
+  fullScreenBlurView: {
     flex: 1,
-    backgroundColor: '#1E1E1E',
-    margin: 0,
-    marginTop: 40,
-    borderTopLeftRadius: 20,
-    borderTopRightRadius: 20,
+    borderRadius: 0,
+    width: '100%',
+    height: '100%',
     overflow: 'hidden',
   },
   header: {
-    backgroundColor: '#333',
-    padding: 16,
     flexDirection: 'row',
-    alignItems: 'center',
     justifyContent: 'space-between',
+    alignItems: 'center',
+    paddingTop: Platform.select({
+      ios: 44,
+      android: 24,
+      default: 24,
+    }),
+    paddingBottom: 8,
+    paddingHorizontal: 16,
     borderBottomWidth: 1,
-    borderBottomColor: '#444',
+    borderBottomColor: 'rgba(255, 255, 255, 0.1)',
+    backgroundColor: 'transparent',
   },
   headerTitle: {
     fontSize: 18,
     fontWeight: 'bold',
     color: '#fff',
+    flex: 1,
   },
   headerButtons: {
     flexDirection: 'row',
@@ -1882,9 +1880,9 @@ const styles = StyleSheet.create({
   actionBar: {
     flexDirection: 'row',
     padding: 8,
-    backgroundColor: '#282828',
+    backgroundColor: 'rgba(40,40,40,0.95)',
     borderBottomWidth: 1,
-    borderBottomColor: '#333',
+    borderBottomColor: 'rgba(255,255,255,0.08)',
   },
   actionButton: {
     flexDirection: 'row',
@@ -1894,7 +1892,7 @@ const styles = StyleSheet.create({
     marginRight: 12,
   },
   actionButtonActive: {
-    backgroundColor: '#4A90E2',
+    backgroundColor: '#ff9f1c',
   },
   actionButtonDisabled: {
     backgroundColor: '#444',
@@ -1929,11 +1927,11 @@ const styles = StyleSheet.create({
     position: 'absolute',
     width: '100%',
     height: '100%',
-    backgroundColor: 'rgba(30, 30, 30, 0.7)', // Semi-transparent dark overlay
+    backgroundColor: 'rgba(30, 30, 30, 0.7)',
   },
   chatArea: {
     flex: 1,
-    zIndex: 2, // Ensure it's above the background
+    zIndex: 2,
   },
   chatContainer: {
     padding: 16,
@@ -1957,7 +1955,7 @@ const styles = StyleSheet.create({
     width: 28,
     height: 28,
     borderRadius: 14,
-    backgroundColor: '#4A90E2',
+    backgroundColor: '#ff9f1c',
     justifyContent: 'center',
     alignItems: 'center',
     marginRight: 8,
@@ -1974,7 +1972,7 @@ const styles = StyleSheet.create({
     elevation: 2,
   },
   userMessageBubble: {
-    backgroundColor: '#4A90E2',
+    backgroundColor: '#ff9f1c',
     borderBottomRightRadius: 4,
     marginLeft: 'auto',
   },
@@ -2030,7 +2028,7 @@ const styles = StyleSheet.create({
     opacity: 0.5,
   },
   sendButtonActive: {
-    backgroundColor: '#4CAF50',
+    backgroundColor: '#ff9f1c',
   },
   loadingContainer: {
     flexDirection: 'row',
@@ -2041,10 +2039,16 @@ const styles = StyleSheet.create({
     borderRadius: 16,
     marginBottom: 16,
   },
+  loadingText: {
+    color: '#fff',
+    marginLeft: 8,
+    fontSize: 14,
+  },
+  // 预览部分样式对齐MemoOverlay
   previewContainer: {
     flex: 1,
     padding: 16,
-    backgroundColor: '#1E1E1E',
+    backgroundColor: 'rgba(30,30,30,0.98)',
   },
   previewScroll: {
     flex: 1,
@@ -2059,7 +2063,7 @@ const styles = StyleSheet.create({
   previewSectionContainer: {
     marginBottom: 24,
     borderRadius: 8,
-    backgroundColor: '#262626',
+    backgroundColor: 'rgba(60,60,60,0.6)',
     padding: 12,
   },
   previewSectionTitle: {
@@ -2073,7 +2077,7 @@ const styles = StyleSheet.create({
   },
   previewSection: {
     marginBottom: 16,
-    backgroundColor: '#2A2A2A',
+    backgroundColor: 'rgba(42,42,42,0.9)',
     padding: 12,
     borderRadius: 8,
   },
@@ -2095,7 +2099,7 @@ const styles = StyleSheet.create({
   worldBookEntryTitle: {
     fontSize: 16,
     fontWeight: 'bold',
-    color: '#4A90E2',
+    color: '#ff9f1c',
   },
   worldBookEntryType: {
     fontSize: 12,
@@ -2114,7 +2118,7 @@ const styles = StyleSheet.create({
   promptTitle: {
     fontSize: 16,
     fontWeight: 'bold',
-    color: '#4A90E2',
+    color: '#ff9f1c',
   },
   promptRole: {
     fontSize: 12,
@@ -2151,7 +2155,7 @@ const styles = StyleSheet.create({
     fontSize: 16,
   },
   applyChangesButton: {
-    backgroundColor: '#4CAF50',
+    backgroundColor: '#ff9f1c',
     paddingVertical: 12,
     paddingHorizontal: 16,
     borderRadius: 8,
@@ -2180,7 +2184,7 @@ const styles = StyleSheet.create({
     flexWrap: 'wrap',
   },
   componentTag: {
-    backgroundColor: '#4A90E2',
+    backgroundColor: '#ff9f1c',
     paddingVertical: 4,
     paddingHorizontal: 10,
     borderRadius: 16,
@@ -2191,10 +2195,5 @@ const styles = StyleSheet.create({
     color: '#fff',
     fontSize: 12,
     fontWeight: '600',
-  },
-  loadingText: {
-    color: '#fff',
-    marginLeft: 8,
-    fontSize: 14,
   },
 });
