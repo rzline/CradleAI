@@ -13,8 +13,11 @@ import {
   Platform,
   SafeAreaView,
   TextInput,
+  StatusBar,
+  Dimensions,
+  KeyboardAvoidingView,
 } from 'react-native';
-import { Ionicons } from '@expo/vector-icons';
+import { Ionicons, MaterialIcons } from '@expo/vector-icons';
 import { CradleCharacter, CharacterImage } from '@/shared/types';
 import TagSelector from './TagSelector';
 import CharacterTagSelector from './CharacterTagSelector';
@@ -30,6 +33,7 @@ import NovelAIService, {
   CharacterPromptData
 } from './NovelAIService';
 import { useUser } from '@/constants/UserContext';
+import { BlurView } from 'expo-blur';
 
 const IMAGE_SERVICE_BASE_URL = 'https://image.cradleintro.top';
 
@@ -69,6 +73,12 @@ const DEFAULT_ANIMAGINE4_SETTINGS = {
   steps: 28,
   batch_size: 1
 };
+
+// Define tabs for the UI
+enum TabType {
+  GENERATION = 'generation',
+  SETTINGS = 'settings'
+}
 
 interface ImageRegenerationModalProps {
   visible: boolean;
@@ -115,6 +125,7 @@ const ImageRegenerationModal: React.FC<ImageRegenerationModalProps> = ({
   existingImageConfig
 }) => {
   const { user } = useUser();
+  const [activeTab, setActiveTab] = useState<TabType>(TabType.GENERATION);
   const [isLoading, setIsLoading] = useState(false);
   const [positiveTags, setPositiveTags] = useState<string[]>([]);
   const [negativeTags, setNegativeTags] = useState<string[]>([]);
@@ -261,6 +272,9 @@ const ImageRegenerationModal: React.FC<ImageRegenerationModalProps> = ({
       // Reset seed and generated seed for new generation
       setNovelaiSettings(prev => ({ ...prev, seed: '' }));
       setGeneratedSeed(null);
+      
+      // Default to generation tab when modal is opened
+      setActiveTab(TabType.GENERATION);
     }
   }, [visible, character, existingImageConfig]);
 
@@ -888,6 +902,7 @@ const ImageRegenerationModal: React.FC<ImageRegenerationModalProps> = ({
     poll();
   };
 
+  // UI Rendering Functions
   const renderCharacterTags = () => {
     if (characterTags.length === 0) {
       return (
@@ -1012,17 +1027,7 @@ const ImageRegenerationModal: React.FC<ImageRegenerationModalProps> = ({
               !isTokenValid && styles.disabledProviderOption
             ]}
             onPress={() => {
-              if (novelaiToken) {
-                setImageProvider('novelai');
-              } else {
-                Alert.alert(
-                  'NovelAI设置缺失',
-                  'NovelAI需要有效的Token才能使用。请在API设置中配置并验证您的NovelAI Token。',
-                  [
-                    { text: '确定', style: 'default' }
-                  ]
-                );
-              }
+              setImageProvider('novelai');
             }}
           >
             <Text 
@@ -1122,10 +1127,6 @@ const ImageRegenerationModal: React.FC<ImageRegenerationModalProps> = ({
             />
           </View>
         </View>
-        
-        <Text style={styles.settingNote}>
-          推荐设置: 步数20-30，批次越大消耗积分越多
-        </Text>
       </View>
     );
   };
@@ -1368,99 +1369,103 @@ const ImageRegenerationModal: React.FC<ImageRegenerationModalProps> = ({
     );
   };
   
-  // Render the preview image section
+  // Render the preview image section - enhanced for tabbed layout
   const renderPreviewImage = () => {
-    if (!previewImageUrl && !generatedImageUrl) return null;
-    
     const imageUrl = generatedImageUrl || previewImageUrl;
     
     return (
       <View style={styles.previewImageContainer}>
-        <Text style={styles.previewImageTitle}>生成结果</Text>
-        
-        <Image 
-          source={{ uri: imageUrl || undefined }}
-          style={styles.previewImage}
-          resizeMode="contain"
-        />
-        
-        <View style={styles.imageOptionsContainer}>
-          <View style={styles.imageOptionRow}>
-            <Text style={styles.imageOptionLabel}>设为背景图片</Text>
-            <Switch
-              value={replaceBackground}
-              onValueChange={setReplaceBackground}
-              trackColor={{ false: '#767577', true: '#bfe8ff' }}
-              thumbColor={replaceBackground ? '#007bff' : '#f4f3f4'}
+        {imageUrl ? (
+          <>
+            <Image 
+              source={{ uri: imageUrl }}
+              style={styles.previewImage}
+              resizeMode="contain"
             />
-          </View>
-          
-          <View style={styles.imageOptionRow}>
-            <Text style={styles.imageOptionLabel}>设为头像</Text>
-            <Switch
-              value={replaceAvatar}
-              onValueChange={setReplaceAvatar}
-              trackColor={{ false: '#767577', true: '#bfe8ff' }}
-              thumbColor={replaceAvatar ? '#007bff' : '#f4f3f4'}
-            />
-          </View>
-
-          {generatedSeed && (
-            <View style={styles.imageOptionRow}>
-              <Text style={styles.imageOptionLabel}>Seed值</Text>
-              <Text style={styles.seedValueText}>{generatedSeed}</Text>
-            </View>
-          )}
-        </View>
-        
-        <TouchableOpacity 
-          style={styles.confirmImageButton}
-          onPress={() => {
-            if (imageUrl) {
-              const completedImage: CharacterImage = {
-                id: `gen_${Date.now()}_${Math.random().toString(36).substring(2, 9)}`,
-                url: imageUrl,
-                characterId: character.id,
-                createdAt: Date.now(),
-                tags: {
-                  positive: [...characterTags, ...positiveTags],
-                  negative: DEFAULT_NEGATIVE_PROMPTS,
-                },
-                isFavorite: false,
-                generationStatus: 'success',
-                localUri: imageUrl.includes('#localNovelAI') ? imageUrl.split('#localNovelAI')[0] : undefined,
-                setAsBackground: replaceBackground,
-                isAvatar: replaceAvatar,
-                seed: generatedSeed || undefined,
-                generationConfig: {
-                  positiveTags: positiveTags,
-                  negativeTags: negativeTags,
-                  artistPrompt: selectedArtistPrompt,
-                  customPrompt: '',
-                  useCustomPrompt: false,
-                  characterTags: characterTags
-                }
-              };
+            
+            <View style={styles.imageOptionsContainer}>
+              <View style={styles.imageOptionRow}>
+                <Text style={styles.imageOptionLabel}>设为背景图片</Text>
+                <Switch
+                  value={replaceBackground}
+                  onValueChange={setReplaceBackground}
+                  trackColor={{ false: '#767577', true: '#bfe8ff' }}
+                  thumbColor={replaceBackground ? '#007bff' : '#f4f3f4'}
+                />
+              </View>
               
-              onSuccess(completedImage);
-              onClose();
-            }
-          }}
-        >
-          <Text style={styles.confirmImageButtonText}>使用此图像</Text>
-        </TouchableOpacity>
-        
-        <TouchableOpacity 
-          style={styles.regenerateButton}
-          onPress={() => {
-            setPreviewImageUrl(null);
-            setGeneratedImageUrl(null);
-            setIsLoading(false);
-          }}
-        >
-          <Ionicons name="reload" size={16} color="#fff" />
-          <Text style={styles.regenerateButtonText}>重新生成</Text>
-        </TouchableOpacity>
+              <View style={styles.imageOptionRow}>
+                <Text style={styles.imageOptionLabel}>设为头像</Text>
+                <Switch
+                  value={replaceAvatar}
+                  onValueChange={setReplaceAvatar}
+                  trackColor={{ false: '#767577', true: '#bfe8ff' }}
+                  thumbColor={replaceAvatar ? '#007bff' : '#f4f3f4'}
+                />
+              </View>
+
+              {generatedSeed && (
+                <View style={styles.imageOptionRow}>
+                  <Text style={styles.imageOptionLabel}>Seed值</Text>
+                  <Text style={styles.seedValueText}>{generatedSeed}</Text>
+                </View>
+              )}
+              
+              <TouchableOpacity 
+                style={styles.confirmImageButton}
+                onPress={() => {
+                  if (imageUrl) {
+                    const completedImage: CharacterImage = {
+                      id: `gen_${Date.now()}_${Math.random().toString(36).substring(2, 9)}`,
+                      url: imageUrl,
+                      characterId: character.id,
+                      createdAt: Date.now(),
+                      tags: {
+                        positive: [...characterTags, ...positiveTags],
+                        negative: DEFAULT_NEGATIVE_PROMPTS,
+                      },
+                      isFavorite: false,
+                      generationStatus: 'success',
+                      localUri: imageUrl.includes('#localNovelAI') ? imageUrl.split('#localNovelAI')[0] : undefined,
+                      setAsBackground: replaceBackground,
+                      isAvatar: replaceAvatar,
+                      seed: generatedSeed || undefined,
+                      generationConfig: {
+                        positiveTags: positiveTags,
+                        negativeTags: negativeTags,
+                        artistPrompt: selectedArtistPrompt,
+                        customPrompt: '',
+                        useCustomPrompt: false,
+                        characterTags: characterTags
+                      }
+                    };
+                    
+                    onSuccess(completedImage);
+                    onClose();
+                  }
+                }}
+              >
+                <Text style={styles.confirmImageButtonText}>使用此图像</Text>
+              </TouchableOpacity>
+              
+              <TouchableOpacity 
+                style={styles.regenerateButton}
+                onPress={() => {
+                  setPreviewImageUrl(null);
+                  setGeneratedImageUrl(null);
+                  setIsLoading(false);
+                }}
+              >
+                <Ionicons name="reload" size={16} color="#fff" />
+                <Text style={styles.regenerateButtonText}>重新生成</Text>
+              </TouchableOpacity>
+            </View>
+          </>
+        ) : (
+          <View style={styles.emptyPreviewContainer}>
+            <Ionicons name="image-outline" size={64} color="#555" />
+          </View>
+        )}
       </View>
     );
   };
@@ -1480,6 +1485,94 @@ const ImageRegenerationModal: React.FC<ImageRegenerationModalProps> = ({
       </View>
     );
   };
+  
+  // Render the generation tab content
+  const renderGenerationTab = () => (
+    <View style={styles.tabContent}>
+      {/* Image Preview Section */}
+      {renderPreviewImage()}
+
+      {/* Prompt Tags Section */}
+      <View style={styles.tagSection}>
+        <View style={styles.tagSectionHeader}>
+          <Text style={styles.tagSectionTitle}>主提示词</Text>
+        </View>
+        
+        <View style={styles.expandedTagDisplayContainer}>
+          {renderUnifiedTagDisplay()}
+          
+          <View style={styles.tagActionButtonsContainer}>
+            <TouchableOpacity
+              style={styles.tagActionButton}
+              onPress={() => setCustomPromptModalVisible(true)}
+            >
+              <Ionicons name="pencil-outline" size={16} color="#ddd" />
+              <Text style={styles.tagActionButtonText}>自定义提示词</Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+      </View>
+      
+      {characterTags.length > 0 && (
+        <View style={styles.selectedCharacterTagsContainer}>
+          <Text style={styles.tagSectionTitle}>已选角色</Text>
+          {renderCharacterTags()}
+        </View>
+      )}
+      
+      {renderActionButtonsBar()}
+
+      {/* Generate Button */}
+      <View style={styles.buttonContainer}>
+        {!isLoading ? (
+          <TouchableOpacity 
+              style={[
+                styles.generateButton
+              ]}
+              onPress={submitImageGeneration}
+            >
+              <Ionicons 
+                name="image" 
+                size={20} 
+                color="#fff" 
+              />
+              <Text style={styles.generateButtonText}>生成</Text>
+            </TouchableOpacity>
+        ) : (
+          <View style={styles.loadingButton}>
+            <ActivityIndicator size="small" color="#fff" />
+            <Text style={styles.loadingButtonText}>生成中...</Text>
+          </View>
+        )}
+      </View>
+      
+      {error && (
+        <View style={styles.errorContainer}>
+          <Ionicons name="alert-circle" size={20} color="#FF4444" />
+          <Text style={styles.errorText}>{error}</Text>
+        </View>
+      )}
+    </View>
+  );
+  
+  // Render the settings tab content
+  const renderSettingsTab = () => (
+    <View style={styles.tabContent}>
+    <ScrollView showsVerticalScrollIndicator={false}>   
+      {/* Provider selector */}
+      {renderProviderSelector()}
+      
+      {/* Image size selector */}
+      {renderSizeSelector()}
+      
+      {/* Provider specific settings */}
+      {imageProvider === 'novelai' ? renderNovelAISettings() : renderAnimagine4Settings()}
+      
+      {/* Render character prompts for NovelAI */}
+      {imageProvider === 'novelai' && renderCharacterPrompts()}
+      </ScrollView>   
+    </View>
+  );
 
   return (
     <Modal
@@ -1489,126 +1582,52 @@ const ImageRegenerationModal: React.FC<ImageRegenerationModalProps> = ({
       onRequestClose={() => {
         if (!isLoading) onClose();
       }}
+      statusBarTranslucent
     >
-      <SafeAreaView style={styles.safeArea}>
-        <View style={styles.container}>
-          <View style={styles.modalHeader}>
-            <Text style={styles.modalTitle}>图像生成</Text>
+      <View style={styles.fullScreenContainer}>
+        <BlurView intensity={30} tint="dark" style={styles.fullScreenBlurView}>
+          <View style={styles.header}>
+            <Text style={styles.title}>图像生成</Text>
             {!isLoading && (
               <TouchableOpacity style={styles.closeButton} onPress={onClose}>
-                <Ionicons name="close" size={24} color="#fff" />
+                <Ionicons name="close" size={28} color="#fff" />
               </TouchableOpacity>
             )}
           </View>
           
-          <ScrollView 
-            style={styles.modalContent} 
-            contentContainerStyle={styles.scrollContentContainer}
-            showsVerticalScrollIndicator={false}
-          >
-            <View style={styles.characterInfoSection}>
-
-              
-              {character.avatar && (
-                <Image 
-                  source={{ uri: character.avatar }} 
-                  style={styles.characterAvatar} 
-                />
-              )}
-            </View>
-            
-            {/* Show preview image if available */}
-            {renderPreviewImage()}
-            
-            {/* Only show settings if not currently displaying a preview */}
-            {!previewImageUrl && !generatedImageUrl && (
-              <>
-                {renderProviderSelector()}
-                
-                {renderSizeSelector()}
-                
-                {renderNovelAISettings()}
-                
-                {/* Add character prompts section for NovelAI */}
-                {renderCharacterPrompts()}
-                
-                {renderAnimagine4Settings()}
-                
-                <View style={styles.tagSelectionSection}>
-
-                  
-                  <View style={styles.tagSection}>
-                    <View style={styles.unifiedTagSummaryContainer}>
-                      <View style={styles.tagSectionHeader}>
-                        <Text style={styles.tagSectionTitle}>主提示词</Text>
-                      </View>
-                      
-                      <View style={styles.expandedTagDisplayContainer}>
-                        {renderUnifiedTagDisplay()}
-                        
-                        <View style={styles.tagActionButtonsContainer}>
-                          <TouchableOpacity
-                            style={styles.tagActionButton}
-                            onPress={() => setCustomPromptModalVisible(true)}
-                          >
-                            <Ionicons name="pencil-outline" size={16} color="#ddd" />
-                            <Text style={styles.tagActionButtonText}>自定义提示词</Text>
-                          </TouchableOpacity>
-                        </View>
-                      </View>
-                    </View>
-                  </View>
-                </View>
-                
-                {characterTags.length > 0 && (
-                  <View style={styles.selectedCharacterTagsContainer}>
-                    <Text style={styles.tagSectionTitle}>已选角色</Text>
-                    {renderCharacterTags()}
-                  </View>
-                )}
-                
-                {renderActionButtonsBar()}
-
-                
-                <View style={styles.buttonContainer}>
-                  {!isLoading ? (
-                    <TouchableOpacity 
-                      style={[
-                        styles.generateButton,
-                        imageProvider === 'novelai' && styles.generateButtonNovelAI
-                      ]}
-                      onPress={submitImageGeneration}
-                    >
-                      <Ionicons 
-                        name={imageProvider === 'novelai' ? "flash" : "image"} 
-                        size={20} 
-                        color="#fff" 
-                      />
-                      <Text style={styles.generateButtonText}>
-                        {imageProvider === 'novelai' ? 'NovelAI 生成' : '生成图像'}
-                      </Text>
-                    </TouchableOpacity>
-                  ) : (
-                    <View style={[
-                      styles.loadingButton, 
-                      imageProvider === 'novelai' && styles.loadingButtonNovelAI
-                    ]}>
-                      <ActivityIndicator size="small" color="#fff" />
-                      <Text style={styles.loadingButtonText}>生成中...</Text>
-                    </View>
-                  )}
-                </View>
-                
-                {error && (
-                  <View style={styles.errorContainer}>
-                    <Ionicons name="alert-circle" size={20} color="#FF4444" />
-                    <Text style={styles.errorText}>{error}</Text>
-                  </View>
-                )}
-              </>
-            )}
-
-          </ScrollView>
+          <View style={styles.tabs}>
+            <TouchableOpacity
+              style={[styles.tab, activeTab === TabType.GENERATION && styles.activeTab]}
+              onPress={() => setActiveTab(TabType.GENERATION)}
+            >
+              <Ionicons
+                name="image"
+                size={20}
+                color={activeTab === TabType.GENERATION ? '#ff9f1c' : '#ccc'}
+              />
+              <Text style={[styles.tabText, activeTab === TabType.GENERATION && styles.activeTabText]}>
+                生成
+              </Text>
+            </TouchableOpacity>
+            <TouchableOpacity
+              style={[styles.tab, activeTab === TabType.SETTINGS && styles.activeTab]}
+              onPress={() => setActiveTab(TabType.SETTINGS)}
+            >
+              <Ionicons
+                name="settings"
+                size={20}
+                color={activeTab === TabType.SETTINGS ? '#ff9f1c' : '#ccc'}
+              />
+              <Text style={[styles.tabText, activeTab === TabType.SETTINGS && styles.activeTabText]}>
+                设置
+              </Text>
+            </TouchableOpacity>
+          </View>
+          
+          <View style={styles.content}>
+            {activeTab === TabType.GENERATION && renderGenerationTab()}
+            {activeTab === TabType.SETTINGS && renderSettingsTab()}
+          </View>
           
           <Modal
             visible={artistReferenceSelectorVisible}
@@ -1689,7 +1708,7 @@ const ImageRegenerationModal: React.FC<ImageRegenerationModalProps> = ({
             animationType="fade"
             onRequestClose={() => setCustomPromptModalVisible(false)}
           >
-            <View style={styles.customPromptModalOverlay}>
+            <View style={styles.modalOverlay}>
               <View style={styles.customPromptModalContent}>
                 <View style={styles.customPromptModalHeader}>
                   <Text style={styles.customPromptModalTitle}>自定义提示词</Text>
@@ -1736,7 +1755,7 @@ const ImageRegenerationModal: React.FC<ImageRegenerationModalProps> = ({
             animationType="fade"
             onRequestClose={() => setNovelaiSettingsVisible(false)}
           >
-            <View style={styles.customPromptModalOverlay}>
+            <View style={styles.modalOverlay}>
               <View style={styles.customPromptModalContent}>
                 <View style={styles.customPromptModalHeader}>
                   <Text style={styles.customPromptModalTitle}>NovelAI 高级设置</Text>
@@ -1898,37 +1917,107 @@ const ImageRegenerationModal: React.FC<ImageRegenerationModalProps> = ({
           />
           
           {renderLoading()}
-        </View>
-      </SafeAreaView>
+        </BlurView>
+        
+      </View>
     </Modal>
   );
 };
 
 const styles = StyleSheet.create({
-  // Preview image styles
-  previewImageContainer: {
-    backgroundColor: '#333',
-    borderRadius: 12,
-    padding: 16,
-    marginBottom: 20,
-    alignItems: 'center',
+  // Core layout styles based on MemoOverlay
+  fullScreenContainer: {
+    flex: 1,
+    backgroundColor: 'rgba(0,0,0,0.7)',
   },
-  previewImageTitle: {
-    color: '#fff',
+  fullScreenBlurView: {
+    flex: 1,
+    borderRadius: 0,
+    width: '100%',
+    height: '100%',
+    overflow: 'hidden',
+  },
+  header: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    paddingTop: Platform.select({
+      ios: 44,
+      android: StatusBar.currentHeight || 24,
+      default: 24,
+    }),
+    paddingBottom: 8,
+    paddingHorizontal: 16,
+    borderBottomWidth: 1,
+    borderBottomColor: 'rgba(255, 255, 255, 0.1)',
+  },
+  title: {
     fontSize: 18,
     fontWeight: 'bold',
-    marginBottom: 12,
+    color: '#fff',
+  },
+  closeButton: {
+    padding: 5,
+  },
+  tabs: {
+    flexDirection: 'row',
+    borderBottomWidth: 1,
+    borderBottomColor: 'rgba(255, 255, 255, 0.1)',
+  },
+  tab: {
+    flex: 1,
+    padding: 12,
+    flexDirection: 'row',
+    justifyContent: 'center',
+    alignItems: 'center',
+    borderBottomWidth: 2,
+    borderBottomColor: 'transparent',
+  },
+  activeTab: {
+    borderBottomColor: '#ff9f1c',
+  },
+  tabText: {
+    color: '#ccc',
+    marginLeft: 8,
+    fontSize: 14,
+  },
+  activeTabText: {
+    color: '#ff9f1c',
+    fontWeight: 'bold',
+  },
+  content: {
+    flex: 1,
+  },
+  tabContent: {
+    flex: 1,
+    padding: 16,
+  },
+  
+  // Preview image styles
+  previewImageContainer: {
+    height: 300,
+    marginBottom: 16,
+    borderRadius: 12,
+    overflow: 'hidden',
+    backgroundColor: 'rgba(30, 30, 30, 0.8)',
   },
   previewImage: {
     width: '100%',
-    height: 400,
-    borderRadius: 8,
-    marginBottom: 16,
+    height: '100%',
     backgroundColor: '#222',
   },
+  emptyPreviewContainer: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  emptyPreviewText: {
+    color: '#777',
+    marginTop: 8,
+    fontSize: 16,
+  },
   imageOptionsContainer: {
-    width: '100%',
-    marginBottom: 16,
+    padding: 12,
   },
   imageOptionRow: {
     flexDirection: 'row',
@@ -1949,7 +2038,8 @@ const styles = StyleSheet.create({
     borderRadius: 8,
     width: '100%',
     alignItems: 'center',
-    marginBottom: 12,
+    marginTop: 12,
+    marginBottom: 8,
   },
   confirmImageButtonText: {
     color: '#fff',
@@ -1972,123 +2062,38 @@ const styles = StyleSheet.create({
     fontSize: 15,
     marginLeft: 8,
   },
-  loadingOverlay: {
-    position: 'absolute',
-    top: 0,
-    left: 0,
-    right: 0,
-    bottom: 0,
-    backgroundColor: 'rgba(0, 0, 0, 0.6)',
-    justifyContent: 'center',
-    alignItems: 'center',
-    zIndex: 2,
-  },
-  loadingContainer: {
-    backgroundColor: '#333',
-    padding: 20,
-    borderRadius: 12,
-    alignItems: 'center',
-    width: '80%',
-    maxWidth: 300,
-  },
-  progressMessage: {
-    color: '#fff',
-    marginTop: 16,
-    fontSize: 16,
-    textAlign: 'center',
-  },
-
   
-  safeArea: {
-    flex: 1,
-    backgroundColor: '#222',
+  // Tag section styles
+  tagSection: {
+    marginBottom: 16,
   },
   tagSectionHeader: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
-    marginBottom: 12,
-  },
-  container: {
-    flex: 1,
-    backgroundColor: '#222',
-  },
-  modalHeader: {
-    flexDirection: 'row',
-    justifyContent: 'center',
-    alignItems: 'center',
-    padding: 16,
-    backgroundColor: '#333',
-    borderBottomWidth: 1,
-    borderBottomColor: 'rgba(255,255,255,0.1)',
-    position: 'relative',
-  },
-  modalTitle: {
-    color: '#fff',
-    fontSize: 18,
-    fontWeight: 'bold',
-  },
-  closeButton: {
-    position: 'absolute',
-    right: 16,
-    padding: 4,
-  },
-  modalContent: {
-    flex: 1,
-  },
-  scrollContentContainer: {
-    padding: 16,
-    paddingBottom: 20,
-  },
-  bottomPadding: {
-    height: 60,
-  },
-  characterInfoSection: {
-    alignItems: 'center',
-    marginBottom: 12,
-  },
-  characterAvatar: {
-    width: 80,
-    height: 80,
-    borderRadius: 40,
-    marginTop: 10,
-  },
-  sectionDescription: {
-    color: '#aaa',
-    textAlign: 'center',
-    marginBottom: 12,
-    lineHeight: 20,
-  },
-  tagSelectionSection: {
-    marginBottom: 12,
-  },
-  tagSummaryContainer: {
-    backgroundColor: '#333',
-    borderRadius: 8,
-    padding: 12,
-    marginBottom: 12,
+    marginBottom: 8,
   },
   tagSectionTitle: {
     color: '#fff',
     fontSize: 14,
     marginBottom: 8,
   },
-  tagsContainer: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    minHeight: 30,
-    marginBottom: 8,
-    paddingHorizontal: 4,
-  },
-  tagsContainerReordering: {
-    minHeight: 120,
-    backgroundColor: 'rgba(255, 255, 255, 0.03)',
+  expandedTagDisplayContainer: {
+    minHeight: 150,
+    backgroundColor: 'rgba(60, 60, 60, 0.6)',
     borderRadius: 8,
-    paddingVertical: 10,
+    paddingVertical: 12,
     paddingHorizontal: 8,
     borderWidth: 1,
     borderColor: 'rgba(255, 255, 255, 0.1)',
     marginBottom: 12,
+  },
+  unifiedTagsContainer: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    justifyContent: 'flex-start',
+    paddingHorizontal: 4,
+    minHeight: 30,
   },
   selectedPositiveTag: {
     flexDirection: 'row',
@@ -2126,359 +2131,6 @@ const styles = StyleSheet.create({
     padding: 8,
     textAlign: 'center',
   },
-  defaultTagsInfo: {
-    color: '#888',
-    fontSize: 11,
-    fontStyle: 'italic',
-    marginTop: 8,
-    textAlign: 'center',
-  },
-  openTagSelectorButton: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    backgroundColor: '#4A90E2',
-    borderRadius: 8,
-    padding: 12,
-    flex: 1,
-    marginRight: 8,
-  },
-  openTagSelectorText: {
-    color: '#fff',
-    marginLeft: 8,
-    fontWeight: '500',
-  },
-  generateButton: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    backgroundColor: '#9C27B0',
-    padding: 12,
-    borderRadius: 8,
-    flex: 1.5,
-  },
-  generateButtonText: {
-    color: '#fff',
-    fontWeight: 'bold',
-    marginLeft: 8,
-    fontSize: 16,
-  },
-  loadingButton: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    backgroundColor: '#666',
-    padding: 12,
-    borderRadius: 8,
-    flex: 1.5,
-  },
-  loadingButtonText: {
-    color: '#fff',
-    fontWeight: 'bold',
-    marginLeft: 8,
-    fontSize: 16,
-  },
-  loadingText: {
-    color: '#fff',
-    marginTop: 12,
-    textAlign: 'center',
-  },
-  errorContainer: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: 'rgba(255, 68, 68, 0.1)',
-    padding: 12,
-    borderRadius: 8,
-    marginVertical: 10,
-  },
-  errorText: {
-    color: '#FF4444',
-    marginLeft: 8,
-  },
-  resultSection: {
-    alignItems: 'center',
-    marginBottom: 20,
-  },
-  generatedImage: {
-    width: '100%',
-    height: 400,
-    borderRadius: 8,
-    marginBottom: 20,
-  },
-  resultOptions: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    width: '100%',
-    padding: 10,
-    backgroundColor: '#333',
-    borderRadius: 8,
-    marginBottom: 10,
-  },
-  optionText: {
-    color: '#fff',
-    fontSize: 16,
-  },
-  confirmButton: {
-    backgroundColor: '#4CAF50',
-    paddingVertical: 12,
-    paddingHorizontal: 24,
-    borderRadius: 8,
-    width: '100%',
-    alignItems: 'center',
-  },
-  confirmButtonText: {
-    color: '#fff',
-    fontWeight: 'bold',
-    fontSize: 16,
-  },
-  artistPromptContainer: {
-    backgroundColor: '#333',
-    borderRadius: 8,
-    padding: 12,
-    marginBottom: 12,
-  },
-  artistPromptHeader: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    marginBottom: 8,
-  },
-  artistPromptTitle: {
-    color: '#fff',
-    fontSize: 16,
-    fontWeight: '500',
-  },
-  artistPromptContent: {
-    borderRadius: 8,
-    padding: 8,
-    backgroundColor: 'rgba(74, 144, 226, 0.1)',
-  },
-  artistPromptNote: {
-    color: '#aaa',
-    fontSize: 12,
-    fontStyle: 'italic',
-  },
-  tagSelectorModalContainer: {
-    flex: 1,
-    backgroundColor: '#222',
-  },
-  tagSelectorHeader: {
-    flexDirection: 'row',
-    justifyContent: 'center',
-    alignItems: 'center',
-    padding: 16,
-    backgroundColor: '#333',
-    borderBottomWidth: 1,
-    borderBottomColor: 'rgba(255,255,255,0.1)',
-    position: 'relative',
-    paddingTop: Platform.OS === 'ios' ? 44 : 16,
-  },
-  tagSelectorTitle: {
-    color: '#fff',
-    fontSize: 18,
-    fontWeight: 'bold',
-  },
-  tagSelectorCloseButton: {
-    position: 'absolute',
-    right: 16,
-    top: Platform.OS === 'ios' ? 44 : 16,
-    padding: 4,
-  },
-  tagSelectorContent: {
-    flex: 1,
-  },
-  customPromptContainer: {
-    backgroundColor: '#333',
-    borderRadius: 8,
-    padding: 12,
-    marginBottom: 12,
-  },
-  customPromptHeader: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    marginBottom: 8,
-  },
-  customPromptTitle: {
-    color: '#fff',
-    fontSize: 16,
-    fontWeight: '500',
-  },
-  customPromptInputContainer: {
-    marginTop: 8,
-  },
-  customPromptInput: {
-    backgroundColor: 'rgba(60, 60, 60, 0.8)',
-    color: '#fff',
-    borderRadius: 8,
-    padding: 10,
-    fontSize: 15,
-    minHeight: 80,
-    textAlignVertical: 'top',
-  },
-  artistReferenceContainer: {
-    marginBottom: 12,
-  },
-  tagSection: {
-    marginBottom: 16,
-  },
-  draggableTag: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    marginRight: 10,
-    marginBottom: 10,
-  },
-  dragHandle: {
-    marginRight: 6,
-    padding: 2,
-  },
-  tagRemoveButton: {
-    padding: 4,
-  },
-  reorderingInstructionsContainer: {
-    backgroundColor: 'rgba(112, 161, 255, 0.1)',
-    borderRadius: 8,
-    padding: 10,
-    marginTop: 12,
-    marginBottom: 8,
-    alignItems: 'center',
-  },
-  reorderingInstructions: {
-    color: '#70a1ff',
-    fontSize: 13,
-    fontWeight: '500',
-    textAlign: 'center',
-  },
-  reorderButton: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: 'rgba(74, 144, 226, 0.3)',
-    borderRadius: 12,
-    paddingHorizontal: 10,
-    paddingVertical: 6,
-  },
-  reorderButtonText: {
-    color: '#fff',
-    fontSize: 13,
-    marginLeft: 6,
-    fontWeight: '500',
-  },
-  disabledButton: {
-    opacity: 0.5,
-    backgroundColor: '#666',
-  },
-  buttonContainer: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    marginBottom: 16,
-  },
-  characterTagsContainer: {
-    backgroundColor: '#333',
-    borderRadius: 8,
-    padding: 12,
-    marginBottom: 12,
-  },
-  characterTag: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: 'rgba(100, 149, 237, 0.8)',
-    borderRadius: 16,
-    paddingVertical: 4,
-    paddingHorizontal: 8,
-    marginRight: 8,
-    marginBottom: 8,
-  },
-  characterTagText: {
-    color: '#fff',
-    fontSize: 14,
-    marginRight: 6,
-  },
-  addTagButton: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: 'rgba(100, 149, 237, 0.3)',
-    borderRadius: 12,
-    paddingHorizontal: 10,
-    paddingVertical: 6,
-  },
-  addTagButtonText: {
-    color: '#fff',
-    fontSize: 13,
-    marginLeft: 6,
-    fontWeight: '500',
-  },
-  disabledModeText: {
-    color: '#888',
-    fontStyle: 'italic',
-    padding: 8,
-  },
-  unifiedTagsContainer: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    justifyContent: 'center',
-    paddingHorizontal: 4,
-    minHeight: 30,
-    marginBottom: 8,
-  },
-  unifiedTag: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    borderRadius: 16,
-    paddingVertical: 4,
-    paddingHorizontal: 8,
-    marginRight: 8,
-    marginBottom: 8,
-  },
-  unifiedTagSummaryContainer: {
-    backgroundColor: '#333',
-    borderRadius: 8,
-    padding: 12,
-    marginBottom: 12,
-  },
-  actionButtonsBar: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    marginBottom: 16,
-  },
-  actionButton: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    backgroundColor: '#4A90E2',
-    borderRadius: 8,
-    padding: 12,
-    flex: 1,
-    marginHorizontal: 4,
-  },
-  actionButtonText: {
-    color: '#fff',
-    marginLeft: 8,
-    fontWeight: '500',
-    fontSize: 13,
-  },
-  tagTypeLabel: {
-    color: '#ddd',
-    fontSize: 13,
-    marginBottom: 8,
-    fontWeight: '500',
-  },
-  selectedCharacterTagsContainer: {
-    backgroundColor: '#333',
-    borderRadius: 8,
-    padding: 12,
-    marginBottom: 12,
-  },
-  expandedTagDisplayContainer: {
-    minHeight: 150,
-    backgroundColor: 'rgba(255, 255, 255, 0.03)',
-    borderRadius: 8,
-    paddingVertical: 12,
-    paddingHorizontal: 8,
-    borderWidth: 1,
-    borderColor: 'rgba(255, 255, 255, 0.1)',
-    marginBottom: 12,
-  },
   tagActionButtonsContainer: {
     flexDirection: 'row',
     justifyContent: 'space-between',
@@ -2500,94 +2152,119 @@ const styles = StyleSheet.create({
     marginLeft: 6,
     fontSize: 12,
   },
-  customPromptModalOverlay: {
-    flex: 1,
-    backgroundColor: 'rgba(0, 0, 0, 0.7)',
-    justifyContent: 'center',
-    alignItems: 'center',
-    padding: 16,
-  },
-  customPromptModalContent: {
-    width: '100%',
-    backgroundColor: '#333',
-    borderRadius: 12,
-    padding: 16,
-    maxWidth: 500,
-  },
-  customPromptModalHeader: {
+  
+  // Character tags styles
+  selectedCharacterTagsContainer: {
+    backgroundColor: 'rgba(60, 60, 60, 0.6)',
+    borderRadius: 8,
+    padding: 12,
     marginBottom: 16,
   },
-  customPromptModalTitle: {
-    color: '#fff',
-    fontSize: 18,
-    fontWeight: 'bold',
-    textAlign: 'center',
-  },
-  customPromptModalActions: {
+  tagsContainer: {
     flexDirection: 'row',
-    justifyContent: 'space-between',
-    marginTop: 16,
+    flexWrap: 'wrap',
+    minHeight: 30,
+    marginBottom: 8,
+    paddingHorizontal: 4,
   },
-  customPromptCancelButton: {
-    flex: 1,
-    backgroundColor: 'rgba(80, 80, 80, 0.8)',
-    paddingVertical: 10,
-    borderRadius: 8,
+  characterTag: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: 'rgba(100, 149, 237, 0.8)',
+    borderRadius: 16,
+    paddingVertical: 4,
+    paddingHorizontal: 8,
     marginRight: 8,
-    alignItems: 'center',
+    marginBottom: 8,
   },
-  customPromptCancelButtonText: {
-    color: '#ddd',
-    fontWeight: '500',
-  },
-  customPromptConfirmButton: {
-    flex: 1,
-    backgroundColor: '#4A90E2',
-    paddingVertical: 10,
-    borderRadius: 8,
-    marginLeft: 8,
-    alignItems: 'center',
-  },
-  customPromptConfirmButtonText: {
+  characterTagText: {
     color: '#fff',
-    fontWeight: '500',
+    fontSize: 14,
+    marginRight: 6,
   },
-  generationSettingsContainer: {
-    marginTop: 8,
+  
+  // Action buttons bar
+  actionButtonsBar: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    marginBottom: 16,
   },
-  settingRow: {
+  actionButton: {
     flexDirection: 'row',
     alignItems: 'center',
-    justifyContent: 'space-between',
-    marginBottom: 12,
+    justifyContent: 'center',
+    backgroundColor: '#ff9f1c',
+    borderRadius: 8,
+    padding: 12,
+    flex: 1,
+    marginHorizontal: 4,
   },
-  settingLabel: {
+  actionButtonText: {
     color: '#fff',
+    marginLeft: 8,
+    fontWeight: '500',
+    fontSize: 13,
+  },
+  
+  // Generate button
+  buttonContainer: {
+    marginBottom: 16,
+  },
+  generateButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: '#ff9f1c',
+    padding: 12,
+    borderRadius: 8,
+    height: 50,
+  },
+  generateButtonNovelAI: {
+    backgroundColor: '#8a2be2',
+  },
+  generateButtonText: {
+    color: '#fff',
+    fontWeight: 'bold',
+    marginLeft: 8,
     fontSize: 16,
+  },
+  loadingButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: '#666',
+    padding: 12,
+    borderRadius: 8,
     flex: 1,
   },
-  settingInput: {
-    backgroundColor: 'rgba(60, 60, 60, 0.8)',
+  loadingButtonText: {
     color: '#fff',
+    fontWeight: 'bold',
+    marginLeft: 8,
+    fontSize: 16,
+  },
+  loadingButtonNovelAI: {
+    backgroundColor: '#6a1b9a',
+  },
+  
+  // Error display
+  errorContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: 'rgba(255, 68, 68, 0.1)',
+    padding: 12,
     borderRadius: 8,
-    padding: 10,
-    fontSize: 15,
-    width: '60%',
-    textAlign: 'center',
+    marginVertical: 10,
   },
-  settingInputContainer: {
-    width: '60%',
+  errorText: {
+    color: '#FF4444',
+    marginLeft: 8,
   },
-  settingNote: {
-    color: '#aaa',
-    fontSize: 12,
-    fontStyle: 'italic',
-    marginTop: 8,
-    textAlign: 'center',
-  },
+  
+  // Model selection styles
   providerSelectorContainer: {
-    backgroundColor: '#333',
-    borderRadius: 12,
+    backgroundColor: 'rgba(60, 60, 60, 0.6)',
+    borderRadius: 8,
     padding: 12,
     marginBottom: 16,
   },
@@ -2602,7 +2279,7 @@ const styles = StyleSheet.create({
     justifyContent: 'space-between',
   },
   providerOption: {
-    backgroundColor: 'rgba(60, 60, 60, 0.8)',
+    backgroundColor: 'rgba(30, 30, 30, 0.8)',
     borderRadius: 8,
     paddingVertical: 10,
     paddingHorizontal: 20,
@@ -2611,7 +2288,7 @@ const styles = StyleSheet.create({
     alignItems: 'center',
   },
   selectedProviderOption: {
-    backgroundColor: '#9C27B0',
+    backgroundColor: '#ff9f1c',
   },
   disabledProviderOption: {
     opacity: 0.5,
@@ -2627,9 +2304,11 @@ const styles = StyleSheet.create({
   disabledProviderOptionText: {
     color: '#aaa',
   },
+  
+  // Size selector styles
   sizeSelectorContainer: {
-    backgroundColor: '#333',
-    borderRadius: 12,
+    backgroundColor: 'rgba(60, 60, 60, 0.6)',
+    borderRadius: 8,
     padding: 12,
     marginBottom: 16,
   },
@@ -2640,7 +2319,7 @@ const styles = StyleSheet.create({
     marginBottom: 10,
   },
   sizeOption: {
-    backgroundColor: 'rgba(60, 60, 60, 0.8)',
+    backgroundColor: 'rgba(30, 30, 30, 0.8)',
     borderRadius: 8,
     paddingVertical: 8,
     paddingHorizontal: 12,
@@ -2649,7 +2328,7 @@ const styles = StyleSheet.create({
     minWidth: 100,
   },
   selectedSizeOption: {
-    backgroundColor: '#4A90E2',
+    backgroundColor: '#ff9f1c',
   },
   sizeOptionText: {
     color: '#ddd',
@@ -2664,15 +2343,17 @@ const styles = StyleSheet.create({
     fontSize: 12,
     marginTop: 4,
   },
-  novelAISettingsContainer: {
-    backgroundColor: '#333',
-    borderRadius: 12,
+  
+  // Provider settings styles
+  animagineSettingsContainer: {
+    backgroundColor: 'rgba(60, 60, 60, 0.6)',
+    borderRadius: 8,
     padding: 12,
     marginBottom: 16,
   },
-  animagineSettingsContainer: {
-    backgroundColor: '#333',
-    borderRadius: 12,
+  novelAISettingsContainer: {
+    backgroundColor: 'rgba(60, 60, 60, 0.6)',
+    borderRadius: 8,
     padding: 12,
     marginBottom: 16,
   },
@@ -2690,7 +2371,7 @@ const styles = StyleSheet.create({
   settingHeaderButton: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: 'rgba(60, 60, 60, 0.8)',
+    backgroundColor: 'rgba(30, 30, 30, 0.8)',
     borderRadius: 16,
     paddingVertical: 6,
     paddingHorizontal: 10,
@@ -2699,6 +2380,36 @@ const styles = StyleSheet.create({
     color: '#ddd',
     fontSize: 12,
     marginLeft: 4,
+  },
+  settingRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    marginBottom: 12,
+  },
+  settingLabel: {
+    color: '#fff',
+    fontSize: 16,
+    flex: 1,
+  },
+  settingInput: {
+    backgroundColor: 'rgba(30, 30, 30, 0.8)',
+    color: '#fff',
+    borderRadius: 8,
+    padding: 10,
+    fontSize: 15,
+    width: '60%',
+    textAlign: 'center',
+  },
+  settingInputContainer: {
+    width: '60%',
+  },
+  settingNote: {
+    color: '#aaa',
+    fontSize: 12,
+    fontStyle: 'italic',
+    marginTop: 8,
+    textAlign: 'center',
   },
   novelAIModelSelector: {
     marginTop: 6,
@@ -2713,7 +2424,7 @@ const styles = StyleSheet.create({
     flexWrap: 'wrap',
   },
   modelOption: {
-    backgroundColor: 'rgba(60, 60, 60, 0.8)',
+    backgroundColor: 'rgba(30, 30, 30, 0.8)',
     borderRadius: 8,
     paddingVertical: 8,
     paddingHorizontal: 12,
@@ -2721,7 +2432,7 @@ const styles = StyleSheet.create({
     marginBottom: 8,
   },
   selectedModelOption: {
-    backgroundColor: '#8a2be2',
+    backgroundColor: '#ff9f1c',
   },
   modelOptionText: {
     color: '#ddd',
@@ -2730,27 +2441,64 @@ const styles = StyleSheet.create({
   selectedModelOptionText: {
     color: '#fff',
   },
-  generateButtonNovelAI: {
-    backgroundColor: '#8a2be2',
+  
+  // NovelAI settings styles
+  seedControlContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    marginBottom: 12,
   },
-  loadingButtonNovelAI: {
-    backgroundColor: '#6a1b9a',
+  seedInputContainer: {
+    flexDirection: 'row',
+    width: '60%',
+    alignItems: 'center',
   },
-  novelaiAdvancedSettingsContainer: {
-    marginTop: 8,
+  randomSeedButton: {
+    backgroundColor: '#ff9f1c',
+    borderRadius: 8,
+    padding: 8,
+    marginLeft: 8,
+  },
+  generatedSeedContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: 'rgba(74, 144, 226, 0.1)',
+    borderRadius: 8,
+    padding: 8,
+    marginTop: 10,
+  },
+  generatedSeedLabel: {
+    color: '#70A1FF',
+    fontSize: 12,
+    marginRight: 8,
+  },
+  generatedSeedValue: {
+    color: '#fff',
+    fontSize: 14,
+    fontWeight: 'bold',
+    flex: 1,
+  },
+  copySeedButton: {
+    padding: 4,
+  },
+  seedValueText: {
+    color: '#70A1FF',
+    fontSize: 14,
+    fontWeight: 'bold',
   },
   settingDropdown: {
     width: '60%',
   },
   samplerOption: {
-    backgroundColor: 'rgba(60, 60, 60, 0.8)',
+    backgroundColor: 'rgba(30, 30, 30, 0.8)',
     borderRadius: 8,
     paddingVertical: 8,
     paddingHorizontal: 12,
     marginRight: 6,
   },
   selectedSamplerOption: {
-    backgroundColor: '#8a2be2',
+    backgroundColor: '#ff9f1c',
   },
   samplerOptionText: {
     color: '#ddd',
@@ -2760,14 +2508,14 @@ const styles = StyleSheet.create({
     color: '#fff',
   },
   scheduleOption: {
-    backgroundColor: 'rgba(60, 60, 60, 0.8)',
+    backgroundColor: 'rgba(30, 30, 30, 0.8)',
     borderRadius: 8,
     paddingVertical: 8,
     paddingHorizontal: 12,
     marginRight: 6,
   },
   selectedScheduleOption: {
-    backgroundColor: '#8a2be2',
+    backgroundColor: '#ff9f1c',
   },
   scheduleOptionText: {
     color: '#ddd',
@@ -2776,10 +2524,11 @@ const styles = StyleSheet.create({
   selectedScheduleOptionText: {
     color: '#fff',
   },
+  
   // Character prompts styles
   characterPromptsContainer: {
-    backgroundColor: '#333',
-    borderRadius: 12,
+    backgroundColor: 'rgba(60, 60, 60, 0.6)',
+    borderRadius: 8,
     padding: 12,
     marginBottom: 16,
   },
@@ -2795,7 +2544,7 @@ const styles = StyleSheet.create({
     fontWeight: 'bold',
   },
   characterPromptItem: {
-    backgroundColor: 'rgba(60, 60, 60, 0.8)',
+    backgroundColor: 'rgba(30, 30, 30, 0.8)',
     borderRadius: 8,
     padding: 10,
     marginBottom: 10,
@@ -2835,33 +2584,31 @@ const styles = StyleSheet.create({
   },
   characterPromptInput: {
     flex: 1,
-    backgroundColor: 'rgba(50, 50, 50, 0.8)',
+    backgroundColor: 'rgba(20, 20, 20, 0.8)',
     color: '#fff',
     borderRadius: 6,
     padding: 8,
     fontSize: 14,
     marginRight: 8,
   },
-  addTagToCharacterButton: {
-    backgroundColor: 'rgba(50, 50, 50, 0.8)',
-    borderRadius: 6,
-    padding: 8,
-    marginRight: 4,
-  },
-  // New style for character prompt action buttons container
   characterPromptActionButtons: {
     flexDirection: 'row',
     alignItems: 'center',
   },
-  // New style for character tag button in character prompts
+  addTagToCharacterButton: {
+    backgroundColor: 'rgba(30, 30, 30, 0.8)',
+    borderRadius: 6,
+    padding: 8,
+    marginRight: 4,
+  },
   addCharacterTagButton: {
-    backgroundColor: 'rgba(100, 149, 237, 0.3)',
+    backgroundColor: '#ff9f1c',
     borderRadius: 6,
     padding: 8,
   },
   addCharacterPromptButton: {
     flexDirection: 'row',
-    backgroundColor: 'rgba(74, 144, 226, 0.3)',
+    backgroundColor: '#ff9f1c',
     borderRadius: 8,
     padding: 10,
     alignItems: 'center',
@@ -2883,7 +2630,7 @@ const styles = StyleSheet.create({
   positionControlButton: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: 'rgba(60, 60, 60, 0.8)',
+    backgroundColor: 'rgba(30, 30, 30, 0.8)',
     borderRadius: 16,
     paddingVertical: 6,
     paddingHorizontal: 10,
@@ -2904,50 +2651,130 @@ const styles = StyleSheet.create({
     marginTop: 10,
     paddingHorizontal: 10,
   },
-  seedControlContainer: {
-    flexDirection: 'row',
+  
+  // Loading overlay
+  loadingOverlay: {
+    ...StyleSheet.absoluteFillObject,
+    backgroundColor: 'rgba(0, 0, 0, 0.7)',
+    justifyContent: 'center',
     alignItems: 'center',
-    justifyContent: 'space-between',
-    marginBottom: 12,
+    zIndex: 10,
   },
-  seedInputContainer: {
-    flexDirection: 'row',
-    width: '60%',
+  loadingContainer: {
+    backgroundColor: '#333',
+    padding: 20,
+    borderRadius: 12,
     alignItems: 'center',
+    width: '80%',
+    maxWidth: 300,
   },
-  randomSeedButton: {
-    backgroundColor: 'rgba(74, 144, 226, 0.3)',
-    borderRadius: 8,
-    padding: 8,
-    marginLeft: 8,
-  },
-  generatedSeedContainer: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: 'rgba(74, 144, 226, 0.1)',
-    borderRadius: 8,
-    padding: 8,
-    marginTop: 10,
-  },
-  generatedSeedLabel: {
-    color: '#70A1FF',
-    fontSize: 12,
-    marginRight: 8,
-  },
-  generatedSeedValue: {
+  progressMessage: {
     color: '#fff',
-    fontSize: 14,
-    fontWeight: 'bold',
-    flex: 1,
+    marginTop: 16,
+    fontSize: 16,
+    textAlign: 'center',
   },
-  copySeedButton: {
+  
+  // Modal styles
+  tagSelectorModalContainer: {
+    flex: 1,
+    backgroundColor: '#222',
+  },
+  tagSelectorHeader: {
+    flexDirection: 'row',
+    justifyContent: 'center',
+    alignItems: 'center',
+    padding: 16,
+    backgroundColor: '#333',
+    borderBottomWidth: 1,
+    borderBottomColor: 'rgba(255,255,255,0.1)',
+    position: 'relative',
+    paddingTop: Platform.OS === 'ios' ? 44 : 16,
+  },
+  tagSelectorTitle: {
+    color: '#fff',
+    fontSize: 18,
+    fontWeight: 'bold',
+  },
+  tagSelectorCloseButton: {
+    position: 'absolute',
+    right: 16,
+    top: Platform.OS === 'ios' ? 44 : 16,
     padding: 4,
   },
-  seedValueText: {
-    color: '#70A1FF',
-    fontSize: 14,
+  tagSelectorContent: {
+    flex: 1,
+  },
+  modalOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(0, 0, 0, 0.7)',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  customPromptModalContent: {
+    width: '90%',
+    backgroundColor: '#333',
+    borderRadius: 12,
+    padding: 16,
+    maxWidth: 500,
+  },
+  customPromptModalHeader: {
+    marginBottom: 16,
+  },
+  customPromptModalTitle: {
+    color: '#fff',
+    fontSize: 18,
     fontWeight: 'bold',
-  }
+    textAlign: 'center',
+  },
+  customPromptInputContainer: {
+    marginTop: 8,
+  },
+  customPromptInput: {
+    backgroundColor: 'rgba(30, 30, 30, 0.8)',
+    color: '#fff',
+    borderRadius: 8,
+    padding: 10,
+    fontSize: 15,
+    minHeight: 80,
+    textAlignVertical: 'top',
+  },
+  customPromptModalActions: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    marginTop: 16,
+  },
+  customPromptCancelButton: {
+    flex: 1,
+    backgroundColor: 'rgba(80, 80, 80, 0.8)',
+    paddingVertical: 10,
+    borderRadius: 8,
+    marginRight: 8,
+    alignItems: 'center',
+  },
+  customPromptCancelButtonText: {
+    color: '#ddd',
+    fontWeight: '500',
+  },
+  customPromptConfirmButton: {
+    flex: 1,
+    backgroundColor: '#ff9f1c',
+    paddingVertical: 10,
+    borderRadius: 8,
+    marginLeft: 8,
+    alignItems: 'center',
+  },
+  customPromptConfirmButtonText: {
+    color: '#fff',
+    fontWeight: '500',
+  },
+  disabledButton: {
+    opacity: 0.5,
+    backgroundColor: '#666',
+  },
+  novelaiAdvancedSettingsContainer: {
+    marginTop: 8,
+  },
 });
 
 export default ImageRegenerationModal;

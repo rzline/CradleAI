@@ -83,7 +83,7 @@ const MemoryRenderer = ({
         <Ionicons 
           name={isExpanded ? "chevron-down" : "chevron-forward"} 
           size={16} 
-          color="#5e8ec6" 
+          color="white" 
           style={styles.memoryIcon}
         />
         <Text style={styles.memoryTitle}>回忆</Text>
@@ -401,14 +401,15 @@ const styles = StyleSheet.create({
   memoryContainer: {
     marginVertical: 8,
     borderRadius: 8,
-    backgroundColor: 'rgba(73, 125, 189, 0.15)',
+    backgroundColor: 'rgba(255, 159, 28, 0.3)',
+
     overflow: 'hidden',
   },
   memoryHeader: {
     flexDirection: 'row',
     padding: 10,
     alignItems: 'center',
-    backgroundColor: 'rgba(73, 125, 189, 0.25)',
+    backgroundColor: 'rgba(0, 0, 0, 0.25)',
   },
   memoryIcon: {
     marginRight: 8,
@@ -416,7 +417,7 @@ const styles = StyleSheet.create({
   memoryTitle: {
     fontSize: 16,
     fontWeight: 'bold',
-    color: '#5e8ec6',
+    color: 'white',
   },
   memoryContent: {
     padding: 12,
