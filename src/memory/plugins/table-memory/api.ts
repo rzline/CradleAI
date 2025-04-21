@@ -32,6 +32,7 @@ export async function processChat(
     isMultiRound?: boolean;
     processMode?: 'sequential' | 'batch'; // 处理模式 - 顺序处理或批量处理
     initialTableActions?: any[]; // 新增: 从LLM响应中已提取的表格操作
+    chatContent?: string; // 新增：允许外部直接传入chatContent
   }
 ): Promise<{ updatedSheets: string[] }> {
   try {
@@ -120,14 +121,20 @@ export async function processChat(
       console.log(`- "${sheet.name}" (ID: ${sheet.uid}), CharID: ${sheet.characterId}, ConversationId: ${sheet.conversationId}`);
     });
     
-    // 准备消息内容
-    const messageContent = typeof messages === 'string'
-      ? messages
-      : messages.map(m => {
-          const role = m.role === 'assistant' ? (options.aiName || 'AI') : (options.userName || '用户');
-          const content = typeof m.content === 'string' ? m.content : JSON.stringify(m.content);
-          return `${role}: ${content}`;
-        }).join('\n\n');
+    // 优先使用 options.chatContent
+    let messageContent: string;
+    if (options.chatContent) {
+      messageContent = options.chatContent;
+      console.log('[TableMemory] 使用外部传入的 chatContent');
+    } else {
+      messageContent = typeof messages === 'string'
+        ? messages
+        : messages.map(m => {
+            const role = m.role === 'assistant' ? (options.aiName || 'AI') : (options.userName || '用户');
+            const content = typeof m.content === 'string' ? m.content : JSON.stringify(m.content);
+            return `${role}: ${content}`;
+          }).join('\n\n');
+    }
     
     // 优化处理流程：使用新的统一处理方法
     const processMode = options.processMode || (sheets.length > 1 ? 'batch' : 'sequential');

@@ -25,11 +25,13 @@ import { Character } from '@/shared/types';
 import * as DocumentPicker from 'expo-document-picker';
 import * as FileSystem from 'expo-file-system';
 import * as Sharing from 'expo-sharing';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 
 const { width: SCREEN_WIDTH, height: SCREEN_HEIGHT } = Dimensions.get('window');
 
 const DB_SIZE_WARNING_THRESHOLD = 50; 
 const DB_SIZE_ALERT_THRESHOLD = 100;  
+const SETTINGS_STORAGE_KEY = 'MemoryProcessingControl:settings';
 
 interface MemoryFact {
   id: string;
@@ -106,6 +108,33 @@ const MemoryProcessingControl: React.FC<MemoryProcessingControlProps> = ({
     }
   }, [memoryEnabled, isInitialized]);
 
+  // 加载本地设置
+  useEffect(() => {
+    (async () => {
+      try {
+        const saved = await AsyncStorage.getItem(SETTINGS_STORAGE_KEY);
+        if (saved) {
+          const parsed = JSON.parse(saved);
+          if (typeof parsed.currentInterval === 'number') setCurrentInterval(parsed.currentInterval);
+          if (typeof parsed.memoryEnabled === 'boolean') setMemoryEnabled(parsed.memoryEnabled);
+        }
+      } catch (e) {
+        console.warn('[MemoryProcessingControl] 读取本地设置失败', e);
+      }
+    })();
+  }, []);
+
+  // 保存设置到本地
+  useEffect(() => {
+    if (!isInitialized) return;
+    AsyncStorage.setItem(
+      SETTINGS_STORAGE_KEY,
+      JSON.stringify({ currentInterval, memoryEnabled })
+    ).catch(e => {
+      console.warn('[MemoryProcessingControl] 保存本地设置失败', e);
+    });
+  }, [currentInterval, memoryEnabled, isInitialized]);
+
   const fetchDbStats = useCallback(async () => {
     const mem0Service = Mem0Service.getInstance();
     
@@ -152,65 +181,38 @@ const MemoryProcessingControl: React.FC<MemoryProcessingControlProps> = ({
     }
 
     const charId = selectedCharacterId || characterId;
-    
+
     try {
       setIsLoadingFacts(true);
       const mem0Service = Mem0Service.getInstance();
-      
+
       let memories: MemoryFact[] = [];
-      
+
+      // 只用getCharacterMemories直接读取数据库
       if (mem0Service.getCharacterMemories && charId) {
         try {
-          memories = await mem0Service.getCharacterMemories(charId, 200);
-          console.log(`[MemoryProcessingControl] Retrieved ${memories.length} memories directly for character ${charId}`);
-          
-          // 验证并修复记忆数据
-          memories = memories.filter(mem => {
-            if (!mem) return false;
-            
-            // 尝试从不同位置恢复memory内容
-            if (!mem.memory && mem.metadata?.data) {
-              mem.memory = mem.metadata.data;
-              console.log(`[MemoryProcessingControl] Recovered memory content from metadata.data`);
-            } 
-            
-            return !!mem.memory; // 只保留有内容的记忆
-          });
-          
-          // 同步更新统计数据
+          const rawMemories = await mem0Service.getCharacterMemories(charId, 200);
+          // 兼容性修正：确保memory字段存在
+          memories = (rawMemories || []).map((mem: any) => {
+            let memoryContent = mem.memory;
+            if (!memoryContent && mem.metadata?.data) memoryContent = mem.metadata.data;
+            if (!memoryContent && mem.payload?.data) memoryContent = mem.payload.data;
+            if (!memoryContent && mem.payload?.memory) memoryContent = mem.payload.memory;
+            return {
+              ...mem,
+              memory: memoryContent || '',
+            };
+          }).filter(mem => !!mem.memory);
+
           setCharacterMemoryCount(memories.length);
-        } catch (err) {
-          console.error('[MemoryProcessingControl] Error retrieving character memories:', err);
+          console.log(`[MemoryProcessingControl] 统计面板获取到 ${memories.length} 条记忆，与记忆面板保持一致`);
+        } catch (error) {
+          console.error('[MemoryProcessingControl] 获取角色记忆统计失败:', error);
+          setCharacterMemoryCount(0);
         }
       }
-      
-      if (memories.length === 0 && mem0Service.memoryRef) {
-        console.log('[MemoryProcessingControl] No memories found through getCharacterMemories, trying memoryRef.getAll');
-        try {
-          const result = await mem0Service.memoryRef.getAll({
-            agentId: charId,
-            limit: 100
-          });
 
-          if (result && result.results) {
-            interface DbMemoryItem {
-              memory?: string;
-              data?: string;
-              [key: string]: any;
-            }
-
-            memories = result.results.map((item: DbMemoryItem) => {
-              if (!item.memory && item.data) {
-                item.memory = item.data;
-              }
-              return item as MemoryFact;
-            });
-          }
-        } catch (err) {
-          console.error('[MemoryProcessingControl] Error accessing database directly:', err);
-        }
-      }
-      
+      // 本地搜索过滤
       if (factSearchQuery && memories.length > 0) {
         const query = factSearchQuery.toLowerCase();
         memories = memories.filter((item: MemoryFact) => {
@@ -218,13 +220,13 @@ const MemoryProcessingControl: React.FC<MemoryProcessingControlProps> = ({
           return content.toLowerCase().includes(query);
         });
       }
-      
+
       memories.sort((a, b) => {
         const dateA = a.updatedAt || a.createdAt || '';
         const dateB = b.updatedAt || b.createdAt || '';
         return dateB.localeCompare(dateA);
       });
-      
+
       setMemoryFacts(memories);
     } catch (error) {
       console.error('[MemoryProcessingControl] Error fetching memory facts:', error);
@@ -252,19 +254,6 @@ const MemoryProcessingControl: React.FC<MemoryProcessingControlProps> = ({
       mem0Service.setProcessingInterval(currentInterval);
       console.log(`[MemoryProcessingControl] Memory processing interval set to ${currentInterval}`);
     }
-
-    if (currentInterval === 1) {
-      Alert.alert(
-        '警告',
-        '将处理间隔设置为每轮处理可能导致API使用量增加，这可能会提高成本。确定要继续吗？',
-        [
-          { text: '取消', style: 'cancel', onPress: () => setCurrentInterval(2) },
-          { text: '确定', style: 'destructive' }
-        ]
-      );
-    }
-    
-    Alert.alert('成功', '记忆处理间隔设置已保存');
   };
 
   const handleProcessNow = () => {

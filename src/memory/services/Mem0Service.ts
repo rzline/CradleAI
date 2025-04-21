@@ -971,104 +971,59 @@ class Mem0Service {
   public async getCharacterMemories(characterId: string, limit: number = 100): Promise<any[]> {
     try {
       this.checkInitialized();
-      
+
       if (!this.memoryRef || !this.memoryRef.vectorStore) {
         console.log('[Mem0Service] memoryRef或vectorStore不可用，无法获取角色记忆');
         return [];
       }
-      
+
       console.log(`[Mem0Service] 获取角色 ${characterId} 的所有记忆数据，限制 ${limit} 条`);
-      
+
       // 直接使用vectorStore的getByCharacterId方法
       const memories = await this.memoryRef.vectorStore.getByCharacterId(characterId, limit);
       console.log(`[Mem0Service] 从向量存储获取到 ${memories.length} 条记忆数据`);
-      
-      if (memories.length === 0) {
+
+      if (!memories || memories.length === 0) {
         return [];
       }
-      
-      // 检查数据结构，输出第一条记忆的关键字段
-      if (memories[0]) {
-        const sample = memories[0];
-        console.log(`[Mem0Service] 记忆数据示例:`, {
-          id: sample.id,
-          hasPayload: !!sample.payload,
-          payloadKeys: Object.keys(sample.payload || {}),
-          hasData: !!sample.payload?.data,
-          hasMemory: !!sample.payload?.memory
-        });
-      }
-      
-      // 转换为标准记忆项格式
-      interface VectorStoreMemoryItem {
-        id: string;
-        payload: {
-          data?: string;
-          memory?: string;
-          hash?: string;
-          createdAt?: string;
-          updatedAt?: string;
-          userId?: string;
-          agentId?: string;
-          runId?: string;
-          [key: string]: any;
-        };
-      }
 
-      interface FormattedMemoryItem {
-        id: string;
-        memory: string;
-        hash?: string;
-        createdAt?: string;
-        updatedAt?: string;
-        metadata: Record<string, any>;
-        userId?: string;
-        agentId?: string;
-        runId?: string;
-      }
-
-      const formattedMemories: FormattedMemoryItem[] = memories.map((mem: VectorStoreMemoryItem) => {
-        // 确定memory内容 - 优先使用payload.data，然后是payload.memory
-        const memoryContent = mem.payload.data || mem.payload.memory || '';
-        
-        // 如果没有data字段但有memory字段，为payload添加data字段
-        if (!mem.payload.data && mem.payload.memory) {
-          mem.payload.data = mem.payload.memory;
+      // 兼容历史和新格式，确保memory字段存在
+      const formattedMemories = memories.map((mem: any) => {
+        let memoryContent = '';
+        if (mem.memory) {
+          memoryContent = mem.memory;
+        } else if (mem.payload) {
+          // 兼容vectorStore原始返回
+          memoryContent = mem.payload.data || mem.payload.memory || '';
+        } else if (mem.metadata && mem.metadata.data) {
+          memoryContent = mem.metadata.data;
         }
-        
-        // 如果没有memory字段但有data字段，为payload添加memory字段
-        if (!mem.payload.memory && mem.payload.data) {
-          mem.payload.memory = mem.payload.data;
-        }
-        
+        // 兼容payload结构
+        const meta = mem.metadata || mem.payload || {};
+        // 确保memory字段存在
         return {
           id: mem.id,
           memory: memoryContent,
-          hash: mem.payload.hash || '',
-          createdAt: mem.payload.createdAt || '',
-          updatedAt: mem.payload.updatedAt || '',
-          metadata: Object.entries(mem.payload)
-            .filter(([key]: [string, any]) => !['data', 'hash', 'createdAt', 'updatedAt', 'userId', 'agentId', 'runId', 'memory'].includes(key))
-            .reduce((acc: Record<string, any>, [key, value]: [string, any]) => ({ ...acc, [key]: value }), {}),
-          userId: mem.payload.userId,
-          agentId: mem.payload.agentId,
-          runId: mem.payload.runId,
+          createdAt: mem.createdAt || meta.createdAt,
+          updatedAt: mem.updatedAt || meta.updatedAt,
+          metadata: meta,
+          userId: mem.userId || meta.userId,
+          agentId: mem.agentId || meta.agentId,
+          runId: mem.runId || meta.runId,
         };
       });
-      
-      console.log(`[Mem0Service] 成功格式化 ${formattedMemories.length} 条记忆数据`);
-      
-      // 检查格式化后的数据，输出第一条
+
+      // 日志输出首条
       if (formattedMemories.length > 0) {
         const sample = formattedMemories[0];
-        console.log(`[Mem0Service] 格式化后记忆示例:`, {
+        console.log('[Mem0Service] 记忆数据示例:', {
           id: sample.id,
-          memoryLength: sample.memory?.length || 0,
-          hasMemory: !!sample.memory,
-          metadataKeys: Object.keys(sample.metadata || {})
+          memory: sample.memory?.substring(0, 30),
+          createdAt: sample.createdAt,
+          agentId: sample.agentId,
         });
       }
-      
+
       return formattedMemories;
     } catch (error) {
       console.error('[Mem0Service] 获取角色记忆数据失败:', error);

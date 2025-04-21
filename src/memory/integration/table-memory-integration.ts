@@ -515,12 +515,13 @@ export async function processChat(
     console.log(`[TableMemoryIntegration] 准备处理消息内容(前50字符): ${messageContent.substring(0, 50)}...`);
     
     // 将消息传递给插件的processChat方法
-    const result = await TableMemory.API.processChat(messageContent, {
+    const result = await TableMemory.API.processChat(messages, {
       characterId: safeCharacterId,
       conversationId: safeConversationId,
       userName: options.userName,
       aiName: options.aiName,
-      isMultiRound: options.isMultiRound
+      isMultiRound: options.isMultiRound,
+      chatContent: options.chatContent // 显式传递 chatContent
     });
     
     return {
