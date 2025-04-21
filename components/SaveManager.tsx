@@ -290,11 +290,11 @@ const SaveManager: React.FC<SaveManagerProps> = ({
             </>
           ) : (
             <View style={styles.saveForm}>
-              <Text style={styles.sectionTitle}>Create New Save</Text>
-              <Text style={styles.label}>Description</Text>
+              <Text style={styles.sectionTitle}>新存档</Text>
+              <Text style={styles.label}>描述</Text>
               <TextInput
                 style={styles.input}
-                placeholder="Enter save description..."
+                placeholder="输入描述..."
                 placeholderTextColor="#999"
                 value={saveDescription}
                 onChangeText={setSaveDescription}
@@ -306,13 +306,13 @@ const SaveManager: React.FC<SaveManagerProps> = ({
                 disabled={!saveDescription.trim() || loading}
               >
                 <Text style={styles.saveButtonText}>
-                  {loading ? 'Saving...' : 'Save Current Chat State'}
+                  {loading ? '存档中...' : '保存当前对话进度'}
                 </Text>
               </TouchableOpacity>
               
               <View style={styles.saveInfo}>
                 <Text style={styles.saveInfoText}>
-                  This will save the current conversation state with {messages.length} messages.
+                  将保存当前对话进度，当前消息数量： {messages.length} .
                 </Text>
               </View>
             </View>

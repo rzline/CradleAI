@@ -237,9 +237,10 @@ export { API };
 export const {
   processChat,
   getSelectedTemplates,
+  getAllTemplates,
   createSheetsFromTemplates,
   getCharacterSheets,
-  getSheetByName,  // 添加新方法导出
+  getSheetByName,
   insertRow,
   updateRow,
   deleteRow,
@@ -248,5 +249,6 @@ export const {
   getSelectedTemplateIds,
   rebuildSheet,
   deleteSheet,
-  getSheet
+  getSheet,
+  getCharacterTablesData // 添加新导出的方法
 } = API;

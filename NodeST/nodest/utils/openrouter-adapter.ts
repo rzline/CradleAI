@@ -1,5 +1,6 @@
 import { mcpAdapter } from './mcp-adapter';
 import { CloudServiceProvider } from '@/services/cloud-service-provider';
+import { getCharacterTablesData } from '@/src/memory/plugins/table-memory/api';
 
 /**
  * OpenRouter Adapter
@@ -10,6 +11,7 @@ type ChatMessage = {
   role: string;
   parts?: { text: string }[];
   content?: string;
+  characterId?: string;
 };
 
 interface OpenRouterModel {
@@ -159,7 +161,6 @@ export class OpenRouterAdapter {
             response.headers.forEach((value: string, name: string): void => {
               if (name.toLowerCase() === 'content-type' || 
                 name.toLowerCase() === 'content-length' || 
-                name.toLowerCase() === 'x-request-id' ||
                 name.toLowerCase().startsWith('openrouter-')) {
                 console.log(`【OpenRouterAdapter】- ${name}: ${value}`);
               }
@@ -454,7 +455,7 @@ export class OpenRouterAdapter {
     // 获取最后一条消息的内容
     const lastMessage = contents[contents.length - 1];
     const userQuery = lastMessage.content || (lastMessage.parts && lastMessage.parts[0]?.text) || "";
-    
+
     try {
       // 添加详细的记忆结果结构日志
       console.log(`【OpenRouterAdapter】 处理记忆增强请求，发现 ${memoryResults.results.length} 条记忆`);
@@ -467,19 +468,70 @@ export class OpenRouterAdapter {
         firstMemoryScore: memoryResults.results?.[0]?.score,
         hasMetadata: memoryResults.results?.[0]?.metadata !== undefined
       });
-      
+
+      // ==== 新增：获取角色表格记忆 ====
+      let tableMemoryText = '';
+      try {
+        // 日志：记录characterId/conversationId来源和类型
+        let characterId =
+          memoryResults.characterId ||
+          memoryResults.agentId ||
+          memoryResults.results?.[0]?.characterId ||
+          memoryResults.results?.[0]?.agentId;
+        let conversationId =
+          memoryResults.conversationId ||
+          memoryResults.results?.[0]?.conversationId;
+        console.log('【OpenRouterAdapter】【表格记忆】 memoryResults.characterId:', memoryResults.characterId, typeof memoryResults.characterId);
+        console.log('【OpenRouterAdapter】【表格记忆】 memoryResults.agentId:', memoryResults.agentId, typeof memoryResults.agentId);
+        console.log('【OpenRouterAdapter】【表格记忆】 memoryResults.results[0]?.characterId:', memoryResults.results?.[0]?.characterId, typeof memoryResults.results?.[0]?.characterId);
+        console.log('【OpenRouterAdapter】【表格记忆】 memoryResults.results[0]?.agentId:', memoryResults.results?.[0]?.agentId, typeof memoryResults.results?.[0]?.agentId);
+        console.log('【OpenRouterAdapter】【表格记忆】 memoryResults.conversationId:', memoryResults.conversationId, typeof memoryResults.conversationId);
+        console.log('【OpenRouterAdapter】【表格记忆】 memoryResults.results[0]?.conversationId:', memoryResults.results?.[0]?.conversationId, typeof memoryResults.results?.[0]?.conversationId);
+        if (!characterId && contents.length > 0) {
+          characterId = contents[0]?.characterId;
+          console.log('【OpenRouterAdapter】【表格记忆】 尝试从contents[0]获取characterId:', characterId, typeof characterId);
+        }
+        console.log('【OpenRouterAdapter】【表格记忆】 最终用于查询的 characterId:', characterId, 'conversationId:', conversationId);
+        if (characterId) {
+          console.log('【OpenRouterAdapter】【表格记忆】 调用 getCharacterTablesData 前参数:', { characterId, conversationId });
+          const tableData = await getCharacterTablesData(characterId, conversationId);
+          console.log('【OpenRouterAdapter】【表格记忆】 getCharacterTablesData 返回:', tableData);
+          if (tableData.success && tableData.tables.length > 0) {
+            tableMemoryText += `【角色长期记忆表格】\n`;
+            tableData.tables.forEach(table => {
+              const headerRow = '| ' + table.headers.join(' | ') + ' |';
+              const sepRow = '| ' + table.headers.map(() => '---').join(' | ') + ' |';
+              const dataRows = table.rows.map(row => '| ' + row.join(' | ') + ' |').join('\n');
+              tableMemoryText += `表格：${table.name}\n${headerRow}\n${sepRow}\n${dataRows}\n\n`;
+            });
+          } else {
+            console.log('【OpenRouterAdapter】【表格记忆】 未获取到有效表格数据，success:', tableData.success, 'tables.length:', tableData.tables.length);
+          }
+        } else {
+          console.log('【OpenRouterAdapter】【表格记忆】 未能确定characterId，跳过表格记忆注入');
+        }
+      } catch (e) {
+        console.warn('【OpenRouterAdapter】 获取角色表格记忆失败:', e);
+      }
+      // ==== 新增结束 ====
+
       // 构建包含记忆搜索结果的提示
       let combinedPrompt = `${userQuery}\n\n`;
-      
+
+      // 插入表格记忆内容（如有）
+      if (tableMemoryText) {
+        combinedPrompt = `${tableMemoryText}\n${combinedPrompt}`;
+      }
+
       // 添加记忆搜索结果
       combinedPrompt += `<mem>\n系统检索到的记忆内容：\n`;
-      
+
       // 格式化记忆结果
       memoryResults.results.forEach((item: any, index: number) => {
         combinedPrompt += `${index + 1}. ${item.memory}\n`;
       });
       combinedPrompt += `</mem>\n\n`;
-      
+
       // 添加响应指南
       combinedPrompt += `<response_guidelines>
 - 除了对用户消息的回应之外，**务必** 结合记忆内容进行回复。
@@ -487,13 +539,13 @@ export class OpenRouterAdapter {
   - 示例: <mem>我想起您上次提到过类似的问题，当时...</mem>
 - 确保回复保持角色人设的一致性。
 </response_guidelines>`;
-      
+
       // 记录准备的提示词
       console.log('【OpenRouterAdapter】 准备了带记忆结果的提示:', combinedPrompt.substring(0, 200) + '...');
-      
+
       // 将记忆提示转换为适当的格式
       let formattedContents = [];
-      
+
       // 转换历史消息
       for (let i = 0; i < contents.length - 1; i++) {
         const msg = contents[i];
@@ -504,13 +556,13 @@ export class OpenRouterAdapter {
           });
         }
       }
-      
+
       // 添加最后的用户查询和记忆结果
       formattedContents.push({
         role: "user",
         content: combinedPrompt
       });
-      
+
       // 使用记忆提示词生成最终回复
       return await this.askLLM(formattedContents);
     } catch (error) {

@@ -38,8 +38,8 @@ const MemoOverlay: React.FC<MemoOverlayProps> = ({ isVisible, onClose, character
   const [loading, setLoading] = useState<boolean>(false);
   const [initialized, setInitialized] = useState<boolean>(false);
 
-  // State for templates
-  const [templates, setTemplates] = useState<TableMemory.SheetTemplate[]>([]);
+  // State for templates - update to have allTemplates separate from selectedTemplates
+  const [allTemplates, setAllTemplates] = useState<TableMemory.SheetTemplate[]>([]);
   const [selectedTemplateIds, setSelectedTemplateIds] = useState<string[]>([]);
 
   // State for tables
@@ -110,15 +110,22 @@ const MemoOverlay: React.FC<MemoOverlayProps> = ({ isVisible, onClose, character
     }
     
     try {
-      // Load all available templates (including default templates)
-      const allTemplates = await TableMemory.getSelectedTemplates();
-      console.log(`[MemoOverlay] Loaded ${allTemplates.length} templates`);
+      // Load ALL available templates from the API, not just selected ones
+      const templateManager = TableMemory.API;
       
-      if (isMountedRef.current) {
-        setTemplates(allTemplates);
+      // Use getAllTemplates from the API instead of getSelectedTemplates
+      try {
+        const availableTemplates = await templateManager.getAllTemplates();
+        console.log(`[MemoOverlay] Loaded ${availableTemplates.length} total templates`);
+        
+        if (isMountedRef.current) {
+          setAllTemplates(availableTemplates);
+        }
+      } catch (templateError) {
+        console.error('[MemoOverlay] Failed to load all templates:', templateError);
       }
       
-      // Load selected template IDs
+      // Load selected template IDs (separate from all templates)
       const selectedIds = await TableMemory.getSelectedTemplateIds();
       console.log(`[MemoOverlay] Loaded ${selectedIds.length} selected template IDs`);
       
@@ -526,7 +533,7 @@ const MemoOverlay: React.FC<MemoOverlayProps> = ({ isVisible, onClose, character
       
       // Get all chat messages for this character
       // Note: This is placeholder code - you'll need to integrate with your chat history
-      const chatContent = "User: Hello, my name is Alex and I like playing basketball.\nAI: Nice to meet you Alex! I'm glad you enjoy basketball. Do you play on a team?";
+      const chatContent = "";
       
       // Rebuild the table
       const success = await TableMemory.API.rebuildSheet(
@@ -553,12 +560,26 @@ const MemoOverlay: React.FC<MemoOverlayProps> = ({ isVisible, onClose, character
     }
   };
 
-  // Render the template list
+  // Render the template list with enhanced multi-selection UI
   const renderTemplateTab = () => (
     <View style={styles.tabContent}>
-      <Text style={styles.tabTitle}>Available Templates ({templates.length})</Text>
+      <Text style={styles.tabTitle}>
+        Available Templates ({allTemplates.length})
+        {selectedTemplateIds.length > 0 && (
+          <Text style={styles.selectedCount}> • {selectedTemplateIds.length} selected</Text>
+        )}
+      </Text>
+      
+      {/* Multi-select helper text */}
+      <View style={styles.helperTextContainer}>
+        <Ionicons name="information-circle-outline" size={16} color="#ff9f1c" />
+        <Text style={styles.helperText}>
+          You can select multiple templates to create several tables at once
+        </Text>
+      </View>
+      
       <FlatList
-        data={templates}
+        data={allTemplates}
         keyExtractor={item => item.uid}
         renderItem={({ item }) => (
           <View style={styles.templateItem}>
@@ -610,21 +631,34 @@ const MemoOverlay: React.FC<MemoOverlayProps> = ({ isVisible, onClose, character
           onPress={handleCreateTablesFromTemplates}
           disabled={selectedTemplateIds.length === 0}
         >
+          <MaterialIcons name="add-chart" size={20} color="#fff" />
           <Text style={styles.actionButtonText}>
-            Create Tables From Selected Templates ({selectedTemplateIds.length})
+            Create {selectedTemplateIds.length} Table{selectedTemplateIds.length !== 1 ? 's' : ''}
           </Text>
         </TouchableOpacity>
+        
+        {selectedTemplateIds.length > 0 && (
+          <TouchableOpacity
+            style={[styles.actionButton, styles.secondaryButton, styles.clearButton]}
+            onPress={() => {
+              TableMemory.API.selectTemplates([]);
+              setSelectedTemplateIds([]);
+            }}
+          >
+            <Text style={styles.clearButtonText}>Clear Selection</Text>
+          </TouchableOpacity>
+        )}
       </View>
     </View>
   );
 
-  // Render the tables tab with refresh button
+  // Render the tables tab with improved multi-table view
   const renderTablesTab = () => (
     <View style={styles.tabContent}>
       <View style={styles.tablesContainer}>
         <View style={styles.tablesList}>
           <View style={styles.tablesHeader}>
-            <Text style={styles.tabTitle}>Tables</Text>
+            <Text style={styles.tabTitle}>Tables ({tables.length})</Text>
             <TouchableOpacity
               style={styles.refreshButton}
               onPress={handleRefreshTables}
@@ -640,33 +674,88 @@ const MemoOverlay: React.FC<MemoOverlayProps> = ({ isVisible, onClose, character
           
           <ScrollView>
             {tables.length > 0 ? (
-              tables.map((table) => (
-                <TouchableOpacity
-                  key={table.uid}
-                  style={[
-                    styles.tableListItem,
-                    selectedTableId === table.uid && styles.tableListItemSelected
-                  ]}
-                  onPress={() => handleSelectTable(table.uid)}
-                >
-                  <Text style={styles.tableListItemName}>{table.name}</Text>
-                  <Text style={styles.tableIdText}>{table.uid}</Text>
-                  <View style={styles.tableListItemActions}>
+              <>
+                {/* Group tables by template type for better organization */}
+                {tables.map((table) => (
+                  <TouchableOpacity
+                    key={table.uid}
+                    style={[
+                      styles.tableListItem,
+                      selectedTableId === table.uid && styles.tableListItemSelected
+                    ]}
+                    onPress={() => handleSelectTable(table.uid)}
+                  >
+                    <Text style={styles.tableListItemName}>{table.name}</Text>
+                    <Text style={styles.tableIdText}>{table.uid}</Text>
+                    <View style={styles.tableListItemActions}>
+                      <TouchableOpacity
+                        style={styles.tableActionButton}
+                        onPress={() => handleRebuildTable(table.uid, 'rebuild_base')}
+                      >
+                        <Ionicons name="refresh" size={18} color="#ccc" />
+                      </TouchableOpacity>
+                      <TouchableOpacity
+                        style={styles.tableActionButton}
+                        onPress={() => handleDeleteTable(table.uid)}
+                      >
+                        <Ionicons name="trash" size={18} color="#ff6b6b" />
+                      </TouchableOpacity>
+                    </View>
+                  </TouchableOpacity>
+                ))}
+                
+                {/* Add batch operations section for multiple tables */}
+                {tables.length > 1 && (
+                  <View style={styles.batchOperationsContainer}>
+                    <Text style={styles.batchOperationsTitle}>Batch Operations</Text>
                     <TouchableOpacity
-                      style={styles.tableActionButton}
-                      onPress={() => handleRebuildTable(table.uid, 'rebuild_base')}
+                      style={styles.batchOperationButton}
+                      onPress={() => {
+                        // Process all tables at once
+                        Alert.alert(
+                          'Update All Tables',
+                          'This will update all tables based on the conversation. Do you want to continue?',
+                          [
+                            { text: 'Cancel', style: 'cancel' },
+                            { 
+                              text: 'Update All', 
+                              onPress: async () => {
+                                setLoading(true);
+                                try {
+                                  // Sample chat content - in a real app, you'd fetch this
+                                  const chatContent = "This is sample chat content for updating all tables";
+                                  
+                                  // Use the appropriate API call to process all tables at once
+                                  const result = await TableMemory.API.processChat(chatContent, {
+                                    characterId: characterId || '',
+                                    conversationId: conversationId || characterId || '',
+                                    processMode: 'batch' // Use batch mode to process all tables at once
+                                  });
+                                  
+                                  if (result.updatedSheets.length > 0) {
+                                    Alert.alert('Success', `Updated ${result.updatedSheets.length} tables`);
+                                    loadData(true);
+                                  } else {
+                                    Alert.alert('Info', 'No tables were updated');
+                                  }
+                                } catch (error) {
+                                  console.error('[MemoOverlay] Batch update error:', error);
+                                  Alert.alert('Error', 'Failed to update tables');
+                                } finally {
+                                  setLoading(false);
+                                }
+                              }
+                            }
+                          ]
+                        );
+                      }}
                     >
-                      <Ionicons name="refresh" size={18} color="#ccc" />
-                    </TouchableOpacity>
-                    <TouchableOpacity
-                      style={styles.tableActionButton}
-                      onPress={() => handleDeleteTable(table.uid)}
-                    >
-                      <Ionicons name="trash" size={18} color="#ff6b6b" />
+                      <Ionicons name="layers" size={18} color="#ff9f1c" />
+                      <Text style={styles.batchOperationText}>Update All Tables</Text>
                     </TouchableOpacity>
                   </View>
-                </TouchableOpacity>
-              ))
+                )}
+              </>
             ) : (
               <View style={styles.emptyState}>
                 <Text style={styles.emptyText}>No tables found</Text>
@@ -888,6 +977,9 @@ const MemoOverlay: React.FC<MemoOverlayProps> = ({ isVisible, onClose, character
               />
               <Text style={[styles.tabText, activeTab === TabType.TEMPLATES && styles.activeTabText]}>
                 Templates
+                {selectedTemplateIds.length > 0 && (
+                  <Text style={styles.tabBadge}> ({selectedTemplateIds.length})</Text>
+                )}
               </Text>
             </TouchableOpacity>
             
@@ -902,6 +994,9 @@ const MemoOverlay: React.FC<MemoOverlayProps> = ({ isVisible, onClose, character
               />
               <Text style={[styles.tabText, activeTab === TabType.TABLES && styles.activeTabText]}>
                 Tables
+                {tables.length > 0 && (
+                  <Text style={styles.tabBadge}> ({tables.length})</Text>
+                )}
               </Text>
             </TouchableOpacity>
             
@@ -1347,6 +1442,64 @@ const styles = StyleSheet.create({
   },
   refreshButton: {
     padding: 8,
+  },
+  selectedCount: {
+    color: '#ff9f1c',
+    fontWeight: 'normal',
+  },
+  helperTextContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: 'rgba(255, 159, 28, 0.1)',
+    padding: 10,
+    borderRadius: 6,
+    marginBottom: 16,
+  },
+  helperText: {
+    color: '#ccc',
+    fontSize: 13,
+    marginLeft: 8,
+  },
+  secondaryButton: {
+    backgroundColor: '#444',
+    marginTop: 8,
+  },
+  clearButton: {
+    backgroundColor: 'transparent',
+    borderWidth: 1,
+    borderColor: '#666',
+  },
+  clearButtonText: {
+    color: '#ccc',
+  },
+  tabBadge: {
+    color: '#ff9f1c',
+    fontSize: 12,
+  },
+  batchOperationsContainer: {
+    marginTop: 16,
+    borderTopWidth: 1,
+    borderTopColor: 'rgba(255, 255, 255, 0.1)',
+    paddingTop: 10,
+  },
+  batchOperationsTitle: {
+    fontSize: 13,
+    color: '#ccc',
+    marginBottom: 8,
+    fontWeight: 'bold',
+  },
+  batchOperationButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: 'rgba(255, 159, 28, 0.1)',
+    padding: 10,
+    borderRadius: 6,
+    marginBottom: 8,
+  },
+  batchOperationText: {
+    color: '#ccc',
+    marginLeft: 8,
+    fontSize: 13,
   },
 });
 

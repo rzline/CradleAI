@@ -7,7 +7,12 @@
 
 import { SheetManager } from './services/sheet-manager';
 import { TemplateManager } from './services/template-manager';
-import { Sheet } from './models/sheet';
+import { 
+  Sheet, 
+  toText,
+  getRowCount,  // 添加这一行导入getRowCount函数
+  getColumnCount // 添加这一行导入getColumnCount函数
+} from './models/sheet';
 import { SheetTemplate } from './models/template';
 import { isEnabled, initialize, setEnabled } from './index';
 
@@ -25,6 +30,8 @@ export async function processChat(
     userName?: string;
     aiName?: string;
     isMultiRound?: boolean;
+    processMode?: 'sequential' | 'batch'; // 处理模式 - 顺序处理或批量处理
+    initialTableActions?: any[]; // 新增: 从LLM响应中已提取的表格操作
   }
 ): Promise<{ updatedSheets: string[] }> {
   try {
@@ -122,38 +129,44 @@ export async function processChat(
           return `${role}: ${content}`;
         }).join('\n\n');
     
-    // 处理每个表格
-    const updatedSheets: string[] = [];
-    for (const sheet of sheets) {
-      try {
-        console.log(`[TableMemory] 处理表格 "${sheet.name}" (ID: ${sheet.uid})`);
-        
-        // 使用表格管理器处理对话内容
-        const updated = await SheetManager.processSheetWithChat(
-          sheet.uid, 
-          messageContent,
-          {
-            isMultiRound: options.isMultiRound,
-            userName: options.userName,
-            aiName: options.aiName
-          }
-        );
-        
-        if (updated) {
-          updatedSheets.push(sheet.uid);
-          console.log(`[TableMemory] 表格 "${sheet.name}" (ID: ${sheet.uid}) 已更新`);
-        } else {
-          console.log(`[TableMemory] 表格 "${sheet.name}" (ID: ${sheet.uid}) 无需更新`);
-        }
-      } catch (error) {
-        console.error(`[TableMemory] 处理表格 "${sheet.name}" (ID: ${sheet.uid}) 时出错:`, error);
+    // 优化处理流程：使用新的统一处理方法
+    const processMode = options.processMode || (sheets.length > 1 ? 'batch' : 'sequential');
+    
+    console.log(`[TableMemory] 使用处理模式: ${processMode}, 表格数量: ${sheets.length}`);
+    
+    // 使用新的优化处理方法
+    const updatedSheets = await SheetManager.processSheets(
+      sheets,
+      messageContent,
+      {
+        isMultiRound: options.isMultiRound,
+        userName: options.userName,
+        aiName: options.aiName,
+        firstTryBatch: processMode === 'batch',
+        initialTableActions: options.initialTableActions // 传递已经提取的表格操作
       }
-    }
+    );
+    
+    console.log(`[TableMemory] 处理完成，共更新了 ${updatedSheets.length} 个表格`);
     
     return { updatedSheets };
   } catch (error) {
     console.error('[TableMemory] 处理聊天消息失败:', error);
     return { updatedSheets: [] };
+  }
+}
+
+/**
+ * 获取 LLM 实例
+ * 从 SheetManager 中提取出来方便复用
+ */
+async function getLLMInstance(): Promise<any> {
+  try {
+    // 直接使用SheetManager的方法获取LLM实例，确保一致性
+    return await SheetManager['getLLM']();
+  } catch (error) {
+    console.error('[TableMemory] 获取LLM实例失败:', error);
+    throw error;
   }
 }
 
@@ -178,6 +191,27 @@ export async function getSelectedTemplates(): Promise<SheetTemplate[]> {
     return allTemplates.filter(template => selectedIds.includes(template.uid));
   } catch (error) {
     console.error('[TableMemory] 获取已选择的模板失败:', error);
+    return [];
+  }
+}
+
+/**
+ * 获取所有模板
+ * @returns 所有模板列表
+ */
+export async function getAllTemplates(): Promise<SheetTemplate[]> {
+  try {
+    if (!isEnabled()) {
+      console.log('[TableMemory] 插件未启用，跳过获取模板');
+      return [];
+    }
+    
+    console.log(`[TableMemory] 获取所有模板`);
+    
+    // 使用TemplateManager获取所有模板
+    return await TemplateManager.getAllTemplates();
+  } catch (error) {
+    console.error('[TableMemory] 获取所有模板失败:', error);
     return [];
   }
 }
@@ -273,6 +307,97 @@ export async function getCharacterSheets(
   conversationId?: string
 ): Promise<Sheet[]> {
   return SheetManager.getSheetsByCharacter(characterId, conversationId);
+}
+
+/**
+ * 获取角色的所有表格数据（便于外部系统使用）
+ * @param characterId 角色ID
+ * @param conversationId 可选的会话ID
+ * @returns 格式化的表格数据对象
+ */
+export async function getCharacterTablesData(
+  characterId: string,
+  conversationId?: string
+): Promise<{
+  success: boolean;
+  tables: Array<{
+    id: string;
+    name: string;
+    headers: string[];
+    rows: string[][];
+    text: string;
+  }>;
+  error?: string;
+}> {
+  try {
+    // 检查插件是否启用和初始化
+    if (!isEnabled()) {
+      console.log('[TableMemory] 插件未启用，跳过获取表格数据');
+      return { success: false, tables: [], error: '表格记忆插件未启用' };
+    }
+    
+    // Ensure consistent ID handling
+    const safeCharacterId = String(characterId || '').trim();
+    const safeConversationId = conversationId ? String(conversationId).trim() : safeCharacterId;
+    
+    console.log(`[TableMemory] getCharacterTablesData - 获取角色 ID: "${safeCharacterId}" 的表格数据`);
+    if (conversationId) {
+      console.log(`[TableMemory] 会话过滤 ID: "${safeConversationId}"`);
+    }
+    
+    // 获取角色的所有表格
+    const sheets = await SheetManager.getSheetsByCharacter(
+      safeCharacterId,
+      safeConversationId
+    );
+    
+    console.log(`[TableMemory] 找到 ${sheets.length} 个表格数据`);
+    
+    // 格式化表格数据，便于外部系统使用
+    const formattedTables = sheets.map(sheet => {
+      // 获取表格的行数和列数
+      const rowCount = getRowCount(sheet);
+      const colCount = getColumnCount(sheet);
+      
+      // 将表格转换为二维数组，方便外部处理
+      const matrix = Array(rowCount)
+        .fill(null)
+        .map(() => Array(colCount).fill(''));
+      
+      // 填充数据
+      sheet.cells.forEach(cell => {
+        if (cell.rowIndex < rowCount && cell.colIndex < colCount) {
+          matrix[cell.rowIndex][cell.colIndex] = cell.value;
+        }
+      });
+      
+      // 获取表头（第一行）
+      const headers = matrix[0] || [];
+      
+      // 获取数据行（第二行开始）
+      const rows = matrix.slice(1);
+      
+      return {
+        id: sheet.uid,
+        name: sheet.name,
+        headers: headers,
+        rows: rows,
+        text: toText(sheet) // 添加文本表示形式，方便显示
+      };
+    });
+    
+    return {
+      success: true,
+      tables: formattedTables
+    };
+  } catch (error) {
+    console.error('[TableMemory] 获取角色表格数据失败:', error);
+    return {
+      success: false,
+      tables: [],
+      error: error instanceof Error ? error.message : '未知错误'
+    };
+  }
 }
 
 /**

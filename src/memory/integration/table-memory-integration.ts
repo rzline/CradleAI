@@ -105,7 +105,8 @@ ${tableText}` : '目前没有表格数据，需要根据对话创建新表格。
 2. 基于对话内容添加新行或更新现有行
 3. 将相关信息分类到正确的列中
 4. 如果信息不确定，使用空值而非猜测
-5. 返回的JSON必须包含facts和tableActions两个部分`;
+5. 返回的JSON必须包含facts和tableActions两个部分
+6. 对话中的信息可能需要同时更新多个表格，请确保所有相关表格都得到更新`;
 
   // 增强用户提示词
   const enhancedUserPrompt = `${userPrompt}
@@ -115,21 +116,29 @@ ${tableText}` : '目前没有表格数据，需要根据对话创建新表格。
 2. "tableActions": 表格更新操作数组，每个操作包含:
    - "action": "insert"/"update"/"delete" 之一
    - "sheetId": 表格ID
+   - "sheetName": 表格名称 (可选，如果提供sheetId则不需要)
    - "rowData"(对于insert/update): 包含列索引和值的对象，例如 {"0": "值1", "1": "值2"}
    - "rowIndex"(对于update/delete): 要更新或删除的行索引
 
-示例响应格式:
+示例响应格式(多表格更新示例):
 {
   "facts": ["用户喜欢民族歌手", "用户的名字是李明"],
   "tableActions": [
     {
       "action": "insert",
-      "sheetId": "${Array.isArray(tableData) && tableData.length > 0 ? tableData[0].sheetId : 'sheet-id'}",
-      "rowData": {"0": "李明", "1": "用户喜欢民族歌手"}
+      "sheetName": "角色特征表格",
+      "rowData": {"0": "李明", "1": "用户", "2": "喜欢民族歌手"}
+    },
+    {
+      "action": "update",
+      "sheetName": "社交关系表格",
+      "rowIndex": 1,
+      "rowData": {"0": "李明", "1": "朋友", "2": "友好"}
     }
   ]
 }
 
+可用的表格名称有: ${Array.isArray(tableData) ? tableData.map(t => `"${t.name}"`).join(", ") : "请根据表格数据使用对应的表格名称"}
 请确保返回有效的JSON格式。`;
 
   return [enhancedSystemPrompt, enhancedUserPrompt];

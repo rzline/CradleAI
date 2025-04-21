@@ -144,9 +144,6 @@ const CustomUserSettingsManager: React.FC<CustomUserSettingProps> = ({ character
       
       setIsEnabled(!isEnabled);
       
-      if (!isEnabled) {
-        Alert.alert('成功', '自设功能已启用');
-      }
     } catch (error) {
       console.error('Error toggling custom setting:', error);
       Alert.alert('错误', '无法更新自设设置');

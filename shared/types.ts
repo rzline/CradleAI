@@ -158,6 +158,7 @@ export interface ChatMessage {
     insertion_order?: number;
     timestamp?: number; 
     is_chat_history_placeholder ?: boolean;
+    characterId?: string; // 角色ID
 }
 
 export interface SidebarItemProps {

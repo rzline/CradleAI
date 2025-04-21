@@ -1,9 +1,9 @@
-
 import { ChatMessage } from '@/shared/types';
 import { mcpAdapter } from './mcp-adapter';
 import { CloudServiceProvider } from '@/services/cloud-service-provider';
 import { addCloudServiceStatusListener } from '@/utils/cloud-service-tracker';
 import { getCloudServiceStatus, } from '@/utils/settings-helper';
+import { getCharacterTablesData } from '@/src/memory/plugins/table-memory/api';
 
 // Define interfaces for image handling
 interface ContentPart {
@@ -921,7 +921,6 @@ export class GeminiAdapter {
             console.log(`[Gemini适配器] 尝试使用API密钥 ${keyIndex + 1}/${this.apiKeys.length} 生成多模态内容`);
             
             try {
-                // Try the request with this key
                 const result = await this.executeMultiModalContent(prompt, modelToUse, options);
                 return result;
             } catch (error) {
@@ -1748,7 +1747,7 @@ export class GeminiAdapter {
         // 获取最后一条消息的内容
         const lastMessage = contents[contents.length - 1];
         const userQuery = lastMessage.parts?.[0]?.text || "";
-        
+
         try {
             // Add more detailed logging of memory result structure
             console.log(`[Gemini适配器] 处理记忆增强请求，发现 ${memoryResults.results.length} 条记忆`);
@@ -1761,19 +1760,70 @@ export class GeminiAdapter {
                 firstMemoryScore: memoryResults.results?.[0]?.score,
                 hasMetadata: memoryResults.results?.[0]?.metadata !== undefined
             });
-            
+
+            // ==== 新增：获取角色表格记忆 ====
+            let tableMemoryText = '';
+            try {
+                // 日志：记录characterId/conversationId来源和类型
+                let characterId =
+                    memoryResults.characterId ||
+                    memoryResults.agentId ||
+                    memoryResults.results?.[0]?.characterId ||
+                    memoryResults.results?.[0]?.agentId;
+                let conversationId =
+                    memoryResults.conversationId ||
+                    memoryResults.results?.[0]?.conversationId;
+                console.log('[Gemini适配器][表格记忆] memoryResults.characterId:', memoryResults.characterId, typeof memoryResults.characterId);
+                console.log('[Gemini适配器][表格记忆] memoryResults.agentId:', memoryResults.agentId, typeof memoryResults.agentId);
+                console.log('[Gemini适配器][表格记忆] memoryResults.results[0]?.characterId:', memoryResults.results?.[0]?.characterId, typeof memoryResults.results?.[0]?.characterId);
+                console.log('[Gemini适配器][表格记忆] memoryResults.results[0]?.agentId:', memoryResults.results?.[0]?.agentId, typeof memoryResults.results?.[0]?.agentId);
+                console.log('[Gemini适配器][表格记忆] memoryResults.conversationId:', memoryResults.conversationId, typeof memoryResults.conversationId);
+                console.log('[Gemini适配器][表格记忆] memoryResults.results[0]?.conversationId:', memoryResults.results?.[0]?.conversationId, typeof memoryResults.results?.[0]?.conversationId);
+                if (!characterId && contents.length > 0) {
+                    characterId = contents[0]?.characterId;
+                    console.log('[Gemini适配器][表格记忆] 尝试从contents[0]获取characterId:', characterId, typeof characterId);
+                }
+                console.log('[Gemini适配器][表格记忆] 最终用于查询的 characterId:', characterId, 'conversationId:', conversationId);
+                if (characterId) {
+                    console.log('[Gemini适配器][表格记忆] 调用 getCharacterTablesData 前参数:', { characterId, conversationId });
+                    const tableData = await getCharacterTablesData(characterId, conversationId);
+                    console.log('[Gemini适配器][表格记忆] getCharacterTablesData 返回:', tableData);
+                    if (tableData.success && tableData.tables.length > 0) {
+                        tableMemoryText += `【角色长期记忆表格】\n`;
+                        tableData.tables.forEach(table => {
+                            const headerRow = '| ' + table.headers.join(' | ') + ' |';
+                            const sepRow = '| ' + table.headers.map(() => '---').join(' | ') + ' |';
+                            const dataRows = table.rows.map(row => '| ' + row.join(' | ') + ' |').join('\n');
+                            tableMemoryText += `表格：${table.name}\n${headerRow}\n${sepRow}\n${dataRows}\n\n`;
+                        });
+                    } else {
+                        console.log('[Gemini适配器][表格记忆] 未获取到有效表格数据，success:', tableData.success, 'tables.length:', tableData.tables.length);
+                    }
+                } else {
+                    console.log('[Gemini适配器][表格记忆] 未能确定characterId，跳过表格记忆注入');
+                }
+            } catch (e) {
+                console.warn('[Gemini适配器] 获取角色表格记忆失败:', e);
+            }
+            // ==== 新增结束 ====
+
             // 构建包含记忆搜索结果的提示
             let combinedPrompt = `${userQuery}\n\n`;
-            
+
+            // 插入表格记忆内容（如有）
+            if (tableMemoryText) {
+                combinedPrompt = `${tableMemoryText}\n${combinedPrompt}`;
+            }
+
             // 添加记忆搜索结果
             combinedPrompt += `<mem>\n系统检索到的记忆内容：\n`;
-            
+
             // 格式化记忆结果
             memoryResults.results.forEach((item: any, index: number) => {
                 combinedPrompt += `${index + 1}. ${item.memory}\n`;
             });
             combinedPrompt += `</mem>\n\n`;
-            
+
             // 添加响应指南
             combinedPrompt += `<response_guidelines>
 - 除了对用户消息的回应之外，**务必** 结合记忆内容进行回复。
@@ -1782,10 +1832,10 @@ export class GeminiAdapter {
 - 确保回复保持角色人设的一致性。
 - - **不要在回复中使用多组<mem>，整个回复只能有一组<mem>标签。**
 </response_guidelines>`;
-            
+
             // Log prepared prompt
             console.log('[Gemini适配器] 准备了带记忆结果的提示:', combinedPrompt.substring(0, 200) + '...');
-            
+
             // 使用标准的生成内容方法生成最终回复
             // 保持原始请求结构，只修改用户消息内容
             const finalPrompt: ChatMessage[] = [
@@ -1795,7 +1845,7 @@ export class GeminiAdapter {
                     parts: [{ text: combinedPrompt }]
                 }
             ];
-            
+
             return await this.generateContent(finalPrompt);
         } catch (error) {
             console.error(`[Gemini适配器] 记忆增强处理失败:`, error);
