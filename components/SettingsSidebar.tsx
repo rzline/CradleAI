@@ -144,6 +144,9 @@ const CustomUserSettingsManager: React.FC<CustomUserSettingProps> = ({ character
       
       setIsEnabled(!isEnabled);
       
+      if (!isEnabled) {
+        Alert.alert('成功', '自设功能已启用');
+      }
     } catch (error) {
       console.error('Error toggling custom setting:', error);
       Alert.alert('错误', '无法更新自设设置');
@@ -373,8 +376,8 @@ export default function SettingsSidebar({
 
   // Replace isPermanentMemoryEnabled with isMemorySummaryEnabled
   const [isMemorySummaryEnabled, setIsMemorySummaryEnabled] = useState(false);
-  const [summaryThreshold, setSummaryThreshold] = useState(6000); // Default: 6000 characters
-  const [summaryLength, setSummaryLength] = useState(1000); // Default: 1000 characters
+  const [summaryThreshold, setSummaryThreshold] = useState(12000); // Default: 6000 characters
+  const [summaryLength, setSummaryLength] = useState(6000); // Default: 1000 characters
   
   // IMPORTANT: Initialize notification state from character
   const [isAutoMessageEnabled, setIsAutoMessageEnabled] = useState(selectedCharacter?.autoMessage === true);
@@ -801,8 +804,8 @@ export default function SettingsSidebar({
       const newLength = parseInt(lengthInput, 10);
       
       // Validate ranges
-      const validThreshold = Math.min(10000, Math.max(3000, isNaN(newThreshold) ? 6000 : newThreshold));
-      const validLength = Math.min(2000, Math.max(500, isNaN(newLength) ? 1000 : newLength));
+      const validThreshold = Math.min(10000, Math.max(3000, isNaN(newThreshold) ? 12000 : newThreshold));
+      const validLength = Math.min(2000, Math.max(500, isNaN(newLength) ? 6000 : newLength));
       
       // Update parent state values
       setSummaryThreshold(validThreshold);
@@ -815,7 +818,7 @@ export default function SettingsSidebar({
     
     return (
       <View style={styles.settingSection}>
-        <Text style={styles.settingSectionTitle}>记忆总结设置</Text>
+        {/* <Text style={styles.settingSectionTitle}>记忆总结设置</Text>
         
         <View style={styles.inputContainer}>
           <Text style={styles.settingLabel}>总结阈值 (3000-10000 字符)</Text>
@@ -855,7 +858,7 @@ export default function SettingsSidebar({
         >
           <Text style={styles.applyButtonText}>保存设置</Text>
         </TouchableOpacity>
-        
+         */}
         <Text style={styles.settingDescription}>
           记忆总结功能会在对话达到阈值时，自动总结对话历史，避免模型遗忘早期对话内容。总结的部分对用户不可见，只有AI能看到。
         </Text>
@@ -1178,16 +1181,6 @@ export default function SettingsSidebar({
               onValueChange={handleNotificationToggle}
               trackColor={{ false: '#767577', true: 'rgba(255, 224, 195, 0.7)' }} // 修改：使用米黄色
               thumbColor={isNotificationEnabled ? 'rgb(255, 224, 195)' : '#f4f3f4'} // 修改：使用米黄色
-            />
-          </View>
-
-          <View style={styles.settingItem}>
-            <Text style={styles.settingLabel}>朋友圈互动</Text>
-            <Switch
-              value={isCircleInteractionEnabled}
-              onValueChange={handleCircleInteractionToggle}
-              trackColor={{ false: '#767577', true: 'rgba(255, 224, 195, 0.7)' }} // 修改：使用米黄色
-              thumbColor={isCircleInteractionEnabled ? 'rgb(255, 224, 195)' : '#f4f3f4'} // 修改：使用米黄色
             />
           </View>
 

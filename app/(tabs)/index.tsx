@@ -41,7 +41,7 @@ import { EventRegister } from 'react-native-event-listeners';
 import { MemoryProvider } from '@/src/memory/providers/MemoryProvider';
 import Mem0Initializer from '@/src/memory/components/Mem0Initializer';
 import '@/src/memory/utils/polyfills';
-import Mem0Service from '@/src/memory/services/Mem0Service';
+import Mem0Service from '@/src/memory/services/Mem0Service'; // 新增导入
 import { ttsService } from '@/services/ttsService';
 import { useDialogMode } from '@/constants/DialogModeContext';
 import { CharacterLoader } from '@/src/utils/character-loader'; // Import CharacterLoader
@@ -1363,11 +1363,24 @@ useEffect(() => {
         console.error('Failed to save scroll positions:', error);
       }
     };
-    
+
+    // 新增：App 进入后台时，强制处理所有记忆缓存，确保写入数据库
+    const handleAppBackground = async () => {
+      try {
+        console.log('[App] AppState: 进入后台，开始处理所有记忆缓存...');
+        await Mem0Service.getInstance().processAllCharacterMemories();
+        console.log('[App] 所有记忆缓存已处理并写入数据库');
+      } catch (error) {
+        console.error('[App] 处理记忆缓存时出错:', error);
+      }
+    };
+
     // Add app state change listener
     const subscription = AppState.addEventListener('change', (nextAppState) => {
       if (nextAppState === 'background' || nextAppState === 'inactive') {
         saveScrollPositions();
+        // 新增：后台时处理记忆缓存
+        handleAppBackground();
       }
     });
     

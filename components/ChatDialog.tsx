@@ -21,7 +21,7 @@ import Animated, {
   withSequence,
   withDelay,
 } from 'react-native-reanimated';
-import { Message, ChatDialogProps } from '@/shared/types';
+import { Message, ChatDialogProps, User } from '@/shared/types';
 import { Ionicons } from '@expo/vector-icons';
 import { theme } from '@/constants/theme';
 import { LinearGradient } from 'expo-linear-gradient';
@@ -36,6 +36,7 @@ import { useDialogMode } from '@/constants/DialogModeContext';
 interface ExtendedChatDialogProps extends ChatDialogProps {
   messageMemoryState?: Record<string, string>;
   regeneratingMessageId?: string | null; // Add this new prop
+  user?: User | null; // Add user prop
 }
 
 const { width } = Dimensions.get('window');
@@ -56,7 +57,8 @@ const ChatDialog: React.FC<ExtendedChatDialogProps> = ({
   savedScrollPosition,
   onScrollPositionChange,
   messageMemoryState = {}, // Default to empty object
-  regeneratingMessageId = null // Default to null
+  regeneratingMessageId = null, // Default to null
+  user = null, // Add user prop with default
 }) => {
   // Replace ScrollView ref with FlatList ref for virtualization
   const flatListRef = useRef<FlatList<Message>>(null);
@@ -858,43 +860,43 @@ const ChatDialog: React.FC<ExtendedChatDialogProps> = ({
   const renderTTSButtons = (message: Message) => {
     // Only show TTS buttons for bot messages
     if (message.sender !== 'bot' || message.isLoading) return null;
-    
+
     const audioState = audioStates[message.id] || ttsService.getAudioState(message.id);
     const isVisualNovel = mode === 'visual-novel';
-    
+
+    // Use 米黄色 for TTS button background
+    const ttsButtonBg = { backgroundColor: '#FFE0C3' };
+    const ttsButtonEnhancedBg = { backgroundColor: '#FFD580' };
+
     return (
       <View style={isVisualNovel ? styles.visualNovelTTSContainer : styles.ttsButtonContainer}>
         {audioState.isLoading ? (
-          // Loading indicator with text showing it's generating
           <View style={isVisualNovel ? styles.visualNovelTTSButtonWithLabel : styles.ttsButtonWithLabel}>
-            <View style={isVisualNovel ? styles.visualNovelTTSButton : styles.ttsButton}>
+            <View style={[
+              isVisualNovel ? styles.visualNovelTTSButton : styles.ttsButton,
+              ttsButtonBg
+            ]}>
               <ActivityIndicator size="small" color="#fff" />
             </View>
             {!isVisualNovel && <Text style={styles.ttsLoadingText}>生成中...</Text>}
           </View>
         ) : audioState.hasAudio ? (
-          // If audio is available, show appropriate button based on playback state
           <TouchableOpacity
             style={[
-              isVisualNovel ? styles.visualNovelTTSButton : styles.ttsButton, 
+              isVisualNovel ? styles.visualNovelTTSButton : styles.ttsButton,
               audioState.isPlaying && (isVisualNovel ? styles.visualNovelTTSButtonActive : styles.ttsButtonActive),
-              // Add special style for enhanced audio
-              ttsEnhancerEnabled && (isVisualNovel ? styles.visualNovelTTSButtonEnhanced : styles.ttsButtonEnhanced)
+              ttsButtonBg,
+              ttsEnhancerEnabled && ttsButtonEnhancedBg
             ]}
             onPress={() => handlePlayAudio(message.id)}
           >
             {audioState.isPlaying ? (
-              // Playing - show pause button
               <Ionicons name="pause" size={isVisualNovel ? 22 : 18} color="#fff" />
             ) : audioState.isComplete ? (
-              // Completed playing - show replay button
               <Ionicons name="refresh" size={isVisualNovel ? 22 : 18} color="#fff" />
             ) : (
-              // Has audio but not playing - show play button
               <Ionicons name="play" size={isVisualNovel ? 22 : 18} color="#fff" />
             )}
-            
-            {/* Add indicator for enhanced audio */}
             {ttsEnhancerEnabled && (
               <View style={isVisualNovel ? styles.visualNovelTTSEnhancerIndicator : styles.ttsEnhancerIndicator}>
                 <Ionicons name="sparkles-outline" size={isVisualNovel ? 12 : 10} color="#fff" />
@@ -902,18 +904,15 @@ const ChatDialog: React.FC<ExtendedChatDialogProps> = ({
             )}
           </TouchableOpacity>
         ) : (
-          // If no audio yet, show generate button
           <TouchableOpacity
             style={[
               isVisualNovel ? styles.visualNovelTTSButton : styles.ttsButton,
-              // Add special style for enhanced mode
-              ttsEnhancerEnabled && (isVisualNovel ? styles.visualNovelTTSButtonEnhanced : styles.ttsButtonEnhanced)
+              ttsButtonBg,
+              ttsEnhancerEnabled && ttsButtonEnhancedBg
             ]}
             onPress={() => handleTTSButtonPress(message.id, message.text)}
           >
             <Ionicons name="volume-high" size={isVisualNovel ? 22 : 18} color="#fff" />
-            
-            {/* Add indicator for enhanced mode */}
             {ttsEnhancerEnabled && (
               <View style={isVisualNovel ? styles.visualNovelTTSEnhancerIndicator : styles.ttsEnhancerIndicator}>
                 <Ionicons name="sparkles-outline" size={isVisualNovel ? 12 : 10} color="#fff" />
@@ -921,8 +920,6 @@ const ChatDialog: React.FC<ExtendedChatDialogProps> = ({
             )}
           </TouchableOpacity>
         )}
-        
-        {/* Show error message if there was an error */}
         {audioState.error && !audioState.isLoading && !audioState.hasAudio && !isVisualNovel && (
           <TouchableOpacity 
             style={styles.ttsRetryButton}
@@ -939,58 +936,8 @@ const ChatDialog: React.FC<ExtendedChatDialogProps> = ({
   // Add state for memory tooltips
   const [activeTooltipId, setActiveTooltipId] = useState<string | null>(null);
 
-  // Render memory status indicator
-  const renderMemoryStatusIndicator = (messageId: string) => {
-    const memoryState = messageMemoryState[messageId];
-    
-    if (!memoryState) return null;
-    
-    let iconName: typeof Ionicons.prototype.props.name = 'cellular-outline';
-    let iconColor = '#aaa';
-    let tooltipText = 'Not processed by memory system';
-    
-    switch (memoryState) {
-      case 'processing':
-        iconName = 'time-outline';
-        iconColor = '#f39c12';
-        tooltipText = 'Processing message for memories...';
-        break;
-      case 'saved':
-        iconName = 'cloud-done'; // Changed from 'brain'
-        iconColor = '#2ecc71';
-        tooltipText = 'Message saved to memory system';
-        break;
-      case 'updated':
-        iconName = 'refresh-circle';
-        iconColor = '#3498db';
-        tooltipText = 'Existing memory was updated';
-        break;
-      case 'failed':
-        iconName = 'alert-circle-outline';
-        iconColor = '#e74c3c';
-        tooltipText = 'Failed to process memory';
-        break;
-      default:
-        break;
-    }
-    
-    return (
-      <View style={styles.memoryIndicatorContainer}>
-        <TouchableOpacity
-          onPress={() => setActiveTooltipId(activeTooltipId === messageId ? null : messageId)}
-          style={styles.memoryIndicator}
-        >
-          <Ionicons name={iconName} size={16} color={iconColor} />
-        </TouchableOpacity>
-        
-        {activeTooltipId === messageId && (
-          <View style={styles.memoryTooltip}>
-            <Text style={styles.memoryTooltipText}>{tooltipText}</Text>
-          </View>
-        )}
-      </View>
-    );
-  };
+
+
 
   const renderMessageContent = (message: Message, isUser: boolean, index: number) => {
     return (
@@ -999,6 +946,7 @@ const ChatDialog: React.FC<ExtendedChatDialogProps> = ({
         isUser ? styles.userMessageContent : styles.botMessageContent,
         message.isLoading && styles.loadingMessage
       ]}>
+        {/* AI avatar on left */}
         {!isUser && (
           <Image
             source={
@@ -1010,14 +958,23 @@ const ChatDialog: React.FC<ExtendedChatDialogProps> = ({
           />
         )}
         {isUser ? (
-          <LinearGradient
-            colors={['rgba(255, 224, 195, 0.85)', 'rgba(255, 200, 170, 0.85)']}
-            style={styles.userGradient}
-          >
-            {processMessageContent(message.text, true)}
-            {/* Add memory status indicator for user messages */}
-            {renderMemoryStatusIndicator(message.id)}
-          </LinearGradient>
+          <View style={styles.userMessageWrapper}>
+            {/* User message bubble */}
+            <LinearGradient
+              colors={['rgba(255, 224, 195, 0.95)', 'rgba(255, 200, 170, 0.95)']}
+              style={styles.userGradient}
+            >
+              {processMessageContent(message.text, true)}
+
+            </LinearGradient>
+            {/* User avatar on right-top */}
+            {user?.avatar && (
+              <Image
+                source={{ uri: String(user.avatar) }}
+                style={styles.userMessageAvatar}
+              />
+            )}
+          </View>
         ) : (
           <View style={styles.botMessageTextContainer}>
             {message.isLoading ? (
@@ -1052,7 +1009,7 @@ const ChatDialog: React.FC<ExtendedChatDialogProps> = ({
         {/* Add TTS buttons */}
         {message.sender === 'bot' && renderTTSButtons(message)}
         
-        {/* Only show regenerate button for the last AI message */}
+        {/* Only show regenerate button for the last AI message
         {onRegenerateMessage && isLastAIMessage && (
           <TouchableOpacity
             style={[
@@ -1075,7 +1032,7 @@ const ChatDialog: React.FC<ExtendedChatDialogProps> = ({
               <Ionicons name="refresh-circle-outline" size={22} color="#ddd" />
             )}
           </TouchableOpacity>
-        )}
+        )} */}
         
         {/* Rating buttons */}
         {onRateMessage && (
@@ -1444,11 +1401,10 @@ const ChatDialog: React.FC<ExtendedChatDialogProps> = ({
     const showTime = index === 0 || index % 5 === 0 || 
                     (index > 0 && new Date(item.timestamp || 0).getHours() !== 
                       new Date(virtualizedMessages[index-1].timestamp || 0).getHours());
-    
+
     return (
       <View key={item.id} style={styles.messageWrapper}>
         {showTime && item.timestamp && renderTimeGroup(item.timestamp)}
-        
         <View
           style={[
             styles.messageContainer,
@@ -1459,7 +1415,7 @@ const ChatDialog: React.FC<ExtendedChatDialogProps> = ({
         </View>
       </View>
     );
-  }, [virtualizedMessages, selectedCharacter, ratedMessages, audioStates]);
+  }, [virtualizedMessages, selectedCharacter, ratedMessages, audioStates, user]);
 
   // Improve the keyExtractor function to guarantee uniqueness
   const keyExtractor = useCallback((item: Message) => {
@@ -1651,23 +1607,38 @@ const styles = StyleSheet.create({
     backgroundColor: '#444',
   },
   messageContent: {
-    flex: 1,
-    maxWidth: MAX_WIDTH + 30, // Increased width since we removed side avatars
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    maxWidth: '100%',
+    minHeight: 40,
     marginHorizontal: 8,
     alignSelf: 'center',
+    position: 'relative',
   },
   userMessageContent: {
     alignSelf: 'flex-end',
+    flexDirection: 'row-reverse',
   },
   botMessageContent: {
     alignSelf: 'flex-start',
+    flexDirection: 'row',
   },
+  // User message wrapper for bubble + avatar
+  userMessageWrapper: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    justifyContent: 'flex-end',
+    maxWidth: '100%',
+    position: 'relative',
+    minHeight: 40,
+  },
+  // User message bubble
   userGradient: {
     borderRadius: 18,
     borderTopRightRadius: 4,
     padding: 12,
     paddingHorizontal: 16,
-  },
+    },
   userMessageText: {
     color: '#333',
     fontSize: 16,
@@ -1836,18 +1807,6 @@ const styles = StyleSheet.create({
     borderRadius: 4,
     marginBottom: 5, // Add some margin at the bottom
   },
-  messageAvatar: {
-    width: 30,
-    height: 30,
-    borderRadius: 15,
-    position: 'absolute',
-    left: 10,
-    top: -15,
-    zIndex: 2,
-    backgroundColor: '#444',
-    borderWidth: 2,
-    borderColor: 'rgba(255,255,255,0.2)',
-  },
   // Add new styles for memory indicators
   memoryIndicatorContainer: {
     position: 'absolute',
@@ -1936,13 +1895,15 @@ const styles = StyleSheet.create({
     width: 32,
     height: 32,
     borderRadius: 16,
-    backgroundColor: 'rgba(52, 152, 219, 0.7)',
     justifyContent: 'center',
     alignItems: 'center',
     marginRight: 4,
   },
   ttsButtonActive: {
-    backgroundColor: 'rgba(46, 204, 113, 0.7)',
+    backgroundColor: '#FFD580', // 米黄色加深
+  },
+  ttsButtonEnhanced: {
+    backgroundColor: '#FFD580', // 米黄色加深
   },
   ttsButtonWithLabel: {
     flexDirection: 'row',
@@ -1968,9 +1929,6 @@ const styles = StyleSheet.create({
     marginLeft: 4,
   },
   // Add new styles for TTS enhancer
-  ttsButtonEnhanced: {
-    backgroundColor: 'rgba(255, 193, 7, 0.7)', // More golden color for enhanced mode
-  },
   ttsEnhancerIndicator: {
     position: 'absolute',
     top: -5,
@@ -2084,7 +2042,6 @@ const styles = StyleSheet.create({
     width: 44,
     height: 44,
     borderRadius: 22,
-    backgroundColor: 'rgba(52, 152, 219, 0.7)',
     justifyContent: 'center',
     alignItems: 'center',
     marginRight: 8,
@@ -2094,10 +2051,10 @@ const styles = StyleSheet.create({
     alignItems: 'center',
   },
   visualNovelTTSButtonActive: {
-    backgroundColor: 'rgba(46, 204, 113, 0.7)',
+    backgroundColor: '#FFD580', // 米黄色加深
   },
   visualNovelTTSButtonEnhanced: {
-    backgroundColor: 'rgba(255, 193, 7, 0.7)',
+    backgroundColor: '#FFD580', // 米黄色加深
   },
   visualNovelTTSEnhancerIndicator: {
     position: 'absolute',
@@ -2222,6 +2179,32 @@ const styles = StyleSheet.create({
   },
   visualNovelRegeneratingButton: {
     backgroundColor: 'rgba(52, 152, 219, 0.6)',
+  },
+  // AI avatar at top-left of bubble
+  messageAvatar: {
+    width: 30,
+    height: 30,
+    borderRadius: 15,
+    position: 'absolute',
+    left: 10,
+    top: -15,
+    zIndex: 2,
+    backgroundColor: '#444',
+    borderWidth: 2,
+    borderColor: 'rgba(255,255,255,0.2)',
+  },
+  // User avatar at top-right of bubble
+  userMessageAvatar: {
+    width: 30,
+    height: 30,
+    borderRadius: 15,
+    position: 'absolute',
+    right: -38,
+    top: -15,
+    zIndex: 2,
+    backgroundColor: '#444',
+    borderWidth: 2,
+    borderColor: 'rgba(255,255,255,0.2)',
   },
 });
 

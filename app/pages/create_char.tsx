@@ -111,9 +111,17 @@ interface CreateCharProps {
   creationMode?: 'manual' | 'auto' | 'import';
   allowTagImageGeneration?: boolean;
   onClose?: () => void;
+  // --- Add onImportReady callback for import loading animation ---
+  onImportReady?: () => void;
 }
 
-const CreateChar: React.FC<CreateCharProps> = ({ activeTab: initialActiveTab = 'basic', creationMode = 'manual', allowTagImageGeneration = false, onClose }) => {
+const CreateChar: React.FC<CreateCharProps> = ({
+  activeTab: initialActiveTab = 'basic',
+  creationMode = 'manual',
+  allowTagImageGeneration = false,
+  onClose,
+  onImportReady // <-- receive prop
+}) => {
   const router = useRouter();
   const { addCharacter, addConversation,} = useCharacters();
   const { user } = useUser();
@@ -947,17 +955,38 @@ const CreateChar: React.FC<CreateCharProps> = ({ activeTab: initialActiveTab = '
           
           // Flag that we have unsaved changes
           setHasUnsavedChanges(true);
+
+          // --- Notify parent that import is ready ---
+          if (onImportReady) {
+            setTimeout(() => {
+              onImportReady();
+            }, 300); // Give a short delay to ensure UI is ready
+          }
         } else {
           console.log('[CreateChar] No imported data found');
+          // If no import data, still notify parent to hide loading
+          if (onImportReady) {
+            setTimeout(() => {
+              onImportReady();
+            }, 100);
+          }
         }
       } catch (error) {
         console.error('[CreateChar] 加载导入数据失败:', error);
         Alert.alert('导入失败', '无法加载导入的数据');
+        // Hide loading even on error
+        if (onImportReady) {
+          setTimeout(() => {
+            onImportReady();
+          }, 100);
+        }
       }
     };
 
     // Load imported data when the component mounts or when creation mode changes
-    loadImportedData();
+    if (creationMode === 'import') {
+      loadImportedData();
+    }
   }, []);
 
   // Track changes to set hasUnsavedChanges flag
