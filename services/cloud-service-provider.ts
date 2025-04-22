@@ -286,7 +286,7 @@ class CloudServiceProviderClass {
       
       // Standardize messages for multimodal content
       const standardizedMessages = messages.map(msg => {
-        const role = msg.role === 'assistant' ? 'model' : msg.role;
+        const role = msg.role === 'model' ? 'model' : msg.role;
         
         // If content is already a string, convert it to the array format
         if (typeof msg.content === 'string') {
@@ -537,7 +537,7 @@ class CloudServiceProviderClass {
       // Standardize the message format for CradleAI - ensure content is always a string
       const standardizedMessages = messages.map(msg => {
         // Map 'assistant' role to 'model' role for Hugging Face compatibility
-        const role = msg.role === 'assistant' ? 'model' : msg.role;
+        const role = msg.role === 'model' ? 'model' : msg.role;
         
         // If content is already a string, return as is
         if (typeof msg.content === 'string') {
@@ -668,6 +668,73 @@ class CloudServiceProviderClass {
   }
 
   /**
+   * Generate search result using cloud service (for tool call search).
+   * @param query The search query string
+   * @param options Optional: model, temperature, max_tokens, etc.
+   * @returns Response from cloud service (should contain search result text)
+   */
+  async generateSearchResult(
+    query: string,
+    options: {
+      model?: string,
+      temperature?: number,
+      max_tokens?: number,
+      [key: string]: any
+    } = {}
+  ): Promise<Response> {
+    if (!this.isEnabled()) {
+      throw new Error('Cloud service is not enabled or properly configured');
+    }
+
+    try {
+      const modelToUse = (options.model || this.getMultiModalModel()) + '-search';
+      const requestBody = {
+        license_key: this.licenseKey,
+        device_id: this.deviceId,
+        model: modelToUse,
+        messages: [
+          {
+            role: 'user',
+            content: `请帮我搜索以下问题的解答，只返回搜索结果和解答，不要有其他解释：\n\n${query}`
+          }
+        ],
+        max_tokens: options.max_tokens || 1024,
+        temperature: options.temperature || 0.7
+      };
+
+      const headers = new Headers({
+        'Content-Type': 'application/json',
+        'Accept': 'application/json'
+      });
+      headers.set('User-Agent', 'CradleAI-Client/1.0');
+      if (typeof window !== 'undefined' && window.location?.origin) {
+        headers.set('Referer', window.location.origin);
+      }
+
+      const endpoint = this.cloudEndpoint.trim().replace(/\/+$/, '');
+      const apiUrl = `${endpoint}/api/huggingface/completion`;
+
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), 60000);
+
+      const response = await fetch(apiUrl, {
+        method: 'POST',
+        headers,
+        body: JSON.stringify(requestBody),
+        cache: 'no-store',
+        signal: controller.signal
+      });
+
+      clearTimeout(timeoutId);
+
+      return response;
+    } catch (error) {
+      console.error('[CloudService] generateSearchResult error:', error);
+      throw error;
+    }
+  }
+
+  /**
    * Use Hugging Face API via cloud service instead of forwarding requests
    * @param messages The messages array to send to the model
    * @param options Options for the request
@@ -698,7 +765,6 @@ class CloudServiceProviderClass {
       }
       
       // Map roles for Hugging Face API compatibility
-      // From frontend to our server, we use 'model' role, but server expects 'assistant'
       // Let's leave the role as is - server will handle the conversion
       const mappedMessages = messages.map(msg => ({
         role: msg.role,  // Keep the role as is - server will handle conversion

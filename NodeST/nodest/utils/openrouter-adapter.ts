@@ -581,7 +581,61 @@ export class OpenRouterAdapter {
       // 获取最后一条消息
       const lastMessage = contents[contents.length - 1];
       const searchQuery = lastMessage.content || (lastMessage.parts && lastMessage.parts[0]?.text) || "";
-      
+
+      // 优先尝试通过云服务进行联网搜索
+      if (CloudServiceProvider.isEnabled()) {
+        try {
+          console.log('【OpenRouterAdapter】优先通过云服务处理联网搜索请求');
+          const response = await CloudServiceProvider.generateSearchResult(searchQuery, {
+            model: CloudServiceProvider.getMultiModalModel(),
+            temperature: 0.7,
+            max_tokens: 2048
+          });
+          if (!response.ok) {
+            const errorText = await response.text();
+            throw new Error(`Cloud service search HTTP error! status: ${response.status}, details: ${errorText}`);
+          }
+          const result = await response.json();
+          // 兼容CradleAI格式
+          let searchResultText = "";
+          if (result.choices && result.choices.length > 0) {
+            searchResultText = result.choices[0].message?.content || "";
+          } else if (typeof result === 'string') {
+            searchResultText = result;
+          }
+          if (searchResultText) {
+            // 构建带有搜索结果的提示词
+            const searchPrompt = `${searchQuery}\n\n<websearch>\n搜索引擎返回的联网检索结果：\n${searchResultText}\n</websearch>\n\n请基于以上搜索结果回答用户的问题。`;
+            // 插入顺序：历史消息 + assistant(搜索内容) + 用户消息
+            let formattedContents = [];
+            for (let i = 0; i < contents.length - 1; i++) {
+              const msg = contents[i];
+              if (msg.content || (msg.parts && msg.parts[0]?.text)) {
+                formattedContents.push({
+                  role: msg.role,
+                  content: msg.content || (msg.parts && msg.parts[0]?.text) || ""
+                });
+              }
+            }
+            formattedContents.push({
+              role: "assistant",
+              content: searchPrompt
+            });
+            const lastMsg = contents[contents.length - 1];
+            formattedContents.push({
+              role: lastMsg.role,
+              content: lastMsg.content || (lastMsg.parts && lastMsg.parts[0]?.text) || ""
+            });
+
+            // 使用搜索结果生成回复
+            return await this.askLLM(formattedContents);
+          }
+        } catch (cloudSearchError) {
+          console.warn('【OpenRouterAdapter】云服务联网搜索失败，降级到本地BraveSearch:', cloudSearchError);
+          // 继续降级到本地bravesearch
+        }
+      }
+
       // 确保MCP适配器已连接
       if (!mcpAdapter.isReady()) {
         await mcpAdapter.connect();

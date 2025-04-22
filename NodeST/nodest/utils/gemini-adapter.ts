@@ -1068,19 +1068,51 @@ export class GeminiAdapter {
         
         if (isCloudEnabled) {
             console.log('[GeminiAdapter] Using cloud service for multimodal request');
-            
-            // Forward the request through the cloud service
-            response = await CloudServiceProvider.forwardRequest(
-                url,
+            // 转换为 CloudServiceProvider 需要的消息格式
+            let messages = [];
+            if (options.images && options.images.length > 0) {
+                let messageContent = [];
+                if (prompt) {
+                    messageContent.push({
+                        type: "text",
+                        text: prompt
+                    });
+                }
+                for (const img of options.images) {
+                    let imageUrl: string;
+                    if (img.url) {
+                        // 直接用URL
+                        imageUrl = img.url;
+                    } else if (img.data && img.mimeType) {
+                        imageUrl = `data:${img.mimeType};base64,${img.data}`;
+                    } else {
+                        continue;
+                    }
+                    messageContent.push({
+                        type: "image_url",
+                        image_url: { url: imageUrl }
+                    });
+                }
+                messages.push({
+                    role: "user",
+                    content: messageContent
+                });
+            } else {
+                messages.push({
+                    role: "user",
+                    content: prompt
+                });
+            }
+            response = await CloudServiceProvider.generateMultiModalContent(
+                messages,
                 {
-                    method: 'POST',
-                    headers: this.headers,
-                    body: JSON.stringify(data)
-                },
-                'gemini'
+                    model: modelToUse,
+                    temperature: options.temperature || 0.7,
+                    max_tokens: 8192,
+                    ...(options.includeImageOutput ? { responseModalities: ['TEXT', 'IMAGE'] } : {})
+                }
             );
         } else {
-            // Use direct API call if cloud service is not enabled
             console.log(`[Gemini适配器] 直接调用URL: ${maskedUrl}`);
             
             const startTime = Date.now();
@@ -1133,6 +1165,25 @@ export class GeminiAdapter {
             }
             
             return generatedContent;
+        }
+        // 新增：支持处理 CradleAI 多模态响应格式（OpenAI风格）
+        else if (result.choices && result.choices.length > 0 && result.choices[0].message) {
+            const msg = result.choices[0].message;
+            // 判断role为assistant时，视为model角色
+            if (msg.role === 'assistant' || msg.role === 'model') {
+                const generatedContent: GeneratedContent = {};
+                if (typeof msg.content === 'string') {
+                    generatedContent.text = msg.content;
+                } else if (Array.isArray(msg.content)) {
+                    // 如果是数组，拼接所有text部分
+                    generatedContent.text = msg.content
+                        .filter((part: any) => part.type === 'text')
+                        .map((part: any) => part.text)
+                        .join('\n');
+                }
+                // 目前CradleAI不会返回图片数组，但可扩展
+                return generatedContent;
+            }
         }
         
         console.error(`[Gemini适配器] 无效的多模态响应格式: ${JSON.stringify(result)}`);
@@ -1683,6 +1734,66 @@ export class GeminiAdapter {
             // Step 2: 准备网络搜索部分
             console.log(`[Gemini适配器] 为用户查询准备网络搜索: "${userQuery}"`);
             
+            // 优先尝试通过云服务进行联网搜索
+            if (this.useCloudService && CloudServiceProvider.isEnabled()) {
+                try {
+                    console.log(`[Gemini适配器] 优先通过云服务处理联网搜索请求`);
+                    const response = await CloudServiceProvider.generateSearchResult(userQuery, {
+                        model: CloudServiceProvider.getMultiModalModel(),
+                        temperature: 0.7,
+                        max_tokens: 2048
+                    });
+                    if (!response.ok) {
+                        const errorText = await response.text();
+                        throw new Error(`Cloud service search HTTP error! status: ${response.status}, details: ${errorText}`);
+                    }
+                    const result = await response.json();
+                    // 兼容CradleAI格式
+                    let searchResultText = "";
+                    if (result.choices && result.choices.length > 0) {
+                        searchResultText = result.choices[0].message?.content || "";
+                    } else if (typeof result === 'string') {
+                        searchResultText = result;
+                    }
+                    if (searchResultText) {
+                        let searchSection = `<websearch>\n搜索引擎返回的联网检索结果：\n${searchResultText}\n</websearch>\n\n`;
+                        
+                        // 构建融合提示词
+                        console.log(`[Gemini适配器] 构建融合提示词，结合记忆和网络搜索结果`);
+                        
+                        let combinedPrompt = memorySection + searchSection + `<response_guidelines>
+                - 我会结合上面的记忆内容和联网搜索结果，全面回答用户的问题。
+                - **首先**，我会在回复中用<mem></mem>标签包裹我对记忆内容的引用和回忆过程，例如:
+                  <mem>我记得你之前提到过关于这个话题，当时我们讨论了...</mem>
+                - **然后**，我会用<websearch></websearch>标签包裹我对网络搜索结果的解释和引用，例如:
+                  <websearch>根据最新的网络信息，关于这个问题的专业观点是...</websearch>
+                - 确保回复能够同时**有效整合记忆和网络信息**，让内容更加全面和有用。
+                - 我回复的语气和风格一定会与角色人设保持一致。
+                - 我**不会在回复中使用多组<mem>或<websearch>标签，整个回复只能有一组<mem>或<websearch>标签。**
+                </response_guidelines>`;
+                        
+                        // 记录融合提示词的长度
+                        console.log(`[Gemini适配器] 融合提示词构建完成，长度: ${combinedPrompt.length}`);
+                        
+                        // 使用标准的生成内容方法生成最终回复
+                        // 插入顺序：历史消息 + model(记忆/搜索内容) + 用户消息
+                        const finalPrompt: ChatMessage[] = [
+                            ...contents.slice(0, -1),
+                            {
+                                role: "model",
+                                parts: [{ text: combinedPrompt }]
+                            },
+                            contents[contents.length - 1]
+                        ];
+                        
+                        return await this.generateContent(finalPrompt);
+                    }
+                } catch (cloudSearchError) {
+                    console.warn('[Gemini适配器] 云服务联网搜索失败，降级到本地BraveSearch:', cloudSearchError);
+                    // 继续降级到本地bravesearch
+                }
+            }
+            
             // 确保MCP适配器已连接
             if (!mcpAdapter.isReady()) {
                 await mcpAdapter.connect();
@@ -1727,7 +1838,7 @@ export class GeminiAdapter {
               <websearch>根据最新的网络信息，关于这个问题的专业观点是...</websearch>
             - 确保回复能够同时**有效整合记忆和网络信息**，让内容更加全面和有用。
             - 我回复的语气和风格一定会与角色人设保持一致。
-            - 我**不会在回复中使用多组<mem>或<websearch>标签，整个回复只能有一组<mem>或<websearch>标签。**
+            - 我**不会在回复中使用多组<mem>或<websearch>标签，整个回复只能有一组<mem>标签和一组<websearch>标签。**
       </response_guidelines>`;
             
             // 记录融合提示词的长度
@@ -1889,6 +2000,61 @@ export class GeminiAdapter {
         const searchQuery = lastMessage.parts?.[0]?.text || "";
         
         try {
+            // 优先尝试通过云服务进行联网搜索
+            if (this.useCloudService && CloudServiceProvider.isEnabled()) {
+                try {
+                    console.log(`[Gemini适配器] 优先通过云服务处理联网搜索请求`);
+                    const response = await CloudServiceProvider.generateSearchResult(searchQuery, {
+                        model: CloudServiceProvider.getMultiModalModel(),
+                        temperature: 0.7,
+                        max_tokens: 2048
+                    });
+                    if (!response.ok) {
+                        const errorText = await response.text();
+                        throw new Error(`Cloud service search HTTP error! status: ${response.status}, details: ${errorText}`);
+                    }
+                    const result = await response.json();
+                    // 兼容CradleAI格式
+                    let searchResultText = "";
+                    if (result.choices && result.choices.length > 0) {
+                        searchResultText = result.choices[0].message?.content || "";
+                    } else if (typeof result === 'string') {
+                        searchResultText = result;
+                    }
+                    if (searchResultText) {
+                        // 构建带有搜索结果的修改版提示
+                        let combinedPrompt = `${searchQuery}\n\n`;
+                        
+                        // 添加网络搜索结果
+                        combinedPrompt += `<websearch>\n搜索引擎返回的联网检索结果：\n${searchResultText}\n</websearch>\n\n`;
+                        
+                        // 添加响应指南
+                        combinedPrompt += `<response_guidelines>
+- 除了对用户消息的回应之外，我**一定** 会结合联网搜索内容进行回复。
+- **我会根据角色设定和聊天上下文**，输出我对联网检索结果的解释，并用<websearch></websearch>包裹。
+  - 示例: <websearch>根据网络信息，[相关领域的专家]认为... 这可能对您有帮助。</websearch>
+- 我会确保回复保持角色人设的一致性。
+</response_guidelines>`;
+                        
+                        // 使用标准的生成内容方法生成最终回复
+                        // 插入顺序：历史消息 + model(搜索内容) + 用户消息
+                        const finalPrompt: ChatMessage[] = [
+                            ...contents.slice(0, -1),
+                            {
+                                role: "model",
+                                parts: [{ text: combinedPrompt }]
+                            },
+                            contents[contents.length - 1]
+                        ];
+                        
+                        return await this.generateContent(finalPrompt);
+                    }
+                } catch (cloudSearchError) {
+                    console.warn('[Gemini适配器] 云服务联网搜索失败，降级到本地BraveSearch:', cloudSearchError);
+                    // 继续降级到本地bravesearch
+                }
+            }
+
             // 确保MCP适配器已连接
             if (!mcpAdapter.isReady()) {
                 await mcpAdapter.connect();

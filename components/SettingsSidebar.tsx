@@ -974,7 +974,7 @@ export default function SettingsSidebar({
 
           {/* Add dialog mode settings section */}
           <View style={styles.settingSection}>
-            <Text style={styles.settingSectionTitle}>对话模式</Text>
+            <Text style={styles.settingSectionTitle}>显示设置</Text>
             
             <TouchableOpacity 
               style={[
@@ -1012,7 +1012,7 @@ export default function SettingsSidebar({
                 styles.modeButtonText,
                 mode === 'background-focus' && styles.modeButtonTextSelected
               ]}>
-                背景强调模式
+                背景强调
               </Text>
             </TouchableOpacity>
             
@@ -1032,12 +1032,12 @@ export default function SettingsSidebar({
                 styles.modeButtonText,
                 mode === 'visual-novel' && styles.modeButtonTextSelected
               ]}>
-                视觉小说模式
+                视觉小说
               </Text>
             </TouchableOpacity>
             
             <Text style={styles.settingDescription}>
-              选择不同的对话模式可以更改聊天的显示方式。背景强调模式会限制聊天区域高度以显示更多背景，视觉小说模式则会以Galgame风格显示对话。
+              更改聊天的显示方式。
             </Text>
           </View>
 
