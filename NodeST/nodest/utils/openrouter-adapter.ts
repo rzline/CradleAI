@@ -289,7 +289,7 @@ export class OpenRouterAdapter {
    * @param memoryResults 记忆搜索结果 (可选)
    * @returns 生成的内容
    */
-  async generateContentWithTools(contents: ChatMessage[], memoryResults?: any): Promise<string> {
+  async generateContentWithTools(contents: ChatMessage[], memoryResults?: any,userMessage?:string ): Promise<string> {
     // 获取最后一条消息
     const lastMessage = contents[contents.length - 1];
     const messageText = lastMessage.content || (lastMessage.parts && lastMessage.parts[0]?.text) || "";

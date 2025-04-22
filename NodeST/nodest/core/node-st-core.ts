@@ -1344,12 +1344,11 @@ export class NodeSTCore {
                                         memorySearchResults.results && 
                                         memorySearchResults.results.length > 0;
                                         
-                                        if (shouldUseMemoryResults && activeAdapter) {
-                                            console.log('[NodeSTCore] 检测到有效记忆搜索结果，使用generateContentWithTools方法');
-                                            // 如果有记忆搜索结果，使用工具调用方法处理
-                                            const response = await activeAdapter.generateContentWithTools(cleanedContents, memorySearchResults);
-                                
-                  console.log('[NodeSTCore] API response received:', {
+            if (shouldUseMemoryResults && activeAdapter) {
+                console.log('[NodeSTCore] 检测到有效记忆搜索结果，使用generateContentWithTools方法');
+                // 如果有记忆搜索结果，使用工具调用方法处理
+                const response = await activeAdapter.generateContentWithTools(cleanedContents, memorySearchResults, userMessage);
+                console.log('[NodeSTCore] API response received:', {
                     hasResponse: !!response,
                     responseLength: response?.length || 0
                 });
@@ -1558,25 +1557,25 @@ export class NodeSTCore {
             console.log('[NodeSTCore] Sending to API with tool calls...');
             // 如果使用工具调用，则传递记忆搜索结果
             if (activeAdapter) {
-                const response = await activeAdapter.generateContentWithTools(cleanedContents, memoryResults);
+                const response = await activeAdapter.generateContentWithTools(cleanedContents, memoryResults, userMessage);
                 console.log('[NodeSTCore] API response received:', {
-                hasResponse: !!response,
-                responseLength: response?.length || 0
-            });
+                    hasResponse: !!response,
+                    responseLength: response?.length || 0
+                });
 
-            // 保存更新后的历史和框架
-            if (response) {
-                console.log('[NodeSTCore] Saving updated history and framework...');
-                // 保存更新后的框架内容
-                await this.saveContents(contents, sessionId);
-                console.log('[NodeSTCore] Content framework and history saved successfully');
+                // 保存更新后的历史和框架
+                if (response) {
+                    console.log('[NodeSTCore] Saving updated history and framework...');
+                    // 保存更新后的框架内容
+                    await this.saveContents(contents, sessionId);
+                    console.log('[NodeSTCore] Content framework and history saved successfully');
+                }
+
+                return response;
+            } else {
+                console.error('[NodeSTCore] No adapter available and cloud fallback failed');
+                return null;
             }
-
-            return response;
-        } else {
-            console.error('[NodeSTCore] No adapter available and cloud fallback failed');
-            return null;
-        }
         } catch (error) {
             console.error('[NodeSTCore] Error in processChatWithTools:', error);
             return null;

@@ -1648,7 +1648,7 @@ export class GeminiAdapter {
      * @param memoryResults 记忆搜索结果 (可选)
      * @returns 生成的内容
      */
-    async generateContentWithTools(contents: ChatMessage[], memoryResults?: any): Promise<string> {
+    async generateContentWithTools(contents: ChatMessage[], memoryResults?: any, userMessage?: string): Promise<string> {
         // 检查是否有API密钥配置或者是否应该使用云服务
         const apiKeyAvailable = this.isApiKeyConfigured();
         const cloudServiceAvailable = this.useCloudService && CloudServiceProvider.isEnabled();
@@ -1665,16 +1665,17 @@ export class GeminiAdapter {
             return await this.generateContent(contents);
         }
         
-        // 获取最后一条消息
-        const lastMessage = contents[contents.length - 1];
-        const messageText = lastMessage.parts?.[0]?.text || "";
+        // 获取userMessage（优先参数，否则回退到最后一条消息）
+        const analyzedUserMessage = typeof userMessage === 'string'
+            ? userMessage
+            : (contents[contents.length - 1]?.parts?.[0]?.text || "");
         
         // 添加详细的调试日志
-        console.log(`[Gemini适配器] generateContentWithTools被调用，messageText: "${messageText.substring(0, 50)}${messageText.length > 50 ? '...' : ''}"`);
+        console.log(`[Gemini适配器] generateContentWithTools被调用，userMessage: "${analyzedUserMessage.substring(0, 50)}${analyzedUserMessage.length > 50 ? '...' : ''}"`);
         
-        // 检查是否需要搜索（即使没有启用搜索功能，也检查一下，便于调试）
-        const wouldNeedSearching = this.messageNeedsSearching(messageText);
-        console.log(`[Gemini适配器] 消息是否适合搜索: ${wouldNeedSearching}`);
+        // 检查是否需要搜索（分析userMessage而不是最后一条消息）
+        const wouldNeedSearching = this.messageNeedsSearching(analyzedUserMessage);
+        console.log(`[Gemini适配器] userMessage是否适合搜索: ${wouldNeedSearching}`);
         
         try {
             // 检查是否同时存在记忆结果和搜索意图
@@ -1706,7 +1707,6 @@ export class GeminiAdapter {
             return await this.generateContent(contents);
         }
     }
-
     /**
      * 处理同时具有记忆搜索结果和网络搜索意图的请求
      * @param contents 消息内容
@@ -2138,48 +2138,48 @@ export class GeminiAdapter {
      * @param messageText 消息文本
      * @returns 是否需要搜索
      */
-    private messageNeedsSearching(messageText: string): boolean {
-        // 添加更多详细的调试日志
-        console.log(`[Gemini适配器] 正在分析消息是否需要搜索: "${messageText.substring(0, 50)}${messageText.length > 50 ? '...' : ''}"`);
-        
-        // 检查消息是否包含搜索意图的关键词
-        const searchKeywords = [
-            '搜索', '查询', '查找', '寻找', '检索', '了解', '信息', 
-            '最新', '新闻', '什么是', '谁是', '哪里', '如何', '怎么',
-            'search', 'find', 'lookup', 'query', 'information about',
-            'latest', 'news', 'what is', 'who is', 'where', 'how to'
-        ];
-        
-        // 提问型关键词
-        const questionPatterns = [
-            /是什么/, /有哪些/, /如何/, /怎么/, /怎样/, 
-            /什么时候/, /为什么/, /哪些/, /多少/,
-            /what is/i, /how to/i, /when is/i, /why is/i, /where is/i
-        ];
-        
-        // 检查关键词
-        const hasSearchKeyword = searchKeywords.some(keyword => 
-            messageText.toLowerCase().includes(keyword.toLowerCase())
-        );
-        
-        // 检查提问模式
-        const isQuestion = questionPatterns.some(pattern => 
-            pattern.test(messageText)
-        ) || messageText.includes('?') || messageText.includes('？');
-        
-        // 如果同时满足以下条件，则判断需要搜索:
-        // 1. 消息包含搜索关键词或者是一个问题
-        // 2. 消息长度不超过300个字符 (放宽长度限制，从200改为300)
-        const needsSearching = (hasSearchKeyword || isQuestion) && messageText.length < 300;
-        
-        // 添加详细的判断结果日志
-        console.log(`[Gemini适配器] 消息搜索判断结果:`, {
-            hasSearchKeyword,
-            isQuestion,
-            messageLength: messageText.length,
-            needsSearching
-        });
-        
-        return needsSearching;
-    }
-}
+
+    private messageNeedsSearching(userMessage: string): boolean {
+    // 添加更多详细的调试日志
+    console.log(`[Gemini适配器] 正在分析userMessage是否需要搜索: "${userMessage.substring(0, 50)}${userMessage.length > 50 ? '...' : ''}"`);
+    
+    // 检查消息是否包含搜索意图的关键词
+    const searchKeywords = [
+        '搜索', '查询', '查找', '寻找', '检索', '了解', '信息', 
+        '最新', '新闻', '什么是', '谁是', '哪里', '如何', '怎么',
+        'search', 'find', 'lookup', 'query', 'information about',
+        'latest', 'news', 'what is', 'who is', 'where', 'how to'
+    ];
+    
+    // 提问型关键词
+    const questionPatterns = [
+        /是什么/, /有哪些/, /如何/, /怎么/, /怎样/, 
+        /什么时候/, /为什么/, /哪些/, /多少/,
+        /what is/i, /how to/i, /when is/i, /why is/i, /where is/i
+    ];
+    
+    // 检查关键词
+    const hasSearchKeyword = searchKeywords.some(keyword => 
+        userMessage.toLowerCase().includes(keyword.toLowerCase())
+    );
+    
+    // 检查提问模式
+    const isQuestion = questionPatterns.some(pattern => 
+        pattern.test(userMessage)
+    ) || userMessage.includes('?') || userMessage.includes('？');
+    
+    // 如果同时满足以下条件，则判断需要搜索:
+    // 1. 消息包含搜索关键词或者是一个问题
+    // 2. 消息长度不超过300个字符 (放宽长度限制，从200改为300)
+    const needsSearching = (hasSearchKeyword || isQuestion) && userMessage.length < 300;
+    
+    // 添加详细的判断结果日志
+    console.log(`[Gemini适配器] 消息搜索判断结果:`, {
+        hasSearchKeyword,
+        isQuestion,
+        messageLength: userMessage.length,
+        needsSearching
+    });
+    
+    return needsSearching;
+}}
