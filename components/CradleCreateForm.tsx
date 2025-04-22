@@ -14,7 +14,6 @@ import {
   KeyboardAvoidingView,
   Platform,
   FlatList,
-
 } from 'react-native';
 import { Ionicons, } from '@expo/vector-icons';
 import { useRouter } from 'expo-router';
@@ -36,9 +35,6 @@ import ArtistReferenceSelector from './ArtistReferenceSelector';
 import { theme } from '@/constants/theme';
 // Add VoiceSelector import at the top with other imports
 import VoiceSelector from './VoiceSelector';
-
-const { width: SCREEN_WIDTH } = Dimensions.get('window');
-
 // Add a simple function to generate unique IDs
 const generateUniqueId = () => {
   return Date.now().toString() + Math.random().toString(36).substring(2, 9);
@@ -639,20 +635,13 @@ const handleCreateCharacter = async () => {
         const generatedCharacter = await generateCharacterFromCradle(addedCharacter);
         console.log(`[摇篮角色创建] 角色已成功生成，ID: ${generatedCharacter.id}`);
         
-        Alert.alert('成功', '角色已创建并生成成功！', [
-          {
-            text: '与角色聊天',
-            onPress: () => {
-              onClose();
-              // Navigate to character chat
-              router.replace({
-                pathname: "/(tabs)",
-                params: { characterId: generatedCharacter.id }
-              });
-              if (onSuccess) onSuccess();
-            }
-          }
-        ]);
+        onClose();
+        router.replace({
+          pathname: "/(tabs)/Character",
+          params: { characterId: generatedCharacter.id }
+        });
+        if (onSuccess) onSuccess();
+
       } catch (genError) {
         console.error('[摇篮角色创建] 生成角色失败:', genError);
         Alert.alert('错误', '创建角色失败。', [
@@ -913,72 +902,7 @@ const handleCreateCharacter = async () => {
             placeholderTextColor="#aaa"
           />
         </View>
-        
-        {/* User's gender selection */}
-        <View style={styles.inputGroup}>
-          <Text style={styles.inputLabel}>您的性别</Text>
-          <View style={styles.genderSelector}>
-            <TouchableOpacity
-              style={[
-                styles.genderButton,
-                userGender === 'male' && styles.selectedGender
-              ]}
-              onPress={() => setUserGender('male')}
-            >
-              <Ionicons 
-                name="male" 
-                size={20} 
-                color={userGender === 'male' ? '#fff' : '#aaa'} 
-              />
-              <Text style={[
-                styles.genderText,
-                userGender === 'male' && styles.selectedGenderText
-              ]}>
-                男性
-              </Text>
-            </TouchableOpacity>
-            
-            <TouchableOpacity
-              style={[
-                styles.genderButton,
-                userGender === 'female' && styles.selectedGender
-              ]}
-              onPress={() => setUserGender('female')}
-            >
-              <Ionicons 
-                name="female" 
-                size={20} 
-                color={userGender === 'female' ? '#fff' : '#aaa'} 
-              />
-              <Text style={[
-                styles.genderText,
-                userGender === 'female' && styles.selectedGenderText
-              ]}>
-                女性
-              </Text>
-            </TouchableOpacity>
-            
-            <TouchableOpacity
-              style={[
-                styles.genderButton,
-                userGender === 'other' && styles.selectedGender
-              ]}
-              onPress={() => setUserGender('other')}
-            >
-              <Ionicons 
-                name="person" 
-                size={20} 
-                color={userGender === 'other' ? '#fff' : '#aaa'} 
-              />
-              <Text style={[
-                styles.genderText,
-                userGender === 'other' && styles.selectedGenderText
-              ]}>
-                 其他
-              </Text>
-            </TouchableOpacity>
-          </View>
-        </View>
+      
         
         {/* Character's gender selection */}
         <View style={styles.inputGroup}>
