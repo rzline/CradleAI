@@ -541,7 +541,7 @@ export class CircleService {
         // This is a reply to a specific comment, get the conversation thread
         conversationHistory = this.extractConversationThread(post, replyTo.userId);
       }
-      
+
       if (isForwarded) {
         // Enhanced special context for forwarded posts with image indication
         context = `用户转发了${post.characterName}的朋友圈给你${imageInfo}: "${post.content}"`;
@@ -595,10 +595,15 @@ export class CircleService {
       }
       
       // Determine the appropriate interaction type based on conversation history
-      const interactionType = conversationHistory ? 
-        'continuedConversation' : // Use new template for continued conversations
+      let interactionType = conversationHistory ?
+        'continuedConversation' :
         (replyTo ? 'replyToComment' : (isForwarded ? 'forwardedPost' : 'replyToPost'));
-      
+
+      // 修正：如果是用户对角色自己帖子的评论，强制使用 replyToComment
+      if (isOwnPost && isReplyToUser) {
+        interactionType = 'replyToComment';
+      }
+
       // Create comment options with responderId
       const commentOptions: CirclePostOptions = {
         type: interactionType as any, // Cast to allow our new type

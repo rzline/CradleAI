@@ -12,12 +12,14 @@ import {
 import { Ionicons } from '@expo/vector-icons';
 import characterData from '@/app/data/character_data.json';
 import { theme } from '@/constants/theme';
+import { generateUUID } from '@/utils/uuid';
 
 // Define types for character data
 interface Character {
   english_name: string;
   chinese_translation: string;
   works: string[];
+  uuid?: string; // 新增uuid属性
 }
 
 interface CharacterTagSelectorProps {
@@ -44,7 +46,8 @@ const CharacterTagSelector: React.FC<CharacterTagSelectorProps> = ({
     const processedData = characterData.map((char: Character) => {
       return {
         ...char,
-        chinese_translation: char.chinese_translation.split('#')[0].trim()
+        chinese_translation: char.chinese_translation.split('#')[0].trim(),
+        uuid: generateUUID(), // 为每个角色生成uuid
       };
     });
     setCharacters(processedData);
@@ -119,7 +122,7 @@ const CharacterTagSelector: React.FC<CharacterTagSelectorProps> = ({
         {/* Character list */}
         <FlatList
           data={filteredCharacters}
-          keyExtractor={(item) => item.english_name}
+          keyExtractor={(item) => item.uuid!} // 使用uuid作为key
           renderItem={({ item }) => (
             <TouchableOpacity 
               style={styles.characterItem}
@@ -142,7 +145,7 @@ const CharacterTagSelector: React.FC<CharacterTagSelectorProps> = ({
                 style={styles.addButton}
                 onPress={() => handleSelectCharacter(item)}
               >
-                <Ionicons name="add-circle" size={24} color={theme.colors.accent} />
+                <Ionicons name="add-circle" size={24} color="#ff9f1c" />
               </TouchableOpacity>
             </TouchableOpacity>
           )}

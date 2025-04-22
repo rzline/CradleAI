@@ -259,8 +259,11 @@ const CradleCreateForm: React.FC<CradleCreateFormProps> = ({
   // These state variables were defined outside the component - move them inside
   const [tagSelectorVisible, setTagSelectorVisible] = useState(false);
   
+  // Add state for artist reference selection
+  const [selectedArtistPrompt, setSelectedArtistPrompt] = useState<string | null>(null);
+  // 新增：ArtistReferenceSelector 弹窗控制
+  const [artistSelectorVisible, setArtistSelectorVisible] = useState(false);
 
-  
   // New state variables for character settings tab
   const [userGender, setUserGender] = useState<'male' | 'female' | 'other'>('male');
   const [characterAge, setCharacterAge] = useState<string>('young-adult');
@@ -278,13 +281,12 @@ const CradleCreateForm: React.FC<CradleCreateFormProps> = ({
   const [vndbSearchRetryCount, setVndbSearchRetryCount] = useState(0);
   const MAX_RETRY_ATTEMPTS = 3;
 
-  // Add new state variables for enhanced filtering options
+  // Add new state for enhanced filtering options
   const [traitFilterOperator, setTraitFilterOperator] = useState<'and' | 'or'>('and');
   const [ageFilterOperator, setAgeFilterOperator] = useState<'=' | '>' | '>=' | '<' | '<='>('>');
   const [ageFilterValue, setAgeFilterValue] = useState<string>('');
 
-  // Add new state for artist reference selection
-  const [selectedArtistPrompt, setSelectedArtistPrompt] = useState<string | null>(null);
+
 
   // Add state for voice related properties
   const [voiceGender, setVoiceGender] = useState<'male' | 'female'>('male');
@@ -780,13 +782,36 @@ const handleCreateCharacter = async () => {
           <Text style={styles.tagInstructionsText}>
             请选择描述角色外观的正面和负面标签，这些标签将保存为角色数据的一部分
           </Text>
-          
-          {/* Add artist reference selector */}
-          <ArtistReferenceSelector 
-            selectedGender={gender}
-            onSelectArtist={setSelectedArtistPrompt}
-            selectedArtistPrompt={selectedArtistPrompt}
-          />
+
+          {/* 已选画师风格区域 */}
+          {selectedArtistPrompt ? (
+            <View style={styles.selectedArtistPromptContainer}>
+              <Text style={styles.selectedArtistPromptLabel}>已选画师风格：</Text>
+              <View style={styles.selectedArtistPromptRow}>
+                <Text style={styles.selectedArtistPromptText} numberOfLines={1}>
+                  {selectedArtistPrompt}
+                </Text>
+                <TouchableOpacity
+                  style={styles.clearArtistPromptButton}
+                  onPress={() => setSelectedArtistPrompt(null)}
+                >
+                  <Ionicons name="close-circle" size={18} color="#aaa" />
+                  <Text style={styles.clearArtistPromptText}>清除</Text>
+                </TouchableOpacity>
+              </View>
+            </View>
+          ) : null}
+
+          {/* ArtistReferenceSelector 入口按钮 */}
+          <TouchableOpacity
+            style={styles.openTagSelectorButton}
+            onPress={() => setArtistSelectorVisible(true)}
+          >
+            <Ionicons name="color-palette-outline" size={20} color="#fff" />
+            <Text style={styles.openTagSelectorText}>
+              选择画师风格（可选）
+            </Text>
+          </TouchableOpacity>
           
           {/* Tag selection summary */}
           <View style={styles.tagSummaryContainer}>
@@ -863,9 +888,9 @@ const handleCreateCharacter = async () => {
             <TouchableOpacity 
               style={styles.tagSelectorCloseButton}
               onPress={() => setTagSelectorVisible(false)}
-            >
+            ></TouchableOpacity>
               <Ionicons name="close" size={24} color="#fff" />
-            </TouchableOpacity>
+
           </View>
           
           <View style={styles.tagSelectorContent}>
@@ -880,6 +905,34 @@ const handleCreateCharacter = async () => {
               sidebarWidth="auto" // Add this prop to control sidebar width
             />
           </View>
+        </View>
+      </Modal>
+
+      {/* ArtistReferenceSelector Modal */}
+      <Modal
+        visible={artistSelectorVisible}
+        transparent={false}
+        animationType="slide"
+        onRequestClose={() => setArtistSelectorVisible(false)}
+      >
+        <View style={{ flex: 1, backgroundColor: '#222' }}>
+          <View style={styles.tagSelectorHeader}>
+            <Text style={styles.tagSelectorTitle}>选择画师风格</Text>
+            <TouchableOpacity 
+              style={styles.tagSelectorCloseButton}
+              onPress={() => setArtistSelectorVisible(false)}
+            >
+              <Ionicons name="close" size={24} color="#fff" />
+            </TouchableOpacity>
+          </View>
+          <ArtistReferenceSelector
+            selectedGender={gender}
+            onSelectArtist={prompt => {
+              setSelectedArtistPrompt(prompt || null);
+              setArtistSelectorVisible(false);
+            }}
+            selectedArtistPrompt={selectedArtistPrompt}
+          />
         </View>
       </Modal>
     </View>
@@ -2174,6 +2227,42 @@ const styles = StyleSheet.create({
   },
   tagSelectorContent: {
     flex: 1, // This ensures the TagSelector fills the available space
+  },
+  selectedArtistPromptContainer: {
+    backgroundColor: '#333',
+    borderRadius: 8,
+    padding: 10,
+    marginBottom: 8,
+    marginTop: 4,
+  },
+  selectedArtistPromptLabel: {
+    color: '#aaa',
+    fontSize: 13,
+    marginBottom: 4,
+  },
+  selectedArtistPromptRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+  },
+  selectedArtistPromptText: {
+    color: '#FFD700',
+    fontSize: 14,
+    flex: 1,
+    marginRight: 8,
+  },
+  clearArtistPromptButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: 6,
+    paddingVertical: 2,
+    borderRadius: 6,
+    backgroundColor: 'rgba(255,255,255,0.08)',
+  },
+  clearArtistPromptText: {
+    color: '#aaa',
+    fontSize: 12,
+    marginLeft: 2,
   },
 });
 

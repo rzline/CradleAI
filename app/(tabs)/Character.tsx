@@ -677,7 +677,7 @@ const CharactersScreen: React.FC = () => {
           onToggleFavorite={imageId => {
             setCharacterImages(prev => ({
               ...prev,
-              [gallerySidebarCharacter.id]: prev[gallerySidebarCharacter.id].map(img =>
+              [gallerySidebarCharacter.id]: (prev[gallerySidebarCharacter.id] || []).map(img =>
                 img.id === imageId ? { ...img, isFavorite: !img.isFavorite } : img
               )
             }));
@@ -685,7 +685,7 @@ const CharactersScreen: React.FC = () => {
           onDelete={imageId => {
             setCharacterImages(prev => ({
               ...prev,
-              [gallerySidebarCharacter.id]: prev[gallerySidebarCharacter.id].filter(img => img.id !== imageId)
+              [gallerySidebarCharacter.id]: (prev[gallerySidebarCharacter.id] || []).filter(img => img.id !== imageId)
             }));
           }}
           onSetAsBackground={imageId => {
@@ -699,7 +699,10 @@ const CharactersScreen: React.FC = () => {
             ...gallerySidebarCharacter,
             inCradleSystem: gallerySidebarCharacter.inCradleSystem || false
           }}
-          onAddNewImage={img => handleAddNewImage(gallerySidebarCharacter.id, img)}
+          onAddNewImage={img => setCharacterImages(prev => ({
+            ...prev,
+            [gallerySidebarCharacter.id]: [...(prev[gallerySidebarCharacter.id] || []), img]
+          }))}
         />
       )}
 

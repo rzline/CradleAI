@@ -190,7 +190,10 @@ const DetailSidebar: React.FC<DetailSidebarProps> = ({
 
   const handleTextSave = useCallback((newText: string) => {
     setLocalContent(newText);
-  }, []);
+    if (onContentChange) {
+      onContentChange(newText);
+    }
+  }, [onContentChange]);
 
   const renderEntryOptions = () => {
     if (!entryType || !localOptions) return null;

@@ -104,7 +104,7 @@ const Profile: React.FC = () => {
           leftIcon="person-outline"
           chevron={true}
           onPress={() => router.push('../pages/custom-settings-manager')}
-          subtitle="管理全局和角色自设"
+          subtitle="全部自设列表"
         />
         
         <ListItem

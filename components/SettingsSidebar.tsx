@@ -8,20 +8,15 @@ import {
   Animated,
   Switch,
   Alert,
-  Image,
   ScrollView,
   PanResponder,
   TextInput,
-  Modal,
-  FlatList,
-  ActivityIndicator,
 } from 'react-native';
 import { Character, UserCustomSetting } from '@/shared/types';
 import { useCharacters } from '@/constants/CharactersContext';
 import { MaterialIcons, Ionicons } from '@expo/vector-icons';
 import * as ImagePicker from 'expo-image-picker';
 import { theme } from '@/constants/theme';
-import { Picker } from '@react-native-picker/picker';
 import { memoryService } from '@/services/memory-service';
 import Slider from '@react-native-community/slider';
 import { EventRegister } from 'react-native-event-listeners';
@@ -144,9 +139,6 @@ const CustomUserSettingsManager: React.FC<CustomUserSettingProps> = ({ character
       
       setIsEnabled(!isEnabled);
       
-      if (!isEnabled) {
-        Alert.alert('成功', '自设功能已启用');
-      }
     } catch (error) {
       console.error('Error toggling custom setting:', error);
       Alert.alert('错误', '无法更新自设设置');
@@ -403,6 +395,22 @@ export default function SettingsSidebar({
   const [customUserName, setCustomUserName] = useState(
     selectedCharacter?.customUserName || ''
   );
+
+  // 新增：Modal显示状态
+  const [showVisualNovelModal, setShowVisualNovelModal] = useState(false);
+  const [showMemorySummaryModal, setShowMemorySummaryModal] = useState(false);
+
+  // 记忆总结设置输入状态提升
+  const [memoryThresholdInput, setMemoryThresholdInput] = useState(summaryThreshold.toString());
+  const [memoryLengthInput, setMemoryLengthInput] = useState(summaryLength.toString());
+
+  // 保持输入框与实际值同步
+  useEffect(() => {
+    setMemoryThresholdInput(summaryThreshold.toString());
+  }, [summaryThreshold, showMemorySummaryModal]);
+  useEffect(() => {
+    setMemoryLengthInput(summaryLength.toString());
+  }, [summaryLength, showMemorySummaryModal]);
 
   // 处理滑动手势
   const panResponder = useRef(
@@ -758,177 +766,6 @@ export default function SettingsSidebar({
     }
   };
 
-  // Memory Summary Settings Component
-  const MemorySummarySettings: React.FC<MemorySummarySettingsProps> = ({ character }) => {
-    if (!isMemorySummaryEnabled) return null;
-    
-    // Add local state to validate user input
-    const [thresholdInput, setThresholdInput] = useState(summaryThreshold.toString());
-    const [lengthInput, setLengthInput] = useState(summaryLength.toString());
-    
-    // Validate and update the threshold value
-    const handleThresholdChange = (value: string) => {
-      // Allow only numeric input
-      if (/^\d*$/.test(value)) {
-        setThresholdInput(value);
-      }
-    };
-    
-    // Validate and update the length value
-    const handleLengthChange = (value: string) => {
-      // Allow only numeric input
-      if (/^\d*$/.test(value)) {
-        setLengthInput(value);
-      }
-    };
-    
-    // Apply the values when user confirms
-    const applyValues = () => {
-      const newThreshold = parseInt(thresholdInput, 10);
-      const newLength = parseInt(lengthInput, 10);
-      
-      // Validate ranges
-      const validThreshold = Math.min(10000, Math.max(3000, isNaN(newThreshold) ? 12000 : newThreshold));
-      const validLength = Math.min(2000, Math.max(500, isNaN(newLength) ? 6000 : newLength));
-      
-      // Update parent state values
-      setSummaryThreshold(validThreshold);
-      setSummaryLength(validLength);
-      
-      // Update input fields with validated values
-      setThresholdInput(validThreshold.toString());
-      setLengthInput(validLength.toString());
-    };
-    
-    return (
-      <View style={styles.settingSection}>
-        {/* <Text style={styles.settingSectionTitle}>记忆总结设置</Text>
-        
-        <View style={styles.inputContainer}>
-          <Text style={styles.settingLabel}>总结阈值 (3000-10000 字符)</Text>
-          <TextInput
-            style={styles.textInput}
-            value={thresholdInput}
-            onChangeText={handleThresholdChange}
-            placeholder="例如：6000"
-            placeholderTextColor="#999"
-            keyboardType="numeric"
-            onBlur={applyValues}
-          />
-          <Text style={styles.settingDescription}>
-            当对话达到此字符数时，系统将自动总结对话内容
-          </Text>
-        </View>
-        
-        <View style={styles.inputContainer}>
-          <Text style={styles.settingLabel}>总结长度 (500-2000 字符)</Text>
-          <TextInput
-            style={styles.textInput}
-            value={lengthInput}
-            onChangeText={handleLengthChange}
-            placeholder="例如：1000"
-            placeholderTextColor="#999"
-            keyboardType="numeric"
-            onBlur={applyValues}
-          />
-          <Text style={styles.settingDescription}>
-            生成的记忆总结的最大长度
-          </Text>
-        </View>
-        
-        <TouchableOpacity
-          style={styles.applyButton}
-          onPress={updateMemorySummarySettings}
-        >
-          <Text style={styles.applyButtonText}>保存设置</Text>
-        </TouchableOpacity>
-         */}
-        <Text style={styles.settingDescription}>
-          记忆总结功能会在对话达到阈值时，自动总结对话历史，避免模型遗忘早期对话内容。总结的部分对用户不可见，只有AI能看到。
-        </Text>
-      </View>
-    );
-  };
-
-  // Visual novel settings component
-  const VisualNovelSettings: React.FC<DialogModeSettingsProps> = ({ visualNovelSettings, updateVisualNovelSettings }) => {
-    if (mode !== 'visual-novel') return null;
-    
-    const colorOptions = [
-      { label: '白色', value: '#FFFFFF' },
-      { label: '浅灰色', value: '#E0E0E0' },
-      { label: '米色', value: '#F5F5DC' },
-      { label: '淡黄色', value: '#FFFACD' },
-    ];
-
-    const bgOptions = [
-      { label: '黑色半透明', value: 'rgba(0, 0, 0, 0.7)' },
-      { label: '深灰半透明', value: 'rgba(40, 40, 40, 0.8)' },
-      { label: '棕色半透明', value: 'rgba(50, 30, 20, 0.8)' },
-      { label: '深蓝半透明', value: 'rgba(20, 30, 50, 0.8)' },
-    ];
-
-    return (
-      <View style={styles.settingSection}>
-        <Text style={styles.settingSectionTitle}>视觉小说设置</Text>
-        
-        <View style={styles.settingItem}>
-          <Text style={styles.settingLabel}>字体</Text>
-          <View style={styles.pickerContainer}>
-            <Picker
-              selectedValue={visualNovelSettings.fontFamily}
-              onValueChange={(value) => updateVisualNovelSettings({ fontFamily: value })}
-              style={styles.picker}
-              dropdownIconColor="#fff"
-            >
-              {availableFonts.map((font) => (
-                <Picker.Item key={font} label={font} value={font} />
-              ))}
-            </Picker>
-          </View>
-        </View>
-        
-        <View style={styles.settingItem}>
-          <Text style={styles.settingLabel}>文字颜色</Text>
-          <View style={styles.colorOptionsContainer}>
-            {colorOptions.map((option) => (
-              <TouchableOpacity
-                key={option.value}
-                style={[
-                  styles.colorOption,
-                  { backgroundColor: option.value },
-                  visualNovelSettings.textColor === option.value && styles.colorOptionSelected
-                ]}
-                onPress={() => updateVisualNovelSettings({ textColor: option.value })}
-              />
-            ))}
-          </View>
-        </View>
-        
-        <View style={styles.settingItem}>
-          <Text style={styles.settingLabel}>背景颜色</Text>
-          <View style={styles.colorOptionsContainer}>
-            {bgOptions.map((option) => (
-              <TouchableOpacity
-                key={option.value}
-                style={[
-                  styles.colorOption,
-                  { backgroundColor: option.value },
-                  visualNovelSettings.backgroundColor === option.value && styles.colorOptionSelected
-                ]}
-                onPress={() => updateVisualNovelSettings({ backgroundColor: option.value })}
-              />
-            ))}
-          </View>
-        </View>
-        
-        <Text style={styles.settingDescription}>
-          视觉小说模式下，对话将以类似Galgame的形式展示。您可以自定义对话框的外观。
-        </Text>
-      </View>
-    );
-  };
-
   // Calculate the translateX value based on the provided animation value or fallback
   const sidebarTranslateX = animationValue
     ? animationValue.interpolate({
@@ -1101,28 +938,20 @@ export default function SettingsSidebar({
               </TouchableOpacity>
             )}
             
-            <Text style={styles.settingDescription}>
-              动态立绘使用视频文件代替静态背景图，为角色提供更生动的表现。
-            </Text>
             
-            <TouchableOpacity
-              style={styles.backgroundButton}
-              onPress={handleBackgroundChange}
-            >
-              <MaterialIcons name="image" size={24} color="#fff" />
-              <Text style={styles.backgroundButtonText}>更换聊天背景</Text>
-            </TouchableOpacity>
           </View>
 
           {/* Replace Permanent Memory with Memory Summary */}
           <View style={styles.settingItem}>
             <Text style={styles.settingLabel}>记忆总结</Text>
-            <Switch
-              value={isMemorySummaryEnabled}
-              onValueChange={handleMemorySummaryToggle}
-              trackColor={{ false: '#767577', true: 'rgba(255, 224, 195, 0.7)' }}
-              thumbColor={isMemorySummaryEnabled ? 'rgb(255, 224, 195)' : '#f4f3f4'}
-            />
+            <View style={{ flexDirection: 'row', alignItems: 'center' }}>
+              <Switch
+                value={isMemorySummaryEnabled}
+                onValueChange={handleMemorySummaryToggle}
+                trackColor={{ false: '#767577', true: 'rgba(255, 224, 195, 0.7)' }}
+                thumbColor={isMemorySummaryEnabled ? 'rgb(255, 224, 195)' : '#f4f3f4'}
+              />
+            </View>
           </View>
 
           <View style={styles.settingItem}>
@@ -1168,21 +997,11 @@ export default function SettingsSidebar({
             />
           </View>
 
-          {selectedCharacter && isMemorySummaryEnabled && (
-            <MemorySummarySettings character={selectedCharacter} updateCharacter={updateCharacter} />
-          )}
-
-          {/* Render visual novel settings when that mode is selected */}
-          <VisualNovelSettings 
-            visualNovelSettings={visualNovelSettings}
-            updateVisualNovelSettings={updateVisualNovelSettings}
-          />
-
           {/* 添加一些底部间距 */}
           <View style={styles.bottomPadding} />
         </ScrollView>
       </Animated.View>
-      
+
       {isVisible && (
         <TouchableOpacity
           style={styles.overlayTouchable}
@@ -1452,6 +1271,14 @@ const styles = StyleSheet.create({
   },
   positionButtonTextSelected: {
     color: 'rgb(255, 224, 195)',
+  },
+  gearButton: {
+    marginLeft: 8,
+    padding: 4,
+    borderRadius: 16,
+    backgroundColor: 'rgba(255, 224, 195, 0.12)',
+    alignItems: 'center',
+    justifyContent: 'center',
   },
 });
 

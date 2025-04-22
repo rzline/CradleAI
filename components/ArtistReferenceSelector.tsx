@@ -47,6 +47,15 @@ const ArtistReferenceSelector: React.FC<ArtistReferenceSelectorProps> = ({
     console.log(`[摇篮角色创建] 清除画师风格选择`);
   };
 
+  // 随机选择一个画师风格
+  const rollArtist = () => {
+    if (allArtists.length === 0) return;
+    const idx = Math.floor(Math.random() * allArtists.length);
+    const artist = allArtists[idx];
+    onSelectArtist(artist.artist_prompt);
+    console.log(`[摇篮角色创建] 随机选择画师风格: ${artist.artist_prompt}`);
+  };
+
   // Modified function to directly use the original artist_prompt without extraction
   const getArtistDisplayName = (prompt: string): string => {
     if (!prompt) return '';
@@ -61,20 +70,27 @@ const ArtistReferenceSelector: React.FC<ArtistReferenceSelectorProps> = ({
   return (
     <SafeAreaView style={styles.modalOverlay}>
       <View style={styles.modalContent}>
-        <View style={styles.modalHeader}>
-          <Text style={styles.modalTitle}>选择画风参考</Text>
-          <TouchableOpacity 
-            style={styles.modalCloseButton}
-            onPress={() => onSelectArtist(selectedArtistPrompt || '')}
+        {/* 操作按钮区域 */}
+        <View style={styles.actionRow}>
+          <TouchableOpacity
+            style={styles.actionButton}
+            onPress={rollArtist}
           >
-            <Ionicons name="close" size={24} color="#fff" />
+            <Ionicons name="dice-outline" size={18} color="#FFD700" />
+            <Text style={styles.actionButtonText}>Roll</Text>
+          </TouchableOpacity>
+          <TouchableOpacity
+            style={styles.actionButton}
+            onPress={clearSelection}
+          >
+            <Ionicons name="close-circle-outline" size={18} color="#aaa" />
+            <Text style={styles.actionButtonText}>清除选择</Text>
           </TouchableOpacity>
         </View>
-        
 
         {/* Display how many styles are available */}
         <Text style={styles.resultCountText}>
-          共 {allArtists.length} 个画风参考
+          共 {allArtists.length} 个风格参考
         </Text>
         
         <FlatList
@@ -200,6 +216,28 @@ const styles = StyleSheet.create({
     color: '#fff',
     fontSize: 14,
     textAlign: 'center',
+  },
+  actionRow: {
+    flexDirection: 'row',
+    justifyContent: 'flex-end',
+    alignItems: 'center',
+    marginTop: 8,
+    marginRight: 8,
+    marginBottom: 0,
+  },
+  actionButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: 'rgba(255,255,255,0.07)',
+    borderRadius: 6,
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+    marginLeft: 8,
+  },
+  actionButtonText: {
+    color: '#FFD700',
+    fontSize: 13,
+    marginLeft: 4,
   },
 });
 

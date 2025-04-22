@@ -215,6 +215,9 @@ const App = () => {
   // Add new state to track regenerating message
   const [regeneratingMessageId, setRegeneratingMessageId] = useState<string | null>(null);
 
+  // Add transient error state for temporary error messages
+  const [transientError, setTransientError] = useState<string | null>(null);
+
   // Toggle brave search function
   const toggleBraveSearch = () => {
     const newState = !braveSearchEnabled;
@@ -558,7 +561,7 @@ useEffect(() => {
   // 确保每次消息更新时重新获取消息
   const currentMessages = selectedConversationId ? getMessages(selectedConversationId) : [];
 
-  const handleSendMessage = async (newMessage: string, sender: 'user' | 'bot', isLoading = false) => {
+  const handleSendMessage = async (newMessage: string, sender: 'user' | 'bot', isLoading = false, metadata?: Record<string, any>) => {
     // If in preview mode, exit it first
     if (isPreviewMode) {
       Alert.alert(
@@ -575,31 +578,46 @@ useEffect(() => {
           }
         ]
       );
-    } else {
-      // Don't capture scroll position before sending a message
-      // This avoids interfering with natural message flow
+      return;
+    }
+
+    // 检查是否为错误提示消息（仅用于临时提示，不加入消息流）
+    const isTransientError = metadata?.isErrorMessage === true ||
+      newMessage.includes("抱歉，处理消息时出现了错误") ||
+      newMessage.includes("抱歉，无法重新生成回复") ||
+      newMessage.includes("发生错误，无法重新生成") ||
+      newMessage.includes("处理图片时出现了错误") ||
+      newMessage.includes("生成图片时出现了错误") ||
+      newMessage.includes("编辑图片时出现了错误") ||
+      newMessage.includes("发送消息时出现了错误") ||
+      newMessage.includes("抱歉，未收到有效回复。");
+
+    if (isTransientError) {
+      setTransientError(newMessage);
+      setTimeout(() => setTransientError(null), 2500); // 2.5秒后自动消失
+      return;
+    }
+
+    const messageId = await sendMessageInternal(newMessage, sender, isLoading);
+    
+    // When message is sent, update messages state but don't manipulate scroll
+    if (selectedConversationId) {
+      const updatedMessages = getMessages(selectedConversationId);
+      // Create new array reference to ensure state update
+      setMessages([...updatedMessages]); 
+    }
+    
+    // If it's a user message, update memory state to "processing"
+    if (sender === 'user' && !isLoading && messageId) {
+      setMessageMemoryState(prev => ({
+        ...prev,
+        [messageId]: 'processing'
+      }));
       
-      const messageId = await sendMessageInternal(newMessage, sender, isLoading);
-      
-      // When message is sent, update messages state but don't manipulate scroll
-      if (selectedConversationId) {
-        const updatedMessages = getMessages(selectedConversationId);
-        // Create new array reference to ensure state update
-        setMessages([...updatedMessages]); 
-      }
-      
-      // If it's a user message, update memory state to "processing"
-      if (sender === 'user' && !isLoading && messageId) {
-        setMessageMemoryState(prev => ({
-          ...prev,
-          [messageId]: 'processing'
-        }));
-        
-        // Process memory after a short delay to allow UI to update
-        setTimeout(() => {
-          processMessageMemory(messageId, newMessage, selectedConversationId);
-        }, 500);
-      }
+      // Process memory after a short delay to allow UI to update
+      setTimeout(() => {
+        processMessageMemory(messageId, newMessage, selectedConversationId);
+      }, 500);
     }
 
     // If user is sending a message, clear the "waiting for reply" flag
@@ -649,7 +667,7 @@ useEffect(() => {
                              newMessage.includes("生成图片时出现了错误") ||
                              newMessage.includes("编辑图片时出现了错误") ||
                              newMessage.includes("发送消息时出现了错误");
-      
+
       // Only count non-error bot messages for aiIndex calculation
       if (!isErrorMessage) {
         const existingBotMessages = messages.filter(m => 
@@ -1628,16 +1646,6 @@ useEffect(() => {
           />
         )}
         
-        {/* SettingsSidebar moved outside the content container, positioned at the root level */}
-        {selectedCharacter && (
-          <SettingsSidebar
-            isVisible={isSettingsSidebarVisible}
-            onClose={toggleSettingsSidebar}
-            selectedCharacter={selectedCharacter}
-            animationValue={settingsSlideAnim}
-          />
-        )}
-        
         {/* Everything else (content + topbar) gets animated together */}
         <Animated.View 
           style={[
@@ -1681,6 +1689,33 @@ useEffect(() => {
                 (selectedCharacter || isGroupMode) && styles.transparentBackground,
                 mode === 'background-focus' && styles.backgroundFocusSafeArea
               ]}>
+                {/* 错误提示条，仅临时显示，不进入消息流 */}
+                {transientError && (
+                  <View style={{
+                    position: 'absolute',
+                    top: 10,
+                    left: 0,
+                    right: 0,
+                    zIndex: 999,
+                    alignItems: 'center',
+                    pointerEvents: 'none'
+                  }}>
+                    <View style={{
+                      backgroundColor: 'rgba(220,53,69,0.95)',
+                      paddingVertical: 8,
+                      paddingHorizontal: 24,
+                      borderRadius: 20,
+                      shadowColor: '#000',
+                      shadowOffset: { width: 0, height: 2 },
+                      shadowOpacity: 0.2,
+                      shadowRadius: 4,
+                      elevation: 6,
+                    }}>
+                      <Text style={{ color: '#fff', fontSize: 15, fontWeight: 'bold' }}>{transientError}</Text>
+                    </View>
+                  </View>
+                )}
+
                 {/* Preview Mode Banner (only show in character chat mode) */}
                 {isPreviewMode && previewBannerVisible && !isGroupMode && (
                   <View style={styles.previewBanner}>
@@ -1779,7 +1814,6 @@ useEffect(() => {
                 </View>
 
                 {/* Sidebars and overlays */}
-                {isSettingsSidebarVisible && <View style={styles.modalOverlay} />}
               </SafeAreaView>
 
               {/* Group Management Modal */}
@@ -1847,6 +1881,28 @@ useEffect(() => {
             </View>
           </KeyboardAvoidingView>
         </Animated.View>
+
+        {/* SettingsSidebar 绝对定位并放在所有内容之后，确保在最顶层 */}
+        {selectedCharacter && (
+          <View
+            pointerEvents="box-none"
+            style={{
+              position: 'absolute',
+              top: 0,
+              right: 0,
+              bottom: 0,
+              left: 0,
+              zIndex: 99999, // 确保在最顶层
+            }}
+          >
+            <SettingsSidebar
+              isVisible={isSettingsSidebarVisible}
+              onClose={toggleSettingsSidebar}
+              selectedCharacter={selectedCharacter}
+              animationValue={settingsSlideAnim}
+            />
+          </View>
+        )}
       </MemoryProvider>
     </View>
   );
@@ -1923,6 +1979,7 @@ const styles = StyleSheet.create({
   safeArea: {
     flex: 1,
     marginTop: 90,
+    color: 'rgba(26, 26, 26, 0.8)',
   },
   contentContainer: {
     flex: 1,

@@ -54,10 +54,9 @@ ${params.conversationHistory ? "5. 请参考上方的历史对话记录，保持
    */
   createNewPost: (params: ScenePromptParams) => `作为${params.charName ? params.charName : ''}（${params.charDescription.substring(0, 50)}），请基于你的性格和背景，创作一条适合发布在朋友圈的内容。
 
-这次发布可能的主题是：${params.contentText}
 ${params.context ? `【上下文】${params.context}` : ''}
-${params.characterJsonData ? `【角色设定】${params.characterJsonData}` : ''}
-${params.conversationHistory ? `【与用户的历史对话】\n${params.conversationHistory}` : ''}
+${params.characterJsonData ? `【你的角色设定】${params.characterJsonData}` : ''}
+${params.conversationHistory ? `【你与用户的历史对话】\n${params.conversationHistory}` : ''}
 
 请以JSON格式提供你的朋友圈帖子：
 {

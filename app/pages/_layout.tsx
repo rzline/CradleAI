@@ -55,6 +55,14 @@ export default function PagesLayout() {
           headerShown: false,
         }}
       />
+                  <Stack.Screen
+        name="custom-settings-manager"
+        options={{
+          presentation: 'modal',
+          headerShown: false,
+        }}
+      />
     </Stack>
+    
   );
 }

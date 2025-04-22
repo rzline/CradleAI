@@ -233,6 +233,67 @@ export default function CharacterEditDialog({
     }
   }, [messages]);
 
+  // 新增：用于控制JSON更新详情弹窗的显示和内容
+  const [jsonUpdateModalVisible, setJsonUpdateModalVisible] = useState(false);
+  const [jsonUpdateModalContent, setJsonUpdateModalContent] = useState<string | null>(null);
+
+  // 渲染JSON更新详情弹窗
+  const renderJsonUpdateModal = () => {
+    if (!jsonUpdateModalContent) return null;
+    let parsedJson: any = null;
+    try {
+      parsedJson = JSON.parse(jsonUpdateModalContent);
+    } catch {
+      // fallback: 显示原始内容
+    }
+    return (
+      <Modal
+        visible={jsonUpdateModalVisible}
+        transparent
+        animationType="fade"
+        onRequestClose={() => setJsonUpdateModalVisible(false)}
+      >
+        <View style={{
+          flex: 1,
+          backgroundColor: 'rgba(0,0,0,0.7)',
+          justifyContent: 'center',
+          alignItems: 'center'
+        }}>
+          <View style={{
+            backgroundColor: '#222',
+            borderRadius: 12,
+            padding: 20,
+            width: '90%',
+            maxHeight: '80%'
+          }}>
+            <Text style={{ color: '#fff', fontWeight: 'bold', fontSize: 18, marginBottom: 12 }}>角色更改详情</Text>
+            <ScrollView style={{ maxHeight: 400 }}>
+              {parsedJson ? (
+                <Text style={{ color: '#fff', fontSize: 14 }}>
+                  {JSON.stringify(parsedJson, null, 2)}
+                </Text>
+              ) : (
+                <Text style={{ color: '#fff', fontSize: 14 }}>{jsonUpdateModalContent}</Text>
+              )}
+            </ScrollView>
+            <TouchableOpacity
+              style={{
+                marginTop: 18,
+                backgroundColor: '#ff9f1c',
+                borderRadius: 8,
+                paddingVertical: 10,
+                alignItems: 'center'
+              }}
+              onPress={() => setJsonUpdateModalVisible(false)}
+            >
+              <Text style={{ color: '#fff', fontWeight: 'bold', fontSize: 16 }}>关闭</Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+      </Modal>
+    );
+  };
+
   // Handle user message send
   const handleSendMessage = async () => {
     if (input.trim() === '') return;
@@ -1138,17 +1199,16 @@ ${JSON.stringify(characterJsonData, null, 2)}
         setShowPreview(false);
         setHasChanges(false);
         
-        // Add a success message to the chat
+        // 新增：应用更改后插入一条系统消息
         setMessages(prev => [
           ...prev,
           {
-            id: `system-${Date.now()}`,
-            text: '✅ 已成功应用角色更改！你可以继续修改角色或关闭此对话框。',
+            id: `system-applied-${Date.now()}`,
+            text: '✅ 角色更改已生效！你可以继续修改角色或关闭此对话框。',
             sender: 'bot',
             timestamp: Date.now()
           }
         ]);
-        
 
       } catch (error) {
         console.error('[CharacterEditDialog] Error applying changes:', error);
@@ -1456,11 +1516,66 @@ ${JSON.stringify(characterJsonData, null, 2)}
     }
   };
 
-  // Render chat bubbles
+  // 优化后的聊天气泡渲染
   const renderChatBubbles = () => {
     return messages.map((message) => {
       const isUser = message.sender === 'user';
-      
+
+      // 检查是否为JSON_UPDATE消息
+      const jsonUpdateMatch = message.text.match(/<CHARACTER_JSON_UPDATE>([\s\S]*?)<\/CHARACTER_JSON_UPDATE>/);
+
+      if (jsonUpdateMatch) {
+        // 渲染为一个“查看角色更改”按钮
+        return (
+          <View
+            key={message.id}
+            style={[
+              styles.messageBubbleContainer,
+              isUser ? styles.userMessageContainer : styles.botMessageContainer
+            ]}
+          >
+            {!isUser && (
+              <View style={styles.avatarContainer}>
+                <Ionicons name="construct-outline" size={20} color="#fff" />
+              </View>
+            )}
+            <View
+              style={[
+                styles.messageBubble,
+                isUser ? styles.userMessageBubble : styles.botMessageBubble,
+                { backgroundColor: '#276749' }
+              ]}
+            >
+              <TouchableOpacity
+                onPress={() => {
+                  setJsonUpdateModalContent(jsonUpdateMatch[1].trim());
+                  setJsonUpdateModalVisible(true);
+                }}
+                style={{
+                  flexDirection: 'row',
+                  alignItems: 'center',
+                  paddingVertical: 6,
+                  paddingHorizontal: 8
+                }}
+              >
+                <Ionicons name="document-text-outline" size={18} color="#fff" style={{ marginRight: 6 }} />
+                <Text style={{ color: '#fff', fontWeight: 'bold', fontSize: 15 }}>
+                  角色更改已生成，点击查看详情
+                </Text>
+              </TouchableOpacity>
+            </View>
+            <Text style={styles.messageTime}>
+              {new Date(message.timestamp).toLocaleTimeString('zh-CN', {
+                hour: '2-digit',
+                minute: '2-digit',
+                hour12: false
+              })}
+            </Text>
+          </View>
+        );
+      }
+
+      // 普通消息
       return (
         <View
           key={message.id}
@@ -1475,7 +1590,7 @@ ${JSON.stringify(characterJsonData, null, 2)}
               <Ionicons name="construct-outline" size={20} color="#fff" />
             </View>
           )}
-          
+
           <View
             style={[
               styles.messageBubble,
@@ -1489,7 +1604,7 @@ ${JSON.stringify(characterJsonData, null, 2)}
               {message.text}
             </Text>
           </View>
-          
+
           {/* Time indicator (simplified) */}
           <Text style={styles.messageTime}>
             {new Date(message.timestamp).toLocaleTimeString('zh-CN', {
@@ -1502,7 +1617,7 @@ ${JSON.stringify(characterJsonData, null, 2)}
       );
     });
   };
-  
+
   // Render preview of updated character - Enhanced to show more character details
   const renderPreview = () => {
     if (!updatedCharacter) return null;
@@ -1802,6 +1917,8 @@ ${JSON.stringify(characterJsonData, null, 2)}
                     </View>
                   )}
                 </ScrollView>
+                {/* 新增：渲染JSON更新详情弹窗 */}
+                {renderJsonUpdateModal()}
               </View>
               {/* Input area */}
               <View style={styles.inputContainer}>

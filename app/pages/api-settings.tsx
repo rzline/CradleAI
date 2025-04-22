@@ -881,12 +881,8 @@ const ApiSettings = () => {
                     </View>
                     {useCloudService && (
                       <>
-                        <Text style={styles.cloudServiceInfo}>
-                          云服务已启用，API请求将通过Cradle云服务转发，无需额外配置API密钥
-                        </Text>
-                        
                         <View style={styles.modelSection}>
-                          <Text style={styles.inputLabel}>当前选定模型</Text>
+                          <Text style={styles.inputLabel}>模型选择</Text>
                           <TouchableOpacity
                             style={styles.modelButton}
                             onPress={() => setIsModelSelectorVisible(true)}
@@ -917,7 +913,7 @@ const ApiSettings = () => {
 
           <View style={styles.section}>
             <View style={styles.sectionHeader}>
-              <Text style={styles.sectionTitle}>NovelAI 图像生成</Text>
+              <Text style={styles.sectionTitle}>NovelAI</Text>
               <Switch
                 value={novelAIEnabled}
                 onValueChange={setNovelAIEnabled}

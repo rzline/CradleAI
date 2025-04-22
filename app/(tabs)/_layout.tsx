@@ -14,7 +14,7 @@ export default function TabLayout() {
   // Define fallback theme to prevent undefined tint error
   const colorTheme = {
     text: colorScheme === 'dark' ? '#fff' : '#000',
-    background: colorScheme === 'dark' ? '#000' : '#fff',
+    background: colorScheme === 'dark' ? 'dark' : 'dark',
     tint: colorScheme === 'dark' ? '#fff' :'rgb(255, 224, 195)',
     
     tabIconDefault: '#ccc',

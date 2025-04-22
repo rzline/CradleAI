@@ -1263,87 +1263,47 @@ export class GeminiAdapter {
         referenceImages?: ImageInput[];
     } = {}): Promise<string[]> {
         console.log(`[Gemini适配器] 请求生成图片，提示: ${prompt.substring(0, 50)}...`);
-        
-        // Check if API key is configured or if cloud service should be used
+        // 只允许本地 API key 进行图片生成，不允许云服务
         const apiKeyAvailable = this.isApiKeyConfigured();
-        const cloudServiceAvailable = this.useCloudService && CloudServiceProvider.isEnabled();
-        
-        // If no API key and cloud service is not available, throw error
-        if (!apiKeyAvailable && !cloudServiceAvailable) {
-            throw new Error("未配置API密钥，且云服务未启用。请配置API密钥或启用云服务。");
+        if (!apiKeyAvailable) {
+            throw new Error("图片生成功能仅支持本地API密钥，云服务暂不支持图片生成。请配置API密钥。");
         }
-        
-
-        
         try {
             // Always use the backup model (gemini-2.0-flash-exp) for image generation
             console.log(`[Gemini适配器] 使用${this.backupModel}模型生成图片`);
-            
-            // Try with key rotation
             let lastError: any = null;
             for (let keyIndex = 0; keyIndex < this.apiKeys.length; keyIndex++) {
-                // Set the current key index
                 this.currentKeyIndex = keyIndex;
                 console.log(`[Gemini适配器] 尝试使用API密钥 ${keyIndex + 1}/${this.apiKeys.length} 生成图片`);
-                
                 try {
-                    // 使用enhancedPrompt确保模型生成图像
                     const enhancedPrompt = `我需要一张基于以下描述的图片(请务必生成图像): ${prompt}`;
-                    
-                    // 直接使用多模态API生成图片
                     const result = await this.generateMultiModalContent(enhancedPrompt, {
                         includeImageOutput: true,
                         temperature: options.temperature || 0.7,
                     });
-                    
                     if (result.images && result.images.length > 0) {
                         console.log(`[Gemini适配器] 成功生成 ${result.images.length} 张图片`);
-                        
-                        // Convert the images to consistent PNG format
-                        const processedImages = result.images.map(img => {
-                            // We return the raw base64 data without data URL prefix
-                            // The caller will handle the proper formatting
-                            return img;
-                        });
-                        
+                        const processedImages = result.images.map(img => { /* ...existing code... */ return img; });
                         return processedImages;
                     }
-                    
                     console.log(`[Gemini适配器] 未能生成图片，尝试使用更明确的提示`);
-                    
-                    // 如果第一次尝试失败，使用更具体的提示再试一次
                     const secondAttemptPrompt = 
                         `Generate an image of the following (please output an image in your response): ${prompt}`;
-                    
                     const result2 = await this.generateMultiModalContent(secondAttemptPrompt, {
                         includeImageOutput: true,
-                        temperature: options.temperature || 0.9, // 略微提高创造性
+                        temperature: options.temperature || 0.9,
                     });
-                    
                     if (result2.images && result2.images.length > 0) {
                         console.log(`[Gemini适配器] 第二次尝试成功生成 ${result2.images.length} 张图片`);
-                        
-                        // Convert the images to consistent PNG format
-                        const processedImages = result2.images.map(img => {
-                            // We return the raw base64 data without data URL prefix
-                            return img;
-                        });
-                        
+                        const processedImages = result2.images.map(img => { /* ...existing code... */ return img; });
                         return processedImages;
                     }
-                    
-                    // If both attempts failed with this key, continue to next key
                     lastError = new Error("尝试生成图片失败，未返回图像");
                 } catch (error) {
                     console.error(`[Gemini适配器] 使用API密钥 ${keyIndex + 1} 生成图片失败:`, error);
                     lastError = error;
-                    // Continue to next key
                 }
             }
-            
-
-            
-            // If we reached this point, all keys failed and no cloud service available
             console.log(`[Gemini适配器] 所有API密钥尝试都未能生成图片`);
             throw lastError || new Error("所有API密钥尝试生成图片均失败");
         } catch (error) {
@@ -1351,7 +1311,6 @@ export class GeminiAdapter {
             return [];
         }
     }
-    
 
 
     /**
@@ -1542,27 +1501,16 @@ export class GeminiAdapter {
         } = {}
     ): Promise<string | null> {
         console.log(`[Gemini适配器] 请求编辑图片，提示: ${prompt}`);
-        
-        // 检查是否有API密钥配置或者是否应该使用云服务
+        // 只允许本地 API key 进行图片编辑，不允许云服务
         const apiKeyAvailable = this.isApiKeyConfigured();
-        const cloudServiceAvailable = this.useCloudService && CloudServiceProvider.isEnabled();
-        
-        // 如果没有API密钥且云服务不可用，抛出错误
-        if (!apiKeyAvailable && !cloudServiceAvailable) {
-            throw new Error("未配置API密钥，且云服务未启用。请配置API密钥或启用云服务。");
+        if (!apiKeyAvailable) {
+            throw new Error("图片编辑功能仅支持本地API密钥，云服务暂不支持图片编辑。请配置API密钥。");
         }
-        
-
-        
         try {
-            // 处理图像输入
             let processedImage: {data: string; mimeType: string};
-            
             if (image.url) {
-                // 如果是URL，获取并转换为Base64
                 processedImage = await this.fetchImageAsBase64(image.url);
             } else if (image.data && image.mimeType) {
-                // 如果直接提供了Base64数据
                 processedImage = {
                     data: image.data,
                     mimeType: image.mimeType
@@ -1570,69 +1518,45 @@ export class GeminiAdapter {
             } else {
                 throw new Error("编辑图片需要有效的图像数据");
             }
-            
-            // 记录图像大小，但不打印完整的base64数据
             console.log(`[Gemini适配器] 处理的图像大小: ${processedImage.data.length} 字节, 类型: ${processedImage.mimeType}`);
-            
-            // Try with key rotation
             let lastError: any = null;
             for (let keyIndex = 0; keyIndex < this.apiKeys.length; keyIndex++) {
-                // Set the current key index
                 this.currentKeyIndex = keyIndex;
                 console.log(`[Gemini适配器] 尝试使用API密钥 ${keyIndex + 1}/${this.apiKeys.length} 编辑图片`);
-                
                 try {
-                    // 构建强调编辑操作的提示词
                     const editPrompt = `请将这张图片${prompt}。输出编辑后的图片，保持原图的基本元素和构成。`;
-                    
-                    // 使用多模态API发送图像和编辑指令
                     const result = await this.generateMultiModalContent(editPrompt, {
-                        includeImageOutput: true, // 需要返回图像
+                        includeImageOutput: true,
                         temperature: options.temperature || 0.7,
                         images: [{ 
                             data: processedImage.data,
                             mimeType: processedImage.mimeType
                         }]
                     });
-                    
-                    // 检查是否有图像输出
                     if (result.images && result.images.length > 0) {
                         console.log(`[Gemini适配器] 图像编辑成功，输出图像大小: ${result.images[0].length} 字节`);
-                        // Return raw base64 data
                         return result.images[0];
                     }
-                    
-                    // 如果没有返回图像，尝试用更明确的英文提示
                     console.log(`[Gemini适配器] 第一次尝试未获得图像输出，尝试使用英文提示`);
-                    
                     const englishPrompt = `Edit this image to ${prompt}. Return the edited image maintaining the basic elements and composition of the original.`;
-                    
                     const secondAttempt = await this.generateMultiModalContent(englishPrompt, {
                         includeImageOutput: true,
-                        temperature: options.temperature || 0.8, // 稍微提高温度
+                        temperature: options.temperature || 0.8,
                         images: [{ 
                             data: processedImage.data,
                             mimeType: processedImage.mimeType
                         }]
                     });
-                    
                     if (secondAttempt.images && secondAttempt.images.length > 0) {
                         console.log(`[Gemini适配器] 第二次尝试图像编辑成功，输出图像大小: ${secondAttempt.images[0].length} 字节`);
-                        // Return raw base64 data
                         return secondAttempt.images[0];
                     }
-                    
                     lastError = new Error("图像编辑未返回图像");
                 } catch (error) {
                     console.error(`[Gemini适配器] 使用API密钥 ${keyIndex + 1} 编辑图片失败:`, error);
                     lastError = error;
-                    // Continue to next key
                 }
             }
-            
-
-            
-            // All keys failed and no cloud service available
             console.log(`[Gemini适配器] 图像编辑失败，所有API密钥都未能生成图像`);
             return null;
         } catch (error) {

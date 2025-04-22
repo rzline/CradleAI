@@ -517,6 +517,19 @@ const CharacterImageGallerySidebar: React.FC<CharacterImageGallerySidebarProps> 
     }
   };
 
+  const handleDeleteImage = (imageId: string) => {
+    // 删除本地 persistedImages
+    setPersistedImages(prev => {
+      const updated = prev.filter(img => img.id !== imageId);
+      savePersistedImages(updated);
+      return updated;
+    });
+    // 调用外部 onDelete
+    onDelete(imageId);
+    setShowOptionsMenu(false);
+    setUpdateCounter(prev => prev + 1);
+  };
+
   if (!visible) return null;
 
   return (
@@ -837,8 +850,7 @@ const CharacterImageGallerySidebar: React.FC<CharacterImageGallerySidebarProps> 
                   <TouchableOpacity
                     style={[styles.menuItem, styles.deleteMenuItem]}
                     onPress={() => {
-                      onDelete(activeImage.id);
-                      setShowOptionsMenu(false);
+                      handleDeleteImage(activeImage.id);
                     }}
                   >
                     <Ionicons name="trash-outline" size={22} color="#FF6B6B" />

@@ -340,7 +340,7 @@ const TagSelector: React.FC<TagSelectorProps> = ({
                   <Ionicons 
                     name={isPositive ? "checkmark-circle" : "add-circle-outline"} 
                     size={22} 
-                    color={isPositive ? "#000" : theme.colors.accent} 
+                    color={isPositive ? "#000" : `#ff9f1c`} 
                   />
                 </TouchableOpacity>
                 <TouchableOpacity 
@@ -397,7 +397,7 @@ const TagSelector: React.FC<TagSelectorProps> = ({
                     <Ionicons 
                       name={isPositive ? "checkmark-circle" : "add-circle-outline"} 
                       size={22} 
-                      color={isPositive ? "#000" : theme.colors.accent} 
+                      color={isPositive ? "#000" : `#ff9f1c`} 
                     />
                   </TouchableOpacity>
                   <TouchableOpacity 
@@ -442,7 +442,7 @@ const TagSelector: React.FC<TagSelectorProps> = ({
           </Text>
           <View style={styles.tagHelpContainer}>
             <View style={styles.tagHelpItem}>
-              <Ionicons name="add-circle-outline" size={16} color={theme.colors.accent} />
+              <Ionicons name="add-circle-outline" size={16} color={`#ff9f1c`} />
               <Text style={styles.tagHelpText}>点击"+"添加为正面标签</Text>
             </View>
             <View style={styles.tagHelpItem}>
@@ -480,7 +480,7 @@ const TagSelector: React.FC<TagSelectorProps> = ({
                       style={[styles.tagChip, styles.positiveTagChip]}
                       onPress={() => handleTagSelect(tag, 'positive')}
                     >
-                      <Text style={styles.tagChipText} numberOfLines={1}>{getTagName(tag)}</Text>
+                      <Text style={styles.tagChipText} numberOfLines={1} ellipsizeMode="tail">{getTagName(tag)}</Text>
                       <Ionicons name="close-circle" size={16} color="rgba(0,0,0,0.5)" />
                     </TouchableOpacity>
                   ))}
@@ -498,7 +498,7 @@ const TagSelector: React.FC<TagSelectorProps> = ({
                       style={[styles.tagChip, styles.negativeTagChip]}
                       onPress={() => handleTagSelect(tag, 'negative')}
                     >
-                      <Text style={styles.tagChipText} numberOfLines={1}>{getTagName(tag)}</Text>
+                      <Text style={styles.tagChipText} numberOfLines={1} ellipsizeMode="tail">{getTagName(tag)}</Text>
                       <Ionicons name="close-circle" size={16} color="rgba(255,255,255,0.5)" />
                     </TouchableOpacity>
                   ))}
@@ -526,7 +526,7 @@ const TagSelector: React.FC<TagSelectorProps> = ({
           <Ionicons
             name="arrow-up-circle"
             size={20}
-            color={tagWeightMode === 'increase' ? theme.colors.accent : "#aaa"}
+            color={tagWeightMode === 'increase' ?`#ff9f1c` : "#aaa"}
           />
           <Text style={[
             styles.weightingButtonText,
@@ -680,6 +680,7 @@ const styles = StyleSheet.create({
   tagChipsContainer: {
     flexDirection: 'row',
     flexWrap: 'wrap',
+    alignItems: 'flex-start', // 保证多行时顶部对齐
   },
   tagChip: {
     flexDirection: 'row',
@@ -688,8 +689,9 @@ const styles = StyleSheet.create({
     paddingVertical: 6,
     paddingHorizontal: 10,
     margin: 4,
-    maxWidth: '100%', // Allow chips to take full width if needed
-    flexShrink: 1,
+    minWidth: 0,         // 允许内容撑开宽度
+    alignSelf: 'flex-start', // 让每个chip根据内容自适应宽度
+    maxWidth: 1500, // 限制chip最大宽度，防止撑满整行
   },
   positiveTagChip: {
     backgroundColor: 'rgba(255, 224, 195, 0.8)',
@@ -700,7 +702,7 @@ const styles = StyleSheet.create({
   tagChipText: {
     marginRight: 6,
     fontSize: 13,
-    flexShrink: 1,
+    flexShrink: 1, // 允许文本收缩
   },
   categoryContainer: {
     flex: 1,
@@ -712,7 +714,7 @@ const styles = StyleSheet.create({
     borderBottomColor: 'rgba(255,255,255,0.05)',
   },
   selectedCategoryButton: {
-    backgroundColor: theme.colors.accent,
+    backgroundColor: `#ff9f1c`,
   },
   categoryButtonText: {
     color: '#fff',
@@ -738,14 +740,14 @@ const styles = StyleSheet.create({
   selectedSubCategoryButton: {
     backgroundColor: 'rgba(255, 224, 195, 0.3)',
     borderWidth: 1,
-    borderColor: theme.colors.accent,
+    borderColor: `#ff9f1c`,
   },
   subCategoryButtonText: {
     color: '#fff',
     fontSize: 13, // Slightly smaller text
   },
   selectedSubCategoryButtonText: {
-    color: theme.colors.accent,
+    color: `#ff9f1c`,
     fontWeight: '500',
   },
   tagBrowser: {
@@ -785,7 +787,7 @@ const styles = StyleSheet.create({
     backgroundColor: 'rgba(255, 224, 195, 0.2)',
   },
   positiveButtonActive: {
-    backgroundColor: theme.colors.accent,
+    backgroundColor: '#ff9f1c',
   },
   negativeButton: {
     backgroundColor: 'rgba(255, 68, 68, 0.2)',
@@ -885,7 +887,7 @@ const styles = StyleSheet.create({
   activeIncreaseButton: {
     backgroundColor: 'rgba(255, 224, 195, 0.2)',
     borderWidth: 1,
-    borderColor: theme.colors.accent,
+    borderColor: `#ff9f1c`,
   },
   activeDecreaseButton: {
     backgroundColor: 'rgba(255, 68, 68, 0.2)',
