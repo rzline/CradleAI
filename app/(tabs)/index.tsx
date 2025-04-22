@@ -1708,8 +1708,6 @@ useEffect(() => {
                 <View style={[
                   styles.contentContainer,
                   (selectedCharacter || isGroupMode) && styles.transparentBackground,
-                  // Adjust container to accommodate different modes
-                  mode === 'visual-novel' && !isGroupMode && styles.visualNovelContentContainer,
                   mode === 'background-focus' && !isGroupMode && styles.backgroundFocusContentContainer
                 ]}>
                   {/* Conditionally render either GroupDialog or ChatDialog */}
@@ -1740,6 +1738,7 @@ useEffect(() => {
                       onScrollPositionChange={handleScrollPositionChange}
                       messageMemoryState={messageMemoryState}
                       regeneratingMessageId={regeneratingMessageId}
+                      user={user} 
                     />
                   )}
                 </View>
@@ -1748,8 +1747,6 @@ useEffect(() => {
                 <View style={[
                   styles.inputBar,
                   (selectedCharacter || isGroupMode) && styles.transparentBackground,
-                  // Add specific styles for different modes (only in character chat mode)
-                  mode === 'visual-novel' && !isGroupMode && styles.visualNovelInputBar,
                   mode === 'background-focus' && !isGroupMode && styles.backgroundFocusInputBar
                 ]}>
                   {/* Conditionally render either ChatInput or GroupInput */}

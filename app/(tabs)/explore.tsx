@@ -45,42 +45,6 @@ const CARD_WIDTH = width - 32;
 const AVATAR_SIZE = 48;
 const HEADER_HEIGHT = 90;
 
-// 多个测试帖子模板，用于随机选择
-const TEST_POST_TEMPLATES = [
-  {
-    content: '今天天气真好，我在公园里散步时看到了很多可爱的小狗。大家喜欢小动物吗？',
-    characterName: '天气爱好者',
-  },
-  {
-    content: '刚看完一部超感人的电影，眼泪都止不住了。你们最近看过什么好电影吗？',
-    characterName: '电影爱好者',
-  },
-  {
-    content: '分享一道我最近学会的菜谱：香煎三文鱼配柠檬汁。简单又美味，推荐大家尝试！',
-    characterName: '美食达人',
-  },
-  {
-    content: '今天去书店买了几本新书，迫不及待想开始阅读了。最近大家在读什么书呢？',
-    characterName: '读书人',
-  }
-];
-
-// 生成随机测试帖子
-const generateTestPost = () => {
-  const template = TEST_POST_TEMPLATES[Math.floor(Math.random() * TEST_POST_TEMPLATES.length)];
-  return {
-    id: 'test-post-' + Date.now(),
-    characterId: 'test-author-' + Math.floor(Math.random() * 1000),
-    characterName: template.characterName,
-    characterAvatar: null,
-    content: template.content,
-    createdAt: new Date().toISOString(),
-    comments: [],
-    likes: 0,
-    hasLiked: false,
-  };
-};
-
 const Explore: React.FC = () => {
   const { characters, setCharacters, updateCharacter, toggleFavorite, addMessage } = useCharacters();
   const { user } = useUser();
@@ -94,7 +58,7 @@ const Explore: React.FC = () => {
   const [testResults, setTestResults] = useState<Array<{characterId: string, name: string, success: boolean, action?: any}>>([]);
   const [showTestResults, setShowTestResults] = useState(false);
   const flatListRef = useRef<FlatList>(null);
-  const testPost = useRef(generateTestPost()).current;
+
 
   const [isForwardSheetVisible, setIsForwardSheetVisible] = useState(false);
   const [selectedPost, setSelectedPost] = useState<CirclePost | null>(null);
@@ -322,13 +286,6 @@ const Explore: React.FC = () => {
       setIsLoading(true);
       setError(null);
 
-      // In test mode, we only show the test post
-      if (testModeEnabled) {
-        setPosts([testPost]);
-        console.log('【朋友圈测试】测试模式已启用，显示测试帖子');
-        return;
-      }
-
       console.log('【朋友圈】开始从存储加载帖子');
       // Load posts from AsyncStorage and merge with character posts
       const storedPosts = await CircleService.loadSavedPosts();
@@ -408,7 +365,7 @@ const Explore: React.FC = () => {
     } finally {
       setIsLoading(false);
     }
-  }, [characters, testModeEnabled, testPost]);
+  }, [characters, testModeEnabled,]);
 
   // Add a specific effect hook to load posts on component mount
   useEffect(() => {
@@ -668,7 +625,7 @@ const Explore: React.FC = () => {
       const postExists = posts.some(p => p.id === post.id);
       if (postExists) {
         console.log(`【朋友圈测试】帖子已存在，ID: ${post.id}，避免重复添加`);
-        Alert.alert('发布成功', `${author.name} 发布了新朋友圈`);
+
         setPublishingPost(false);
         return;
       }
@@ -689,8 +646,7 @@ const Explore: React.FC = () => {
       // Save posts to AsyncStorage to prevent duplicates on reload
       await AsyncStorage.setItem('circle_posts', JSON.stringify(updatedPosts));
       
-      // 显示通知
-      Alert.alert('发布成功', `${author.name} 发布了新朋友圈`);
+
       
       // If we have characters to interact with the post, start interaction after a short delay
       const interactingCharacters = characters.filter(c => 

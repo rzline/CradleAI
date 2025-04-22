@@ -86,9 +86,6 @@ const ChatDialog: React.FC<ExtendedChatDialogProps> = ({
   // Get dialog mode from context
   const { mode, visualNovelSettings, isHistoryModalVisible, setHistoryModalVisible } = useDialogMode();
   
-  // State to track last AI message for visual novel mode
-  const [lastAiMessage, setLastAiMessage] = useState<Message | null>(null);
-  
   // Add states for virtualized list
   const [virtualizedMessages, setVirtualizedMessages] = useState<Message[]>([]);
   const [isLoadingMore, setIsLoadingMore] = useState(false);
@@ -936,9 +933,6 @@ const ChatDialog: React.FC<ExtendedChatDialogProps> = ({
   // Add state for memory tooltips
   const [activeTooltipId, setActiveTooltipId] = useState<string | null>(null);
 
-
-
-
   const renderMessageContent = (message: Message, isUser: boolean, index: number) => {
     return (
       <View style={[
@@ -1160,13 +1154,44 @@ const ChatDialog: React.FC<ExtendedChatDialogProps> = ({
 
   // Render visual novel dialog box
   const renderVisualNovelDialog = () => {
-    if (!lastAiMessage || !selectedCharacter) return null;
-    
-    // For visual novel mode, find the index of the last AI message
-    const lastAiMessageIndex = virtualizedMessages.findIndex(msg => msg.id === lastAiMessage.id);
-    const isLastAIMessage = true;
-    const isRegenerating = regeneratingMessageId === lastAiMessage.id;
-    
+    // 取最后一条消息
+    const lastMessage = virtualizedMessages.length > 0
+      ? virtualizedMessages[virtualizedMessages.length - 1]
+      : null;
+    if (!lastMessage || !selectedCharacter) return null;
+  
+    // 判断是否应展示用户消息（用户刚发消息或AI正在回复）
+    const showUserMessage =
+      lastMessage.sender === 'user' ||
+      (lastMessage.sender === 'bot' && lastMessage.isLoading && virtualizedMessages.length >= 2 && virtualizedMessages[virtualizedMessages.length - 2].sender === 'user');
+  
+    // 取要展示的消息内容和头像
+    let displayName, displayAvatar, displayText;
+    if (showUserMessage) {
+      // 展示用户消息（如果AI正在回复，则取倒数第二条用户消息，否则取最后一条）
+      const userMsg = lastMessage.sender === 'user'
+        ? lastMessage
+        : virtualizedMessages[virtualizedMessages.length - 2];
+      // 优先使用 selectedCharacter?.customUserName，否则为 '你'
+      displayName = selectedCharacter?.customUserName;
+      displayAvatar = user?.avatar ? { uri: String(user.avatar) } : require('@/assets/images/default-avatar.png');
+      displayText = userMsg?.text || '';
+    } else {
+      // 展示AI消息
+      displayName = selectedCharacter.name;
+      displayAvatar = selectedCharacter.avatar ? { uri: String(selectedCharacter.avatar) } : require('@/assets/images/default-avatar.png');
+      displayText = lastMessage.text;
+    }
+  
+    // 计算 aiIndex
+    const aiIndex = lastMessage.metadata?.aiIndex !== undefined
+      ? lastMessage.metadata.aiIndex
+      : virtualizedMessages.filter(m => m.sender === 'bot' && !m.isLoading).length - 1;
+  
+    const isUser = showUserMessage;
+    const isRegenerating = regeneratingMessageId === lastMessage.id;
+    const messageRating = getMessageRating(lastMessage.id);
+  
     return (
       <View style={[
         styles.visualNovelContainer,
@@ -1174,20 +1199,15 @@ const ChatDialog: React.FC<ExtendedChatDialogProps> = ({
       ]}>
         <View style={styles.visualNovelHeader}>
           <Image
-            source={
-              selectedCharacter?.avatar
-                ? { uri: String(selectedCharacter.avatar) }
-                : require('@/assets/images/default-avatar.png')
-            }
+            source={displayAvatar}
             style={styles.visualNovelAvatar}
           />
           <Text style={[
             styles.visualNovelCharacterName,
             { color: visualNovelSettings.textColor }
           ]}>
-            {selectedCharacter.name}
+            {displayName}
           </Text>
-          
           <TouchableOpacity
             style={styles.historyButton}
             onPress={() => setHistoryModalVisible(true)}
@@ -1196,13 +1216,11 @@ const ChatDialog: React.FC<ExtendedChatDialogProps> = ({
             <Text style={styles.historyButtonText}>查看历史</Text>
           </TouchableOpacity>
         </View>
-        
         <ScrollView style={styles.visualNovelTextContainer}>
-          {/* Replace the plain text with processed content */}
           <View style={styles.visualNovelTextWrapper}>
-            {containsComplexHtml(lastAiMessage.text) || /<\/?[a-z][^>]*>/i.test(lastAiMessage.text) ? (
+            {containsComplexHtml(displayText) || /<\/?[a-z][^>]*>/i.test(displayText) ? (
               <RichTextRenderer 
-                html={optimizeHtmlForRendering(lastAiMessage.text)}
+                html={optimizeHtmlForRendering(displayText)}
                 baseStyle={{ 
                   color: visualNovelSettings.textColor,
                   fontFamily: visualNovelSettings.fontFamily,
@@ -1220,84 +1238,76 @@ const ChatDialog: React.FC<ExtendedChatDialogProps> = ({
                   color: visualNovelSettings.textColor 
                 }
               ]}>
-                {lastAiMessage.text}
+                {displayText}
               </Text>
             )}
           </View>
         </ScrollView>
-        
-        {/* Add message action buttons in visual novel style */}
         <View style={styles.visualNovelActions}>
-          {/* TTS buttons */}
-          {renderTTSButtons(lastAiMessage)}
-          
-          {/* Regenerate button - only show if it's the last AI message */}
-          {onRegenerateMessage && isLastAIMessage && (
-            <TouchableOpacity
-              style={[
-                styles.visualNovelActionButton,
-                isRegenerating && styles.visualNovelRegeneratingButton // Add special style for regenerating state
-              ]}
-              onPress={() => {
-                if (!isRegenerating) { // Only allow clicking if not already regenerating
-                  // Get the stored or calculated AI message index
-                  const aiIndex = lastAiMessage.metadata?.aiIndex !== undefined 
-                    ? lastAiMessage.metadata.aiIndex
-                    : virtualizedMessages.filter(m => m.sender === 'bot' && !m.isLoading).length - 1;
-                  
-                  onRegenerateMessage(lastAiMessage.id, aiIndex);
-                }
-              }}
-              disabled={isRegenerating} // Disable the button when regenerating
-            >
-              {isRegenerating ? (
-                // Show activity indicator when regenerating
-                <ActivityIndicator size="small" color="rgba(255,255,255,0.9)" />
-              ) : (
-                <Ionicons name="refresh-circle" size={26} color="rgba(255,255,255,0.9)" />
+          {/* 仅AI消息且非loading时显示 TTS/Regenerate/Rating 按钮 */}
+          {!isUser && !lastMessage.isLoading && (
+            <>
+              {renderTTSButtons(lastMessage)}
+              {onRegenerateMessage && (
+                <TouchableOpacity
+                  style={[
+                    styles.visualNovelActionButton,
+                    isRegenerating && styles.visualNovelRegeneratingButton
+                  ]}
+                  onPress={() => {
+                    if (!isRegenerating) {
+                      onRegenerateMessage(lastMessage.id, aiIndex);
+                    }
+                  }}
+                  disabled={isRegenerating}
+                >
+                  {isRegenerating ? (
+                    <ActivityIndicator size="small" color="rgba(255,255,255,0.9)" />
+                  ) : (
+                    <Ionicons name="refresh-circle" size={26} color="rgba(255,255,255,0.9)" />
+                  )}
+                </TouchableOpacity>
               )}
-            </TouchableOpacity>
+              {onRateMessage && (
+                <View style={styles.visualNovelRateButtons}>
+                  <TouchableOpacity
+                    style={[
+                      styles.visualNovelRateButton, 
+                      messageRating === true && styles.visualNovelRateButtonActive
+                    ]}
+                    onPress={() => onRateMessage(lastMessage.id, true)}
+                    activeOpacity={0.7}
+                  >
+                    <Ionicons 
+                      name={messageRating === true ? "thumbs-up" : "thumbs-up-outline"} 
+                      size={22} 
+                      color={messageRating === true ? "rgb(255, 224, 195)" : "rgba(255,255,255,0.9)"} 
+                    />
+                  </TouchableOpacity>
+                  <TouchableOpacity
+                    style={[
+                      styles.visualNovelRateButton, 
+                      messageRating === false && styles.visualNovelRateButtonActive
+                    ]}
+                    onPress={() => onRateMessage(lastMessage.id, false)}
+                    activeOpacity={0.7}
+                  >
+                    <Ionicons 
+                      name={messageRating === false ? "thumbs-down" : "thumbs-down-outline"}
+                      size={22} 
+                      color={messageRating === false ? "#e74c3c" : "rgba(255,255,255,0.9)"} 
+                    />
+                  </TouchableOpacity>
+                </View>
+              )}
+            </>
           )}
-          
-          {/* Rating buttons */}
-          {onRateMessage && (
-            <View style={styles.visualNovelRateButtons}>
-              <TouchableOpacity
-                style={[
-                  styles.visualNovelRateButton, 
-                  getMessageRating(lastAiMessage.id) === true && styles.visualNovelRateButtonActive
-                ]}
-                onPress={() => onRateMessage(lastAiMessage.id, true)}
-                activeOpacity={0.7}
-              >
-                <Ionicons 
-                  name={getMessageRating(lastAiMessage.id) === true ? "thumbs-up" : "thumbs-up-outline"} 
-                  size={22} 
-                  color={getMessageRating(lastAiMessage.id) === true ? "rgb(255, 224, 195)" : "rgba(255,255,255,0.9)"} 
-                />
-              </TouchableOpacity>
-              
-              <TouchableOpacity
-                style={[
-                  styles.visualNovelRateButton, 
-                  getMessageRating(lastAiMessage.id) === false && styles.visualNovelRateButtonActive
-                ]}
-                onPress={() => onRateMessage(lastAiMessage.id, false)}
-                activeOpacity={0.7}
-              >
-                <Ionicons 
-                  name={getMessageRating(lastAiMessage.id) === false ? "thumbs-down" : "thumbs-down-outline"}
-                  size={22} 
-                  color={getMessageRating(lastAiMessage.id) === false ? "#e74c3c" : "rgba(255,255,255,0.9)"} 
-                />
-              </TouchableOpacity>
-            </View>
-          )}
+          {/* 用户消息或AI loading时不显示任何操作按钮 */}
         </View>
       </View>
     );
   };
-  
+
   // Render history modal for visual novel mode
   const renderHistoryModal = () => {
     return (

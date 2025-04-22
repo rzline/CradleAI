@@ -52,13 +52,6 @@ interface CradleCreateFormProps {
   onSuccess?: () => void;
 }
 
-// 2D 坐标轴类型
-interface Axis {
-  x: number;
-  y: number;
-  xLabel?: string;
-  yLabel?: string;
-}
 
 // Define interfaces for trait customization
 interface TraitSlider {
@@ -270,16 +263,14 @@ const CradleCreateForm: React.FC<CradleCreateFormProps> = ({
   // These state variables were defined outside the component - move them inside
   const [tagSelectorVisible, setTagSelectorVisible] = useState(false);
   
-  // Add these new state variables for tag weighting
-  const [tagWeightMode, setTagWeightMode] = useState<'none' | 'increase' | 'decrease'>('none');
+
   
   // New state variables for character settings tab
   const [userGender, setUserGender] = useState<'male' | 'female' | 'other'>('male');
   const [characterAge, setCharacterAge] = useState<string>('young-adult');
   const [selectedTraits, setSelectedTraits] = useState<string[]>([]);
   const [searchQuery, setSearchQuery] = useState('');
-  const [activeCategoryId, setActiveCategoryId] = useState<string | null>(null);
-  
+
   // State for trait selection modal
   const [traitModalVisible, setTraitModalVisible] = useState(false);
   const [expandedCategories, setExpandedCategories] = useState<string[]>([]);
@@ -649,14 +640,6 @@ const handleCreateCharacter = async () => {
         console.log(`[摇篮角色创建] 角色已成功生成，ID: ${generatedCharacter.id}`);
         
         Alert.alert('成功', '角色已创建并生成成功！', [
-          { 
-            text: '前往摇篮页面', 
-            onPress: () => {
-              onClose();
-              router.replace({ pathname: "/(tabs)/cradle" });
-              if (onSuccess) onSuccess();
-            }
-          },
           {
             text: '与角色聊天',
             onPress: () => {
@@ -672,12 +655,7 @@ const handleCreateCharacter = async () => {
         ]);
       } catch (genError) {
         console.error('[摇篮角色创建] 生成角色失败:', genError);
-        Alert.alert('警告', '角色已创建但生成过程出错。您可以在摇篮中找到该角色，稍后重试生成。', [
-          { text: '进入摇篮页面', onPress: () => {
-            onClose();
-            router.replace({ pathname: "/(tabs)/cradle" });
-            if (onSuccess) onSuccess();
-          }}
+        Alert.alert('错误', '创建角色失败。', [
         ]);
       }
     } catch (error) {

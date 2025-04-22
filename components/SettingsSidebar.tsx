@@ -707,22 +707,6 @@ export default function SettingsSidebar({
   // Add dialog mode toggle function
   const handleModeChange = (newMode: DialogMode) => {
     setMode(newMode);
-    // Give some feedback to the user
-    let modeDescription = '';
-    
-    switch(newMode) {
-      case 'normal':
-        modeDescription = '常规对话模式';
-        break;
-      case 'background-focus':
-        modeDescription = '背景强调模式，限制聊天高度以展示更多背景';
-        break;
-      case 'visual-novel':
-        modeDescription = '视觉小说模式，类似Galgame的对话框风格';
-        break;
-    }
-    
-    Alert.alert('已切换对话模式', modeDescription);
   };
 
   // Add handler for dynamic portrait toggle
