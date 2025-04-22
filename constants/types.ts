@@ -45,6 +45,8 @@ export interface CharactersContextType {
   getFavorites: () => CirclePost[];
   setCharacters: (characters: Character[]) => void;
   setIsLoading : (isLoading: boolean) => void;
+  setCharacterAvatar: (characterId: string, avatar: string) => Promise<void>;
+  setCharacterBackgroundImage: (characterId: string, background: string) => Promise<void>;
   // 摇篮系统相关方法
   updateCradleSettings: (settings: CradleSettings) => Promise<void>;
   getCradleSettings: () => CradleSettings;

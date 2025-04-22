@@ -410,7 +410,7 @@ const DiaryBook: React.FC<DiaryBookProps> = ({ character, onClose }) => {
           {isGenerating ? (
             <ActivityIndicator size="small" color="#fff" />
           ) : (
-            <Ionicons name="add" size={24} color="#fff" />
+            <Ionicons name="add" size={24} color="black" />
           )}
         </TouchableOpacity>
 

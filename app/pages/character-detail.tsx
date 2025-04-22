@@ -514,29 +514,6 @@ const CharacterDetail: React.FC = () => {
     }
   };
 
-  const pickChatBackground = async () => {
-    try {
-      let result = await ImagePicker.launchImageLibraryAsync({
-        mediaTypes: ImagePicker.MediaTypeOptions.Images,
-        allowsEditing: true,
-        aspect: [9, 16],
-        quality: 1,
-      });
-
-      if (!result.canceled && result.assets[0]) {
-        if (character) {
-          const updatedCharacter = {
-            ...character,
-            chatBackground: result.assets[0].uri
-          };
-          setCharacter(updatedCharacter);
-          setHasUnsavedChanges(true);
-        }
-      }
-    } catch (error) {
-      Alert.alert("错误", "选择聊天背景失败");
-    }
-  };
 
   const handleRoleCardChange = (field: keyof RoleCardJson, value: string) => {
     setRoleCard(prev => ({ ...prev, [field]: value }));
@@ -1132,6 +1109,7 @@ const CharacterDetail: React.FC = () => {
       )}
     </View>
   );
+
 
   if (isLoading) {
     return (

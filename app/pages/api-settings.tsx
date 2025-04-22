@@ -154,11 +154,11 @@ const ApiSettings = () => {
           setLicenseInfo(info);
           setUseActivationCode(true);
           setActivationCode(info.licenseKey || ''); // Ensure we don't set undefined
-          console.log('已加载现有许可证信息:', {
+          console.log('已加载验证信息:', {
             key: info.licenseKey ? info.licenseKey.substring(0, 4) + '****' : 'No key',
-            planId: info.planId,
-            expiryDate: info.expiryDate,
-            deviceId: info.deviceId ? info.deviceId.substring(0, 4) + '****' : 'Unknown',
+            // planId: info.planId,
+            // expiryDate: info.expiryDate,
+            // deviceId: info.deviceId ? info.deviceId.substring(0, 4) + '****' : 'Unknown',
             isValid: info.isValid
           });
 
@@ -813,7 +813,7 @@ const ApiSettings = () => {
         <ScrollView style={styles.scrollView} contentContainerStyle={styles.scrollContent}>
           <View style={styles.section}>
             <View style={styles.sectionHeader}>
-              <Text style={styles.sectionTitle}>激活码</Text>
+              <Text style={styles.sectionTitle}>测试入口</Text>
               <Switch
                 value={useActivationCode}
                 onValueChange={setUseActivationCode}
@@ -824,19 +824,19 @@ const ApiSettings = () => {
 
             {useActivationCode && (
               <View style={styles.contentSection}>
-                <Text style={styles.inputLabel}>测试入口</Text>
+                <Text style={styles.inputLabel}>License</Text>
                 <TextInput
                   style={styles.input}
                   value={activationCode}
                   onChangeText={(text) => {
                     // 当用户修改激活码时，清除以前的license信息
                     if (licenseInfo && text !== licenseInfo.licenseKey) {
-                      console.log('激活码已修改，清除现有许可证信息');
+                      console.log('已修改，清除现有信息');
                       setLicenseInfo(null);
                     }
                     setActivationCode(text);
                   }}
-                  placeholder="输入激活码"
+                  placeholder="..."
                   placeholderTextColor="#999"
                   secureTextEntry={false}
                 />

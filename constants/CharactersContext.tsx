@@ -1,5 +1,4 @@
 import React, { createContext, useState, useContext, useEffect } from 'react';
-import { Alert } from 'react-native';
 import {  SidebarItemProps, CharactersContextType, Memo,CradleSettings, } from '@/constants/types';
 import { WorldBookJson,CradleCharacter } from '@/shared/types';
 import * as FileSystem from 'expo-file-system';
@@ -12,7 +11,6 @@ import { GeminiAdapter } from '@/NodeST/nodest/utils/gemini-adapter';
 import { OpenRouterAdapter } from '@/NodeST/nodest/utils/openrouter-adapter';
 import { CharacterGeneratorService } from '@/NodeST/nodest/services/character-generator-service';
 import { NodeSTManager } from '@/utils/NodeSTManager';
-import { CharacterImage } from '@/shared/types';
 
 const CharactersContext = createContext<CharactersContextType | undefined>(undefined);
 // Initialize CradleService with API key from environment or settings
@@ -716,6 +714,40 @@ character.circlePosts = character.circlePosts.map(p =>
 
   const getFavorites = () => favorites;
   
+  // 新增：设置角色头像
+  const setCharacterAvatar = async (characterId: string, avatarUri: string) => {
+    try {
+      const updatedCharacters = characters.map(char =>
+        char.id === characterId ? { ...char, avatar: avatarUri, updatedAt: Date.now() } : char
+      );
+      setCharacters(updatedCharacters);
+      await FileSystem.writeAsStringAsync(
+        FileSystem.documentDirectory + 'characters.json',
+        JSON.stringify(updatedCharacters),
+        { encoding: FileSystem.EncodingType.UTF8 }
+      );
+    } catch (error) {
+      console.error('[CharactersContext] 设置头像失败:', error);
+    }
+  };
+
+  // 新增：设置角色背景图
+  const setCharacterBackgroundImage = async (characterId: string, backgroundUri: string) => {
+    try {
+      const updatedCharacters = characters.map(char =>
+        char.id === characterId ? { ...char, backgroundImage: backgroundUri, updatedAt: Date.now() } : char
+      );
+      setCharacters(updatedCharacters);
+      await FileSystem.writeAsStringAsync(
+        FileSystem.documentDirectory + 'characters.json',
+        JSON.stringify(updatedCharacters),
+        { encoding: FileSystem.EncodingType.UTF8 }
+      );
+    } catch (error) {
+      console.error('[CharactersContext] 设置背景图失败:', error);
+    }
+  };
+
   // 摇篮系统相关功能实现
   const loadCradleSettings = async () => {
     try {
@@ -1651,154 +1683,6 @@ const checkCradleGeneration = (): {
     readyCharacters
   };
 };
-
-
-
-// Add this function to ensure a character appears in both cradle and regular views
-const ensureCharacterInCradle = async (character: Character): Promise<void> => {
-  try {
-    // If the character is already marked to be in the cradle system, nothing to do
-    if (character.inCradleSystem) {
-      console.log('[CharactersContext] Character already in cradle system:', character.id);
-      return;
-    }
-    
-    console.log('[CharactersContext] Ensuring character appears in cradle:', character.id);
-    
-    // Create a cradle-specific version while preserving the original character
-    const cradleCharacter: CradleCharacter = {
-      ...character,
-      inCradleSystem: true,
-      feedHistory: (character as CradleCharacter).feedHistory || [],
-      cradleStatus: 'ready',
-      isCradleGenerated: true,
-      cradleUpdatedAt: Date.now(),
-      generatedCharacterId: character.id // Point to the original character
-    };
-    
-    // Read existing characters directly from file system
-    const existingDataStr = await FileSystem.readAsStringAsync(
-      FileSystem.documentDirectory + 'characters.json'
-    ).catch(() => '[]');
-    
-    const existingCharacters = JSON.parse(existingDataStr);
-    
-    // Find the character in the array
-    const charIndex: number = existingCharacters.findIndex((c: Character) => c.id === character.id);
-    
-    if (charIndex >= 0) {
-      // Update the existing character
-      existingCharacters[charIndex] = cradleCharacter;
-    } else {
-      // This should not happen, but handle it just in case
-      existingCharacters.push(cradleCharacter);
-    }
-    
-    // Save the updated characters list
-    await FileSystem.writeAsStringAsync(
-      FileSystem.documentDirectory + 'characters.json',
-      JSON.stringify(existingCharacters),
-      { encoding: FileSystem.EncodingType.UTF8 }
-    );
-    
-    // Update the state
-    setCharacters(existingCharacters);
-    
-    console.log('[CharactersContext] Character now visible in cradle system:', character.id);
-  } catch (error) {
-    console.error('[CharactersContext] Error ensuring character in cradle:', error);
-  }
-};
-
-// 增强图片生成状态轮询机制
-const pollImageGenerationTask = async (characterId: string, taskId: string, maxRetries: number = 30): Promise<boolean> => {
-  console.log(`[CharactersContext] 开始轮询图片生成任务: ${taskId}, 角色ID: ${characterId}`);
-  
-  let retries = 0;
-  
-  while (retries < maxRetries) {
-    try {
-      // 获取任务状态
-      const response = await fetch(`http://152.69.219.182:5000/task_status/${taskId}`);
-      
-      if (!response.ok) {
-        console.warn(`[CharactersContext] 获取任务状态失败: HTTP ${response.status}`);
-        retries++;
-        await new Promise(resolve => setTimeout(resolve, 10000)); // 10秒后重试
-        continue;
-      }
-      
-      const data = await response.json();
-      
-      // 任务完成并成功
-      if (data.done && data.success && data.image_url) {
-        console.log(`[CharactersContext] 图像生成成功: ${data.image_url}`);
-        
-        // 找到对应的角色
-        const character = characters.find(c => c.id === characterId) as CradleCharacter | undefined;
-        
-        if (character) {
-          // 找到对应的图像记录
-          const imageRecord = character.imageHistory?.find(img => img.generationTaskId === taskId);
-          
-          if (imageRecord) {
-            // 下载图像并保存到本地
-            const localImageUri = await downloadAndSaveImage(
-              data.image_url,
-              characterId,
-              'gallery'
-            );
-            
-            // 更新图像历史 - Fix: properly type the updated images
-            const updatedImageHistory = (character.imageHistory || []).map(img => 
-              img.generationTaskId === taskId ? {
-                ...img,
-                url: data.image_url,
-                localUri: localImageUri || data.image_url,
-                generationStatus: 'success' as 'idle' | 'pending' | 'success' | 'error', // Fix: Use explicit type assertion
-                generationTaskId: undefined
-              } : img
-            ) as CharacterImage[]; // Add explicit type assertion
-            
-            // 更新角色
-            const updatedCharacter: CradleCharacter = {
-              ...character,
-              imageHistory: updatedImageHistory
-            };
-            
-            // 保存更新后的角色
-            await updateCradleCharacter(updatedCharacter);
-            
-            console.log(`[CharactersContext] 角色图像历史已更新，新增图像: ${data.image_url}`);
-            return true;
-          }
-        }
-        
-        return true; // 任务已完成
-      }
-      
-      // 任务完成但失败
-      if (data.done && !data.success) {
-        console.error(`[CharactersContext] 图像生成失败: ${data.error || '未知错误'}`);
-        return false;
-      }
-      
-      // 任务仍在进行中
-      retries++;
-      console.log(`[CharactersContext] 任务仍在进行中，已尝试 ${retries}/${maxRetries} 次`);
-      await new Promise(resolve => setTimeout(resolve, 10000)); // 10秒后再次检查
-      
-    } catch (error) {
-      console.error(`[CharactersContext] 轮询出错:`, error);
-      retries++;
-      await new Promise(resolve => setTimeout(resolve, 10000)); // 出错后10秒再重试
-    }
-  }
-  
-  console.log(`[CharactersContext] 达到最大重试次数: ${maxRetries}`);
-  return false;
-};
-
   return (
     <CharactersContext.Provider
       value={{
@@ -1841,8 +1725,8 @@ const pollImageGenerationTask = async (characterId: string, taskId: string, maxR
         // Add new methods for Cradle API settings
         getCradleApiSettings,
         updateCradleApiSettings,
-
-
+        setCharacterAvatar, // 新增
+        setCharacterBackgroundImage, // 新增
       }}
     >
       {children}

@@ -12,23 +12,24 @@ import {
   Modal,
   Alert,
   Platform,
-  StatusBar
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { CharacterImage, CradleCharacter } from '@/shared/types';
-import { theme } from '@/constants/theme';
 import ImageEditorModal from './ImageEditorModal';
 import { useUser } from '@/constants/UserContext';
 import * as FileSystem from 'expo-file-system';
 import * as MediaLibrary from 'expo-media-library';
 import * as Sharing from 'expo-sharing';
 import * as ImagePicker from 'expo-image-picker';
-import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import ImageRegenerationModal from './ImageRegenerationModal';
 import { downloadAndSaveImage } from '@/utils/imageUtils';
 import { BlurView } from 'expo-blur';
+import AsyncStorage from '@react-native-async-storage/async-storage';
+import { useCharacters } from '@/constants/CharactersContext';
 
 const { width, height } = Dimensions.get('window');
+
+const getStorageKey = (characterId: string) => `characterImages_${characterId}`;
 
 interface CharacterImageGallerySidebarProps {
   visible: boolean;
@@ -36,8 +37,8 @@ interface CharacterImageGallerySidebarProps {
   images: CharacterImage[];
   onToggleFavorite: (imageId: string) => void;
   onDelete: (imageId: string) => void;
-  onSetAsBackground: (imageId: string) => void;
-  onSetAsAvatar?: (imageId: string) => void;
+  onSetAsBackground: (imageId: string, uri: string) => void;
+  onSetAsAvatar?: (imageId: string, uri: string) => void;
   isLoading?: boolean;
   character: CradleCharacter;
   onAddNewImage?: (newImage: CharacterImage) => void;
@@ -49,8 +50,6 @@ interface CharacterImageGallerySidebarProps {
   };
 }
 
-const imageSize = (width * 0.75 - 64) / 2;
-
 const CharacterImageGallerySidebar: React.FC<CharacterImageGallerySidebarProps> = ({
   visible,
   onClose,
@@ -61,7 +60,6 @@ const CharacterImageGallerySidebar: React.FC<CharacterImageGallerySidebarProps> 
   onSetAsAvatar,
   isLoading = false,
   character,
-  onAddNewImage
 }) => {
   const slideAnim = useRef(new Animated.Value(height)).current;
   const [selectedImage, setSelectedImage] = useState<CharacterImage | null>(null);
@@ -71,9 +69,6 @@ const CharacterImageGallerySidebar: React.FC<CharacterImageGallerySidebarProps> 
   const [showOptionsMenu, setShowOptionsMenu] = useState(false);
   const [activeImage, setActiveImage] = useState<CharacterImage | null>(null);
   const { user } = useUser();
-  const [showCropper, setShowCropper] = useState(false);
-  const [cropImageUri, setCropImageUri] = useState<string | null>(null);
-  const [pendingAvatarImageId, setPendingAvatarImageId] = useState<string | null>(null);
   const [updateCounter, setUpdateCounter] = useState(0);
   const [lastUpdateTimestamp, setLastUpdateTimestamp] = useState(Date.now());
   const [showRegenerationModal, setShowRegenerationModal] = useState(false);
@@ -81,14 +76,48 @@ const CharacterImageGallerySidebar: React.FC<CharacterImageGallerySidebarProps> 
   const [downloadingImages, setDownloadingImages] = useState<Record<string, boolean>>({});
   const apiKey = user?.settings?.chat?.characterApiKey || '';
   const [isUploading, setIsUploading] = useState(false);
-  const insets = useSafeAreaInsets();
   const [showNotification, setShowNotification] = useState(false);
   const [notificationMessage, setNotificationMessage] = useState({ title: '', message: '' });
   const notificationAnim = useRef(new Animated.Value(0)).current;
+  const [persistedImages, setPersistedImages] = useState<CharacterImage[]>([]);
+  const { setCharacterAvatar, setCharacterBackgroundImage } = useCharacters();
+
+  useEffect(() => {
+    const loadPersistedImages = async () => {
+      try {
+        const key = getStorageKey(character.id);
+        const json = await AsyncStorage.getItem(key);
+        if (json) {
+          const imgs = JSON.parse(json);
+          setPersistedImages(imgs);
+        }
+      } catch (e) {
+        console.warn('[图库侧栏] 加载本地图片失败', e);
+      }
+    };
+    if (visible) loadPersistedImages();
+  }, [character.id, visible]);
+
+  const savePersistedImages = async (imgs: CharacterImage[]) => {
+    try {
+      const key = getStorageKey(character.id);
+      await AsyncStorage.setItem(key, JSON.stringify(imgs));
+      setPersistedImages(imgs);
+    } catch (e) {
+      console.warn('[图库侧栏] 保存本地图片失败', e);
+    }
+  };
 
   const allImages = useMemo(() => {
-    let combinedImages = [...images];
-    if (character.avatar && !images.some(img => img.url === character.avatar || img.localUri === character.avatar)) {
+    let combinedImages = [...persistedImages];
+    images.forEach(img => {
+      if (!combinedImages.some(
+        i => (i.url && i.url === img.url) || (i.localUri && i.localUri === img.localUri)
+      )) {
+        combinedImages.push(img);
+      }
+    });
+    if (character.avatar && !combinedImages.some(img => img.url === character.avatar || img.localUri === character.avatar)) {
       const avatarImage: CharacterImage = {
         id: `avatar_${character.id}_${lastUpdateTimestamp}`,
         url: character.avatar,
@@ -102,7 +131,7 @@ const CharacterImageGallerySidebar: React.FC<CharacterImageGallerySidebarProps> 
     }
     if (
       character.backgroundImage &&
-      !images.some(img => img.url === character.backgroundImage || img.localUri === character.backgroundImage) &&
+      !combinedImages.some(img => img.url === character.backgroundImage || img.localUri === character.backgroundImage) &&
       character.backgroundImage !== character.avatar
     ) {
       const bgImage: CharacterImage = {
@@ -131,7 +160,26 @@ const CharacterImageGallerySidebar: React.FC<CharacterImageGallerySidebarProps> 
       img => !(img.generationStatus === 'pending' && !img.generationTaskId)
     );
     return combinedImages;
-  }, [images, character.avatar, character.backgroundImage, updateCounter, lastUpdateTimestamp]);
+  }, [persistedImages, images, character.avatar, character.backgroundImage, lastUpdateTimestamp]);
+
+  const addImageAndPersist = async (newImage: CharacterImage) => {
+    setPersistedImages(prev => {
+      const exists = prev.some(
+        img =>
+          (img.url && img.url === newImage.url) ||
+          (img.localUri && img.localUri === newImage.localUri)
+      );
+      if (exists) return prev;
+      const updated = [newImage, ...prev];
+      savePersistedImages(updated);
+      return updated;
+    });
+  };
+
+  const handleAddNewImage = (newImage: CharacterImage) => {
+    addImageAndPersist(newImage);
+    setUpdateCounter(prev => prev + 1);
+  };
 
   useEffect(() => {
     setLastUpdateTimestamp(Date.now());
@@ -156,23 +204,43 @@ const CharacterImageGallerySidebar: React.FC<CharacterImageGallerySidebarProps> 
 
   const ensureLocalImages = async () => {
     if (!images || images.length === 0) return;
+    const processedUrls = new Set();
+    // 只处理那些本地没有的图片
     const imagesNeedingLocalStorage = images.filter(
-      img => img.url && (!img.localUri || img.localUri.startsWith('http')) && img.generationStatus !== 'pending'
+      img =>
+        img.url &&
+        (!persistedImages.some(
+          persisted =>
+            (persisted.url && persisted.url === img.url) ||
+            (persisted.localUri && persisted.localUri === img.url)
+        )) &&
+        (!img.localUri || img.localUri.startsWith('http')) &&
+        img.generationStatus !== 'pending' &&
+        !processedUrls.has(img.url) &&
+        !images.some(
+          other =>
+            other !== img &&
+            ((other.localUri && other.localUri === img.url) ||
+             (other.url && other.url === img.url))
+        )
     );
     if (imagesNeedingLocalStorage.length === 0) return;
     for (const image of imagesNeedingLocalStorage) {
-      if (downloadingImages[image.id]) continue;
+      if (downloadingImages[image.id] || processedUrls.has(image.url)) continue;
+      processedUrls.add(image.url);
       setDownloadingImages(prev => ({ ...prev, [image.id]: true }));
       try {
+        if (image.localUri && !image.localUri.startsWith('http')) {
+          setDownloadingImages(prev => ({ ...prev, [image.id]: false }));
+          continue;
+        }
         const localUri = await downloadAndSaveImage(image.url, image.characterId, 'gallery');
         if (localUri) {
           const updatedImage = {
             ...image,
             localUri
           };
-          if (onAddNewImage) {
-            onAddNewImage(updatedImage);
-          }
+          addImageAndPersist(updatedImage);
         }
       } catch (error) {
         console.error(`[图库侧栏] 下载图像失败:`, error);
@@ -215,13 +283,16 @@ const CharacterImageGallerySidebar: React.FC<CharacterImageGallerySidebarProps> 
   };
 
   const handleEditSuccess = (newImage: CharacterImage) => {
-    if (onAddNewImage) {
-      onAddNewImage(newImage);
-    }
+    handleAddNewImage(newImage);
     setShowEditor(false);
   };
 
   const handleViewImage = async (image: CharacterImage) => {
+    if (image.localUri && !image.localUri.startsWith('http')) {
+      setFullImageUri(image.localUri);
+      setShowFullImage(true);
+      return;
+    }
     if (image.url && (!image.localUri || image.localUri.startsWith('http')) && !downloadingImages[image.id]) {
       setDownloadingImages(prev => ({ ...prev, [image.id]: true }));
       try {
@@ -231,15 +302,12 @@ const CharacterImageGallerySidebar: React.FC<CharacterImageGallerySidebarProps> 
             ...image,
             localUri
           };
-          if (onAddNewImage) {
-            onAddNewImage(updatedImage);
-          }
+          addImageAndPersist(updatedImage);
           setFullImageUri(localUri);
         } else {
           setFullImageUri(image.url);
         }
       } catch (error) {
-        console.error(`[图库侧栏] 下载图像失败:`, error);
         setFullImageUri(image.localUri || image.url);
       } finally {
         setDownloadingImages(prev => ({ ...prev, [image.id]: false }));
@@ -255,22 +323,21 @@ const CharacterImageGallerySidebar: React.FC<CharacterImageGallerySidebarProps> 
     setShowOptionsMenu(true);
   };
 
-  const handleSetAsAvatar = (imageId: string) => {
+  const handleSetAsAvatar = async (imageId: string) => {
     const image = allImages.find(img => img.id === imageId);
-    if (image) {
-      setCropImageUri(image.localUri || image.url);
-      setPendingAvatarImageId(imageId);
-      setShowCropper(true);
+    if (image && setCharacterAvatar) {
+      await setCharacterAvatar(character.id, image.localUri || image.url);
       setShowOptionsMenu(false);
+      setUpdateCounter(prev => prev + 1);
     }
   };
 
-  const handleCropComplete = (croppedUri: string) => {
-    if (pendingAvatarImageId && onSetAsAvatar) {
-      onSetAsAvatar(pendingAvatarImageId);
-      setShowCropper(false);
-      setCropImageUri(null);
-      setPendingAvatarImageId(null);
+  const handleSetAsBackground = async (imageId: string) => {
+    const image = allImages.find(img => img.id === imageId);
+    if (image && setCharacterBackgroundImage) {
+      await setCharacterBackgroundImage(character.id, image.localUri || image.url);
+      setShowOptionsMenu(false);
+      setUpdateCounter(prev => prev + 1);
     }
   };
 
@@ -407,32 +474,25 @@ const CharacterImageGallerySidebar: React.FC<CharacterImageGallerySidebarProps> 
   };
 
   const uploadImageToCharacter = async (imageUri: string) => {
-    if (!character || !onAddNewImage) {
+    if (!character) {
       Alert.alert("错误", "角色信息不完整，无法上传图片");
       return;
     }
-
     try {
       setIsUploading(true);
-
       const timestamp = Date.now();
       const destinationUri = `${FileSystem.documentDirectory}character_${character.id}/uploaded_${timestamp}.jpg`;
-
       const dirUri = `${FileSystem.documentDirectory}character_${character.id}`;
       try {
         const dirInfo = await FileSystem.getInfoAsync(dirUri);
         if (!dirInfo.exists) {
           await FileSystem.makeDirectoryAsync(dirUri, { intermediates: true });
         }
-      } catch (dirError) {
-        console.error("[图库侧栏] 创建目录失败:", dirError);
-      }
-
+      } catch (dirError) {}
       await FileSystem.copyAsync({
         from: imageUri,
         to: destinationUri
       });
-
       const newImage: CharacterImage = {
         id: `uploaded_${timestamp}`,
         url: destinationUri,
@@ -443,15 +503,10 @@ const CharacterImageGallerySidebar: React.FC<CharacterImageGallerySidebarProps> 
         isUserUploaded: true,
         generationStatus: 'success',
       };
-
-      onAddNewImage(newImage);
-
+      addImageAndPersist(newImage);
       displayNotification("上传成功", "图片已添加到角色图库");
-
       setUpdateCounter(prev => prev + 1);
-
     } catch (error) {
-      console.error("[图库侧栏] 上传图片失败:", error);
       Alert.alert(
         "上传失败",
         "无法上传图片: " + (error instanceof Error ? error.message : String(error)),
@@ -552,18 +607,6 @@ const CharacterImageGallerySidebar: React.FC<CharacterImageGallerySidebarProps> 
                             resizeMode="cover"
                             onError={(e) => console.log(`[图库侧栏] 加载图片失败: ${item.id}`, e.nativeEvent.error)}
                           />
-                        )}
-
-                        {item.isAvatar && (
-                          <View style={styles.imageTypeOverlay}>
-                            <Text style={styles.imageTypeText}>头像</Text>
-                          </View>
-                        )}
-
-                        {item.isDefaultBackground && (
-                          <View style={styles.imageTypeOverlay}>
-                            <Text style={styles.imageTypeText}>背景</Text>
-                          </View>
                         )}
 
                         {item.isFavorite && (
@@ -774,8 +817,7 @@ const CharacterImageGallerySidebar: React.FC<CharacterImageGallerySidebarProps> 
                   <TouchableOpacity
                     style={styles.menuItem}
                     onPress={() => {
-                      onSetAsBackground(activeImage.id);
-                      setShowOptionsMenu(false);
+                      handleSetAsBackground(activeImage.id);
                     }}
                   >
                     <Ionicons name="copy-outline" size={22} color="#FFF" />
@@ -786,7 +828,6 @@ const CharacterImageGallerySidebar: React.FC<CharacterImageGallerySidebarProps> 
                     style={styles.menuItem}
                     onPress={() => {
                       handleSetAsAvatar(activeImage.id);
-                      setShowOptionsMenu(false);
                     }}
                   >
                     <Ionicons name="person-outline" size={22} color="#FFF" />
@@ -815,9 +856,7 @@ const CharacterImageGallerySidebar: React.FC<CharacterImageGallerySidebarProps> 
             character={character}
             onClose={() => setShowRegenerationModal(false)}
             onSuccess={(newImage) => {
-              if (onAddNewImage) {
-                onAddNewImage(newImage);
-              }
+              addImageAndPersist(newImage);
               setShowRegenerationModal(false);
             }}
             existingImageConfig={regenerationImageConfig}

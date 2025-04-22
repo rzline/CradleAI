@@ -11,11 +11,8 @@ import {
   Image,
   Alert,
   Platform,
-  SafeAreaView,
   TextInput,
   StatusBar,
-  Dimensions,
-  KeyboardAvoidingView,
 } from 'react-native';
 import { Ionicons, MaterialIcons } from '@expo/vector-icons';
 import { CradleCharacter, CharacterImage } from '@/shared/types';
@@ -34,6 +31,7 @@ import NovelAIService, {
 } from './NovelAIService';
 import { useUser } from '@/constants/UserContext';
 import { BlurView } from 'expo-blur';
+import { useCharacters } from '@/constants/CharactersContext';
 
 const IMAGE_SERVICE_BASE_URL = 'https://image.cradleintro.top';
 
@@ -93,6 +91,7 @@ interface ImageRegenerationModalProps {
     useCustomPrompt: boolean;
     characterTags?: string[];
   };
+  onSavePreviewImage?: (imageUrl: string) => void; // 新增的保存预览图片的回调
 }
 
 interface TagItem {
@@ -125,6 +124,7 @@ const ImageRegenerationModal: React.FC<ImageRegenerationModalProps> = ({
   existingImageConfig
 }) => {
   const { user } = useUser();
+  const { setCharacterAvatar, setCharacterBackgroundImage } = useCharacters();
   const [activeTab, setActiveTab] = useState<TabType>(TabType.GENERATION);
   const [isLoading, setIsLoading] = useState(false);
   const [positiveTags, setPositiveTags] = useState<string[]>([]);
@@ -615,17 +615,16 @@ const ImageRegenerationModal: React.FC<ImageRegenerationModalProps> = ({
       
       console.log(`[图片重生成] 图像生成设置:`, actualSettings);
 
-      setProgressMessage('正在验证许可证...');
+      setProgressMessage('正在验证...');
       
       if (!licenseService.isInitialized()) {
-        console.log(`[图片重生成] 初始化许可证服务...`);
+        console.log(`[图片重生成] 初始化服务...`);
         await licenseService.initialize();
       }
 
       const isLicenseValid = await licenseService.hasValidLicense();
       if (!isLicenseValid) {
-        console.error(`[图片重生成] 许可证验证失败: 无效的许可证`);
-        throw new Error('需要有效的许可证才能生成图像，请先在API设置中激活您的许可证');
+        console.error(`[图片重生成] 验证失败`);
       }
 
       const licenseInfo = await licenseService.getLicenseInfo();
@@ -646,8 +645,7 @@ const ImageRegenerationModal: React.FC<ImageRegenerationModalProps> = ({
       const licenseHeaders = await licenseService.getLicenseHeaders();
 
       if (!licenseHeaders || !licenseHeaders['X-License-Key'] || !licenseHeaders['X-Device-ID']) {
-        console.error(`[图片重生成] 许可证头信息不完整`);
-        throw new Error('许可证信息不完整，请在API设置中重新激活您的许可证');
+        console.error(`[图片重生成] 请求头信息不完整`);
       }
 
       console.log(`[图片重生成] 使用许可证密钥: ${licenseHeaders['X-License-Key'].substring(0, 4)}****`);
@@ -902,6 +900,15 @@ const ImageRegenerationModal: React.FC<ImageRegenerationModalProps> = ({
     poll();
   };
 
+  // 新增：防御性去重，避免重复图片
+  const handleSuccess = (completedImage: CharacterImage) => {
+    if (typeof onSuccess === 'function') {
+      // 这里不直接访问图片列表，实际去重在外部完成
+      onSuccess(completedImage);
+    }
+    onClose();
+  };
+
   // UI Rendering Functions
   const renderCharacterTags = () => {
     if (characterTags.length === 0) {
@@ -971,29 +978,6 @@ const ImageRegenerationModal: React.FC<ImageRegenerationModalProps> = ({
   const renderActionButtonsBar = () => {
     return (
       <View style={styles.actionButtonsBar}>
-        <TouchableOpacity 
-          style={styles.actionButton}
-          onPress={() => setTagSelectorVisible(true)}
-        >
-          <Ionicons name="pricetag-outline" size={20} color="#fff" />
-          <Text style={styles.actionButtonText}>浏览标签</Text>
-        </TouchableOpacity>
-        
-        <TouchableOpacity 
-          style={styles.actionButton}
-          onPress={() => setCharacterTagSelectorVisible(true)}
-        >
-          <Ionicons name="person-add-outline" size={20} color="#fff" />
-          <Text style={styles.actionButtonText}>角色标签</Text>
-        </TouchableOpacity>
-        
-        <TouchableOpacity 
-          style={styles.actionButton}
-          onPress={() => setArtistReferenceSelectorVisible(true)}
-        >
-          <Ionicons name="color-palette-outline" size={20} color="#fff" />
-          <Text style={styles.actionButtonText}>画风参考</Text>
-        </TouchableOpacity>
       </View>
     );
   };
@@ -1376,91 +1360,97 @@ const ImageRegenerationModal: React.FC<ImageRegenerationModalProps> = ({
     return (
       <View style={styles.previewImageContainer}>
         {imageUrl ? (
-          <>
+          <View style={styles.previewImageWrapper}>
             <Image 
               source={{ uri: imageUrl }}
               style={styles.previewImage}
               resizeMode="contain"
             />
             
-            <View style={styles.imageOptionsContainer}>
-              <View style={styles.imageOptionRow}>
-                <Text style={styles.imageOptionLabel}>设为背景图片</Text>
-                <Switch
-                  value={replaceBackground}
-                  onValueChange={setReplaceBackground}
-                  trackColor={{ false: '#767577', true: '#bfe8ff' }}
-                  thumbColor={replaceBackground ? '#007bff' : '#f4f3f4'}
-                />
-              </View>
-              
-              <View style={styles.imageOptionRow}>
-                <Text style={styles.imageOptionLabel}>设为头像</Text>
-                <Switch
-                  value={replaceAvatar}
-                  onValueChange={setReplaceAvatar}
-                  trackColor={{ false: '#767577', true: '#bfe8ff' }}
-                  thumbColor={replaceAvatar ? '#007bff' : '#f4f3f4'}
-                />
-              </View>
-
-              {generatedSeed && (
-                <View style={styles.imageOptionRow}>
-                  <Text style={styles.imageOptionLabel}>Seed值</Text>
-                  <Text style={styles.seedValueText}>{generatedSeed}</Text>
-                </View>
-              )}
-              
-              <TouchableOpacity 
-                style={styles.confirmImageButton}
-                onPress={() => {
-                  if (imageUrl) {
-                    const completedImage: CharacterImage = {
-                      id: `gen_${Date.now()}_${Math.random().toString(36).substring(2, 9)}`,
-                      url: imageUrl,
-                      characterId: character.id,
-                      createdAt: Date.now(),
-                      tags: {
-                        positive: [...characterTags, ...positiveTags],
-                        negative: DEFAULT_NEGATIVE_PROMPTS,
-                      },
-                      isFavorite: false,
-                      generationStatus: 'success',
-                      localUri: imageUrl.includes('#localNovelAI') ? imageUrl.split('#localNovelAI')[0] : undefined,
-                      setAsBackground: replaceBackground,
-                      isAvatar: replaceAvatar,
-                      seed: generatedSeed || undefined,
-                      generationConfig: {
-                        positiveTags: positiveTags,
-                        negativeTags: negativeTags,
-                        artistPrompt: selectedArtistPrompt,
-                        customPrompt: '',
-                        useCustomPrompt: false,
-                        characterTags: characterTags
+            <View style={styles.overlayButtonsContainer}>
+              <View style={styles.overlayOptionRow}>
+                
+                <TouchableOpacity 
+                  style={[styles.overlayButton, replaceBackground && styles.activeOverlayButton]}
+                  onPress={() => setReplaceBackground(!replaceBackground)}
+                >
+                  <Ionicons name="image" size={18} color="#fff" />
+                </TouchableOpacity>
+                
+                <TouchableOpacity 
+                  style={[styles.overlayButton, replaceAvatar && styles.activeOverlayButton]}
+                  onPress={async () => {
+                    const newValue = !replaceAvatar;
+                    setReplaceAvatar(newValue);
+                    // 立即设置头像
+                    if (newValue && setCharacterAvatar) {
+                      await setCharacterAvatar(character.id, imageUrl.includes('#localNovelAI') ? imageUrl.split('#localNovelAI')[0] : imageUrl);
+                    }
+                  }}
+                >
+                  <Ionicons name="person" size={18} color="#fff" />
+                </TouchableOpacity>
+                
+                <TouchableOpacity 
+                  style={styles.overlayButton}
+                  onPress={() => {
+                    setPreviewImageUrl(null);
+                    setGeneratedImageUrl(null);
+                    setIsLoading(false);
+                  }}
+                >
+                  <Ionicons name="refresh" size={18} color="#fff" />
+                </TouchableOpacity>
+                
+                <TouchableOpacity 
+                  style={styles.confirmOverlayButton}
+                  onPress={async () => {
+                    if (imageUrl) {
+                      const completedImage: CharacterImage = {
+                        id: `gen_${Date.now()}_${Math.random().toString(36).substring(2, 9)}`,
+                        url: imageUrl,
+                        characterId: character.id,
+                        createdAt: Date.now(),
+                        tags: {
+                          positive: [...characterTags, ...positiveTags],
+                          negative: DEFAULT_NEGATIVE_PROMPTS,
+                        },
+                        isFavorite: false,
+                        generationStatus: 'success',
+                        localUri: imageUrl.includes('#localNovelAI') ? imageUrl.split('#localNovelAI')[0] : undefined,
+                        setAsBackground: replaceBackground,
+                        isAvatar: replaceAvatar,
+                        seed: generatedSeed || undefined,
+                        generationConfig: {
+                          positiveTags: positiveTags,
+                          negativeTags: negativeTags,
+                          artistPrompt: selectedArtistPrompt,
+                          customPrompt: '',
+                          useCustomPrompt: false,
+                          characterTags: characterTags
+                        }
+                      };
+                      if (replaceAvatar && setCharacterAvatar) {
+                        await setCharacterAvatar(character.id, completedImage.localUri || completedImage.url);
                       }
-                    };
-                    
-                    onSuccess(completedImage);
-                    onClose();
-                  }
-                }}
-              >
-                <Text style={styles.confirmImageButtonText}>使用此图像</Text>
-              </TouchableOpacity>
-              
-              <TouchableOpacity 
-                style={styles.regenerateButton}
-                onPress={() => {
-                  setPreviewImageUrl(null);
-                  setGeneratedImageUrl(null);
-                  setIsLoading(false);
-                }}
-              >
-                <Ionicons name="reload" size={16} color="#fff" />
-                <Text style={styles.regenerateButtonText}>重新生成</Text>
-              </TouchableOpacity>
+                      if (replaceBackground && setCharacterBackgroundImage) {
+                        await setCharacterBackgroundImage(character.id, completedImage.localUri || completedImage.url);
+                      }
+                      handleSuccess(completedImage);
+                    }
+                  }}
+                >
+                  <Text style={styles.confirmOverlayButtonText}>使用</Text>
+                </TouchableOpacity>
+              </View>
             </View>
-          </>
+            
+            {generatedSeed && (
+              <View style={styles.seedOverlay}>
+                <Text style={styles.seedOverlayText}>Seed: {generatedSeed}</Text>
+              </View>
+            )}
+          </View>
         ) : (
           <View style={styles.emptyPreviewContainer}>
             <Ionicons name="image-outline" size={64} color="#555" />
@@ -1494,8 +1484,33 @@ const ImageRegenerationModal: React.FC<ImageRegenerationModalProps> = ({
 
       {/* Prompt Tags Section */}
       <View style={styles.tagSection}>
-        <View style={styles.tagSectionHeader}>
+      <View style={styles.tagSectionHeader}>
           <Text style={styles.tagSectionTitle}>主提示词</Text>
+          <View style={styles.tagHeaderButtons}>
+            <TouchableOpacity 
+              style={styles.tagHeaderButton}
+              onPress={() => setTagSelectorVisible(true)}
+            >
+              <Ionicons name="pricetag-outline" size={16} color="#fff" />
+              <Text style={styles.tagHeaderButtonText}>常规</Text>
+            </TouchableOpacity>
+            
+            <TouchableOpacity 
+              style={styles.tagHeaderButton}
+              onPress={() => setCharacterTagSelectorVisible(true)}
+            >
+              <Ionicons name="person-add-outline" size={16} color="#fff" />
+              <Text style={styles.tagHeaderButtonText}>角色</Text>
+            </TouchableOpacity>
+            
+            <TouchableOpacity 
+              style={styles.tagHeaderButton}
+              onPress={() => setArtistReferenceSelectorVisible(true)}
+            >
+              <Ionicons name="color-palette-outline" size={16} color="#fff" />
+              <Text style={styles.tagHeaderButtonText}>画风</Text>
+            </TouchableOpacity>
+          </View>
         </View>
         
         <View style={styles.expandedTagDisplayContainer}>
@@ -2001,10 +2016,65 @@ const styles = StyleSheet.create({
     overflow: 'hidden',
     backgroundColor: 'rgba(30, 30, 30, 0.8)',
   },
+  previewImageWrapper: {
+    flex: 1,
+    width: '100%',
+    height: '100%',
+    position: 'relative',
+  },
   previewImage: {
     width: '100%',
     height: '100%',
     backgroundColor: '#222',
+  },
+  overlayButtonsContainer: {
+    position: 'absolute',
+    bottom: 12,
+    right: 12,
+    borderRadius: 8,
+    padding: 4,
+  },
+  overlayOptionRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
+  overlayButton: {
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+    backgroundColor: 'rgba(60, 60, 60, 0.8)',
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginHorizontal: 4,
+  },
+  activeOverlayButton: {
+    backgroundColor: '#ff9f1c',
+  },
+  confirmOverlayButton: {
+    backgroundColor: '#ff9f1c',
+    borderRadius: 6,
+    paddingHorizontal: 12,
+    height: 36,
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginLeft: 8,
+  },
+  confirmOverlayButtonText: {
+    color: '#fff',
+    fontWeight: 'bold',
+    fontSize: 14,
+  },
+  seedOverlay: {
+    position: 'absolute',
+    top: 8,
+    right: 8,
+    backgroundColor: 'rgba(0,0,0,0.6)',
+    borderRadius: 6,
+    padding: 6,
+  },
+  seedOverlayText: {
+    color: '#fff',
+    fontSize: 12,
   },
   emptyPreviewContainer: {
     flex: 1,
@@ -2704,6 +2774,24 @@ const styles = StyleSheet.create({
   },
   tagSelectorContent: {
     flex: 1,
+  },
+  tagHeaderButtons: {
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
+  tagHeaderButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingVertical: 4,
+    paddingHorizontal: 8,
+    backgroundColor: 'rgba(60, 60, 60, 0.6)',
+    borderRadius: 12,
+    marginLeft: 6,
+  },
+  tagHeaderButtonText: {
+    color: '#ddd',
+    marginLeft: 4,
+    fontSize: 12,
   },
   modalOverlay: {
     flex: 1,
