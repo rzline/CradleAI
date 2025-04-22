@@ -125,6 +125,11 @@ const ChatInput: React.FC<ChatInputProps> = ({
     }
   }, [showActions]);
 
+  useEffect(() => {
+    // Always set NodeSTManager's search state to match the prop
+    NodeSTManager.setSearchEnabled(braveSearchEnabled);
+  }, [braveSearchEnabled]);
+
   const handleSendPress = async () => {
     if (text.trim() === '') return;
     if (!selectedConversationId) {
@@ -805,8 +810,6 @@ ${recentMessagesContext ? `最近的对话记录:\n${recentMessagesContext}\n` :
   const handleBraveSearchToggle = () => {
     setShowActions(false);
     if (toggleBraveSearch) {
-      // Call NodeSTManager to update the search enabled state
-      NodeSTManager.setSearchEnabled(!braveSearchEnabled);
       toggleBraveSearch();
     }
   };
