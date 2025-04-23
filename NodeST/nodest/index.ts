@@ -170,7 +170,8 @@ export class NodeST {
                 additionalKeysCount: params.apiSettings?.additionalGeminiKeys?.length,
                 hasJsonString: !!params.jsonString,
                 useToolCalls: params.useToolCalls || false,
-                apiKeyProvided: !!params.apiKey
+                apiKeyProvided: !!params.apiKey,
+                characterId: params.characterId
             });
 
             // Note: We pass the API key even if it's empty
@@ -260,7 +261,7 @@ export class NodeST {
                     params.apiKey || "", // Pass empty string if not provided
                     params.characterId,
                     params.customUserName,
-                    params.useToolCalls
+                    params.useToolCalls,
                 );
 
                 if (response) {

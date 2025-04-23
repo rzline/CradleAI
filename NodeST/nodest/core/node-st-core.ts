@@ -585,7 +585,8 @@ export class NodeSTCore {
                 additionalKeysCount: this.apiSettings?.additionalGeminiKeys?.length || 0,
                 hasCustomUserName: !!customUserName,
                 useToolCalls: useToolCalls,
-                apiKeyProvided: !!apiKey
+                apiKeyProvided: !!apiKey,
+                characterId: characterId
             });
     
             // 确保 Adapter 已初始化 - 传递 apiKey 即使它是 null
@@ -858,7 +859,9 @@ export class NodeSTCore {
             }
 
             // 处理对话
-            console.log('[NodeSTCore] Processing chat...');
+            console.log('[NodeSTCore] Processing chat...', {
+                characterId_passed_to_processChat: characterId // <--- 记录传递给processChat的characterId
+            });
             const response = useToolCalls 
                 ? await this.processChatWithTools(
                     userMessage,
@@ -868,7 +871,8 @@ export class NodeSTCore {
                     roleCard,
                     adapter || undefined,
                     customUserName,
-                    memorySearchResults // 传递记忆搜索结果
+                    memorySearchResults,
+                    characterId // 新增
                 )
                 : await this.processChat(
                     userMessage,
@@ -878,7 +882,8 @@ export class NodeSTCore {
                     roleCard,
                     adapter || undefined,
                     customUserName,
-                    memorySearchResults // 传递记忆搜索结果
+                    memorySearchResults,
+                    characterId // 新增
                 );
 
             // 如果收到响应，将AI回复也添加到历史记录
@@ -1183,7 +1188,8 @@ export class NodeSTCore {
         roleCard: RoleCardJson,
         adapter?: GeminiAdapter | OpenRouterAdapter | null,
         customUserName?: string, // Add optional customUserName parameter
-        memorySearchResults?: any // 添加记忆搜索结果参数
+        memorySearchResults?: any, // 添加记忆搜索结果参数
+        characterId?: string // 新增参数
     ): Promise<string | null> {
         try {
             console.log('[NodeSTCore] Starting processChat with:', {
@@ -1191,7 +1197,8 @@ export class NodeSTCore {
                 chatHistoryMessagesCount: chatHistory?.parts?.length,
                 dEntriesCount: dEntries.length,
                 apiProvider: this.apiSettings?.apiProvider,
-                hasCustomUserName: !!customUserName
+                hasCustomUserName: !!customUserName,
+                characterId: characterId // <--- 记录characterId
             });
 
             // 1. 加载框架内容
@@ -1337,22 +1344,22 @@ export class NodeSTCore {
             });
 
             // 发送到API，传递记忆搜索结果
-            console.log('[NodeSTCore] Sending to API...');
+            console.log('[NodeSTCore] Sending to API...', {
+                characterId_passed_to_adapter: characterId // <--- 记录传递给adapter的characterId
+            });
             
             // 判断是否应该使用记忆增强
             const shouldUseMemoryResults = memorySearchResults && 
                                         memorySearchResults.results && 
                                         memorySearchResults.results.length > 0;
                                         
-            if (shouldUseMemoryResults && activeAdapter) {
-                console.log('[NodeSTCore] 检测到有效记忆搜索结果，使用generateContentWithTools方法');
-                // 如果有记忆搜索结果，使用工具调用方法处理
-                const response = await activeAdapter.generateContentWithTools(cleanedContents, memorySearchResults, userMessage);
-                console.log('[NodeSTCore] API response received:', {
-                    hasResponse: !!response,
-                    responseLength: response?.length || 0
-                });
-
+                                        if (shouldUseMemoryResults && activeAdapter) {
+                                            console.log('[NodeSTCore] 调用generateContentWithTools，传递characterId:', characterId); // <--- 记录
+                                            const response = await activeAdapter.generateContentWithTools(cleanedContents,characterId ,memorySearchResults, userMessage);
+                                            console.log('[NodeSTCore] API response received:', {
+                                                hasResponse: !!response,
+                                                responseLength: response?.length || 0
+                                            });
                 // 保存更新后的历史和框架
                 if (response) {
                     console.log('[NodeSTCore] Saving updated history and framework...');
@@ -1366,11 +1373,13 @@ export class NodeSTCore {
                 console.log('[NodeSTCore] 没有记忆搜索结果，使用标准generateContent方法');
                 // 没有记忆搜索结果，使用标准方法
                 if (!activeAdapter) {
+                    // <--- 记录
                     console.warn('[NodeSTCore] No API adapter available - will attempt to use cloud service');
                     // Try with cloud service directly
                     return null;
                 }
-                const response = await activeAdapter.generateContent(cleanedContents);
+                console.log('[NodeSTCore] 调用generateContent，传递characterId:', characterId); 
+                const response = await activeAdapter.generateContent(cleanedContents, characterId);
                 console.log('[NodeSTCore] API response received:', {
                     hasResponse: !!response,
                     responseLength: response?.length || 0
@@ -1400,7 +1409,8 @@ export class NodeSTCore {
         roleCard: RoleCardJson,
         adapter?: GeminiAdapter | OpenRouterAdapter | null,
         customUserName?: string, // Add optional customUserName parameter
-        memoryResults?: any // This parameter already correctly receives memory search results
+        memoryResults?: any, // This parameter already correctly receives memory search results
+        characterId?: string // 新增参数
     ): Promise<string | null> {
         try {
             console.log('[NodeSTCore] Starting processChatWithTools with:', {
@@ -1409,7 +1419,8 @@ export class NodeSTCore {
                 dEntriesCount: dEntries.length,
                 apiProvider: this.apiSettings?.apiProvider,
                 hasCustomUserName: !!customUserName,
-                hasMemoryResults: memoryResults?.results?.length > 0
+                hasMemoryResults: memoryResults?.results?.length > 0,
+                characterId: characterId // <--- 记录characterId
             });
 
             // 新增：如果用工具调用，则自动为userMessage加前缀
@@ -1560,10 +1571,15 @@ export class NodeSTCore {
             });
 
             // 发送到API，传递记忆搜索结果
-            console.log('[NodeSTCore] Sending to API with tool calls...');
+            console.log('[NodeSTCore] Sending to API with tool calls...', {
+                characterId_passed_to_adapter: characterId // <--- 记录传递给adapter的characterId
+            });
             // 如果使用工具调用，则传递记忆搜索结果
             if (activeAdapter) {
-                const response = await activeAdapter.generateContentWithTools(cleanedContents, memoryResults, toolUserMessage);
+                console.log('[NodeSTCore] 调用generateContentWithTools，传递characterId:', characterId); // <--- 记录
+                const response = await activeAdapter.generateContentWithTools(
+                    cleanedContents, characterId, memoryResults, toolUserMessage
+                );;
                 console.log('[NodeSTCore] API response received:', {
                     hasResponse: !!response,
                     responseLength: response?.length || 0
@@ -2018,7 +2034,9 @@ export class NodeSTCore {
                 conversationId,
                 roleCard,
                 adapter,
-                customUserName // Pass customUserName to processChat
+                customUserName, // Pass customUserName to processChat
+                undefined,
+                characterId // Pass characterId to processChat
             );
             
             // If we got a response, add it to history

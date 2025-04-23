@@ -52,9 +52,6 @@ const ChatInput: React.FC<ChatInputProps> = ({
   toggleBraveSearch,
   isTtsEnhancerEnabled = false,
   onTtsEnhancerToggle,
-  onShowNovelAI,
-  onShowVNDB,
-  onShowMemoryPanel,
 }) => {
   const [text, setText] = useState('');
   const [inputHeight, setInputHeight] = useState(40); // Initial height
@@ -222,6 +219,7 @@ const ChatInput: React.FC<ChatInputProps> = ({
           additionalGeminiKeys: user?.settings?.chat.additionalGeminiKeys
         },
         character: selectedCharacter,
+        characterId: selectedCharacter?.id,
       });
       
       if (result.success) {

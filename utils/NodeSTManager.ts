@@ -113,7 +113,8 @@ console.log(`[NodeSTManager] Setting search enabled to: ${enabled}`); // Add log
     conversationId: string;
     apiKey?: string; // Make apiKey optional
     apiSettings?: Pick<GlobalSettings['chat'], 'apiProvider' | 'openrouter' | 'useGeminiModelLoadBalancing' | 'useGeminiKeyRotation' | 'additionalGeminiKeys'>;
-    character?: Character;
+    character?: Character; // Character object with jsonData
+    characterId?: string; // Optional character ID
   }): Promise<{
     success: boolean;
     text?: string;
@@ -140,7 +141,7 @@ console.log(`[NodeSTManager] Setting search enabled to: ${enabled}`); // Add log
         customUserName: params.character?.customUserName || 'User',
         action: params.status === "更新人设" ? "更新人设" : (params.status === "新建角色" ? "新建角色" : "继续对话"),
         useToolCalls: this.searchEnabled,
-        usingCloudFallback: !apiKey
+        usingCloudFallback: !apiKey,
       });
 
       // Add detailed logging of character data when creating a new character
@@ -200,7 +201,7 @@ console.log(`[NodeSTManager] Setting search enabled to: ${enabled}`); // Add log
         jsonString: jsonString,
         characterId: characterId,  // Pass characterId for memory service
         customUserName: params.character?.customUserName, // Pass the customUserName to NodeST
-        useToolCalls: this.searchEnabled // Pass the search preference flag
+        useToolCalls: this.searchEnabled, // Pass the search preference flag
       });
 
       if (response.success) {

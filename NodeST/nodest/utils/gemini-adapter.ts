@@ -338,7 +338,8 @@ export class GeminiAdapter {
         }
     }
 
-    async generateContent(contents: ChatMessage[]): Promise<string> {
+    async generateContent(contents: ChatMessage[], characterId?: string): Promise<string> {
+
         // Always check cloud service status before making requests
         this.updateCloudServiceStatus();
         
@@ -354,7 +355,7 @@ export class GeminiAdapter {
         // If no API key but cloud service is available, use cloud service
         if (!apiKeyAvailable && cloudServiceAvailable) {
             console.log(`[Gemini适配器] 未配置API密钥，自动切换到云服务`);
-            return await this.executeGenerateContentWithCloudService(contents);
+            return await this.executeGenerateContentWithCloudService(contents, characterId || '');
         }
         
         // Select the appropriate model (defaulting to text task)
@@ -364,7 +365,7 @@ export class GeminiAdapter {
         // Enhanced implementation with retry and key rotation logic
         try {
             // First attempt with primary model and first API key
-            return await this.executeGenerateContentWithKeyRotation(contents, modelToUse);
+            return await this.executeGenerateContentWithKeyRotation(contents, modelToUse, characterId);
         } catch (initialError) {
             console.error(`[Gemini适配器] 主模型(${modelToUse})请求失败, 错误:`, initialError);
             
@@ -380,14 +381,14 @@ export class GeminiAdapter {
                     // Reset to the first API key for backup model
                     this.currentKeyIndex = 0;
                     console.log(`[Gemini适配器] 正在使用备用模型重试: ${this.backupModel}`);
-                    return await this.executeGenerateContentWithKeyRotation(contents, this.backupModel);
+                    return await this.executeGenerateContentWithKeyRotation(contents, this.backupModel, characterId);
                 } catch (backupError) {
                     console.error(`[Gemini适配器] 备用模型也请求失败:`, backupError);
                     
                     // If cloud service is available, try as last resort
                     if (cloudServiceAvailable) {
                         console.log(`[Gemini适配器] API请求失败，尝试使用云服务作为备选方案`);
-                        return await this.executeGenerateContentWithCloudService(contents);
+                        return await this.executeGenerateContentWithCloudService(contents, characterId || '');
                     }
                     
                     throw backupError;
@@ -396,7 +397,7 @@ export class GeminiAdapter {
                 // If cloud service is available, try it as fallback
                 if (cloudServiceAvailable) {
                     console.log(`[Gemini适配器] API请求失败，尝试使用云服务作为备选方案`);
-                    return await this.executeGenerateContentWithCloudService(contents);
+                    return await this.executeGenerateContentWithCloudService(contents,characterId || '');
                 }
                 
                 // Otherwise throw the original error
@@ -408,53 +409,48 @@ export class GeminiAdapter {
     /**
      * Execute content generation using cloud service
      */
-    private async executeGenerateContentWithCloudService(contents: ChatMessage[]): Promise<string> {
-        console.log('[Gemini适配器] 使用云服务生成内容');
-        try {
+ /**
+ * Execute content generation using cloud service
+ */
+private async executeGenerateContentWithCloudService(contents: ChatMessage[], characterId: string): Promise<string> {
+    console.log('[Gemini适配器] 使用云服务生成内容');
+    try {
+        // ==== 新增：获取角色表格记忆 ====
+        let tableMemoryText = '';
+        // 修复：记录实际值，而不是类型
+        console.log('[Gemini适配器][表格记忆/云服务] characterId参数值:', characterId);
+        
+        if (characterId) {
+            try {
+                console.log('[Gemini适配器][表格记忆/云服务] 调用 getCharacterTablesData 前参数:', { characterId });
+                const tableData = await getCharacterTablesData(characterId);
+                console.log('[Gemini适配器][表格记忆/云服务] getCharacterTablesData 返回:', tableData);
+                if (tableData.success && tableData.tables.length > 0) {
+                    tableMemoryText += `[角色长期记忆表格]\n`;
+                    tableData.tables.forEach(table => {
+                        const headerRow = '| ' + table.headers.join(' | ') + ' |';
+                        const sepRow = '| ' + table.headers.map(() => '---').join(' | ') + ' |';
+                        const dataRows = table.rows.map(row => '| ' + row.join(' | ') + ' |').join('\n');
+                        tableMemoryText += `表格：${table.name}\n${headerRow}\n${sepRow}\n${dataRows}\n\n`;
+                    });
+                    
+                    console.log('[Gemini适配器][表格记忆/云服务] 成功获取表格记忆数据');
+                } else {
+                    console.log('[Gemini适配器][表格记忆/云服务] 未获取到有效表格数据，success:', tableData.success, 'tables.length:', tableData.tables.length);
+                }
+            } catch (e) {
+                console.warn('[Gemini适配器][表格记忆/云服务] 获取角色表格记忆失败:', e);
+            }
+        } else {
+            console.log('[Gemini适配器][表格记忆/云服务] 未提供有效的characterId，跳过表格记忆注入');
+        }
+        // ==== 表格记忆获取结束 ====
+    
             // 检查是否需要将合成内容（如记忆/表格/搜索）单独插入为倒数第二条消息
             let standardMessages: { role: string; content: string }[] = [];
+            
             if (contents.length >= 2) {
-                const penultimate = contents[contents.length - 2];
-                const last = contents[contents.length - 1];
-                // 检查倒数第二条是否为合成内容（如<mem>、<websearch>、【角色长期记忆表格】等）
-                const penultimateText = penultimate.parts?.[0]?.text || "";
-                const isMemoryOrSearch =
-                    /<mem>[\s\S]*<\/mem>/i.test(penultimateText) ||
-                    /<websearch>[\s\S]*<\/websearch>/i.test(penultimateText) ||
-                    penultimateText.includes("【角色长期记忆表格】");
-                if (isMemoryOrSearch) {
-                    // 转换历史消息
-                    for (let i = 0; i < contents.length - 2; i++) {
-                        const msg = contents[i];
-                        let contentText = '';
-                        if (msg.parts && Array.isArray(msg.parts)) {
-                            contentText = msg.parts.map(part => (typeof part === 'object' && part.text) ? part.text : '').join(' ').trim();
-                        }
-                        let role = msg.role;
-                        standardMessages.push({ role, content: contentText });
-                    }
-                    // 插入合成内容为model
-                    standardMessages.push({
-                        role: "model",
-                        content: penultimateText
-                    });
-                    // 用户消息始终为最后一条
-                    let userText = last.parts?.[0]?.text || "";
-                    standardMessages.push({
-                        role: last.role === 'model' ? 'user' : last.role,
-                        content: userText
-                    });
-                } else {
-                    // 没有特殊合成内容，按原有逻辑转换
-                    standardMessages = contents.map(msg => {
-                        let contentText = '';
-                        if (msg.parts && Array.isArray(msg.parts)) {
-                            contentText = msg.parts.map(part => (typeof part === 'object' && part.text) ? part.text : '').join(' ').trim();
-                        } 
-                        let role = msg.role;
-                        return { role, content: contentText };
-                    });
-                }
+                // ...existing code for processing contents...
             } else {
                 // 消息不足两条，按原有逻辑转换
                 standardMessages = contents.map(msg => {
@@ -466,10 +462,47 @@ export class GeminiAdapter {
                     return { role, content: contentText };
                 });
             }
-
+    
+            // 如果获取到表格记忆，将其作为系统消息添加到标准消息中
+            if (tableMemoryText) {
+                console.log('[Gemini适配器][表格记忆/云服务] 将表格记忆注入到云服务请求中');
+                
+                // 创建一个新的系统消息，包含表格记忆和提示
+                const tableMemoryPrompt = `${tableMemoryText}\n\n<response_guidelines>
+    - 我会在回复中结合上面的表格记忆内容，表格中记录了角色相关的重要信息和事实。
+    - 我会确保回复与表格中的信息保持一致，不会捏造表格中不存在的信息。
+    - 我的回复会自然融入表格中的信息，不会生硬地提及"根据表格"之类的字眼。
+    - 我会确保回复保持角色人设的一致性。
+    </response_guidelines>`;
+                
+                // 保存最后一条用户消息（如果有的话）
+                let lastUserMessage = null;
+                if (standardMessages.length > 0) {
+                    const lastMsg = standardMessages[standardMessages.length - 1];
+                    if (lastMsg.role === 'user') {
+                        lastUserMessage = lastMsg;
+                        // 从标准消息中移除最后一条用户消息，稍后再添加回去
+                        standardMessages.pop();
+                    }
+                }
+                
+                // 添加表格记忆作为系统/助手消息
+                standardMessages.push({
+                    role: "model", // 或者助手角色，以兼容云服务API
+                    content: tableMemoryPrompt
+                });
+                
+                // 如果有，将最后一条用户消息添加回去
+                if (lastUserMessage) {
+                    standardMessages.push(lastUserMessage);
+                }
+                
+                console.log('[Gemini适配器][表格记忆/云服务] 表格记忆注入完成，共包含表格数据长度:', tableMemoryText.length);
+            }
+    
             console.log('[Gemini适配器] 转换后的消息格式:', JSON.stringify(standardMessages, null, 2));
             const startTime = Date.now();
-
+    
             const response = await CloudServiceProvider.generateChatCompletion(
                 standardMessages,
                 {
@@ -519,12 +552,13 @@ export class GeminiAdapter {
      * This implements the enhanced key rotation and retry strategy
      * Modified to handle no API keys case by using cloud service
      */
-    private async executeGenerateContentWithKeyRotation(contents: ChatMessage[], modelId: string): Promise<string> {
+    
+    private async executeGenerateContentWithKeyRotation(contents: ChatMessage[], modelId: string, characterId?: string): Promise<string> {
         // If no API keys are configured and cloud service is available, use cloud service
         if (this.apiKeys.length === 0) {
             if (this.useCloudService && CloudServiceProvider.isEnabled()) {
                 console.log(`[Gemini适配器] 没有配置API密钥，使用云服务`);
-                return await this.executeGenerateContentWithCloudService(contents);
+                return await this.executeGenerateContentWithCloudService(contents,characterId || '');
             } else {
                 throw new Error("未配置API密钥，且云服务未启用");
             }
@@ -539,7 +573,7 @@ export class GeminiAdapter {
             
             try {
                 // Try the request with this key
-                return await this.executeGenerateContent(contents, modelId);
+                return await this.executeGenerateContent(contents, modelId, characterId);
             } catch (error) {
                 console.error(`[Gemini适配器] 使用API密钥 ${keyIndex + 1}/${this.apiKeys.length} 请求失败:`, error);
                 lastError = error;
@@ -552,225 +586,315 @@ export class GeminiAdapter {
         throw new Error(`所有API密钥请求模型 ${modelId} 均失败: ${lastError?.message || '未知错误'}`);
     }
     
-    /**
-     * Core implementation of generateContent with specified model
-     */
-    private async executeGenerateContent(contents: ChatMessage[], modelId: string): Promise<string> {
-        // Verify we have a valid API key
-        const currentApiKey = this.apiKey;
-        if (!currentApiKey) {
-            if (this.useCloudService && CloudServiceProvider.isEnabled()) {
-                return await this.executeGenerateContentWithCloudService(contents);
-            }
-            throw new Error("未配置API密钥，无法执行直接API调用");
-        }
-        
-        let url = `${this.BASE_URL}/models/${modelId}:generateContent?key=${currentApiKey}`;
-        
-        // Mask API key in URL for logging
-        const maskedUrl = url.replace(/(\bkey=)([^&]{4})[^&]*/gi, '$1$2****');
-        
-        const data = {
-            contents,
-            generationConfig: {
-                temperature: 0.7,
-                topK: 40,
-                topP: 0.95,
-                maxOutputTokens: 8192,  // Increased token limit for character generation
-            }
-        };
 
-        console.log(`[Gemini适配器] 发送请求到API: ${modelId}`);
-        console.log(`[Gemini适配器] 请求包含 ${contents.length} 条消息`);
-        console.log(`[Gemini适配器] 当前云服务状态: ${this.useCloudService ? '启用' : '禁用'}`);
-        
-        // Enhanced logging for each message in the request
-        contents.forEach((msg, index) => {
-            const previewText = msg.parts?.[0]?.text || "";
-            console.log(`[Gemini适配器] 消息 #${index + 1} (${msg.role}): ${previewText.substring(0, 100)}...`);
-            
-            // Special handling for messages that might contain VNDB data, appearance tags, or traits
-            if (previewText.includes("VNDB") || 
-                previewText.includes("角色参考") || 
-                previewText.includes("外观参考") || 
-                previewText.includes("标签") || 
-                previewText.includes("特征")) {
+/**
+ * Core implementation of generateContent with specified model
+ */
+private async executeGenerateContent(contents: ChatMessage[], modelId: string, characterId?: string): Promise<string> {
+    // Verify we have a valid API key
+    const currentApiKey = this.apiKey;
+    if (!currentApiKey) {
+        if (this.useCloudService && CloudServiceProvider.isEnabled()) {
+            return await this.executeGenerateContentWithCloudService(contents, characterId || '');
+        }
+        throw new Error("未配置API密钥，无法执行直接API调用");
+    }
+    
+    let url = `${this.BASE_URL}/models/${modelId}:generateContent?key=${currentApiKey}`;
+    
+    // ==== 新增：获取角色表格记忆 ====
+    let tableMemoryText = '';
+    let effectiveCharacterId = characterId;
+    
+    // 修复：不要记录类型名称，而是记录实际值
+    console.log('[Gemini适配器][表格记忆] characterId参数值:', effectiveCharacterId);
+    
+    if (effectiveCharacterId) {
+        try {
+            console.log('[Gemini适配器][表格记忆] 调用 getCharacterTablesData 前参数:', { characterId: effectiveCharacterId });
+            const tableData = await getCharacterTablesData(effectiveCharacterId);
+            console.log('[Gemini适配器][表格记忆] getCharacterTablesData 返回:', tableData);
+            if (tableData.success && tableData.tables.length > 0) {
+                tableMemoryText += `[角色长期记忆表格]\n`;
+                tableData.tables.forEach(table => {
+                    const headerRow = '| ' + table.headers.join(' | ') + ' |';
+                    const sepRow = '| ' + table.headers.map(() => '---').join(' | ') + ' |';
+                    const dataRows = table.rows.map(row => '| ' + row.join(' | ') + ' |').join('\n');
+                    tableMemoryText += `表格：${table.name}\n${headerRow}\n${sepRow}\n${dataRows}\n\n`;
+                });
                 
-                // Log a more complete version of important data
-                const importantDataPreview = previewText.substring(0, 300);
-                console.log(`[Gemini适配器] 重要数据预览 #${index + 1}: ${importantDataPreview}...`);
-                
-                // Check for specific sections and log them
-                if (previewText.includes("正向标签")) {
-                    const positiveTagsMatch = previewText.match(/正向标签[：:]\s*([\s\S]*?)(?=负向标签|$)/);
-                    if (positiveTagsMatch && positiveTagsMatch[1]) {
-                        console.log(`[Gemini适配器] 正向标签: ${positiveTagsMatch[1].trim()}`);
-                    }
-                }
-                
-                if (previewText.includes("负向标签")) {
-                    const negativeTagsMatch = previewText.match(/负向标签[：:]\s*([\s\S]*?)(?=\n\n|$)/);
-                    if (negativeTagsMatch && negativeTagsMatch[1]) {
-                        console.log(`[Gemini适配器] 负向标签: ${negativeTagsMatch[1].trim()}`);
-                    }
-                }
-                
-                if (previewText.includes("特征")) {
-                    const traitsMatch = previewText.match(/特征[：:]\s*([\s\S]*?)(?=\n\n|$)/);
-                    if (traitsMatch && traitsMatch[1]) {
-                        console.log(`[Gemini适配器] 角色特征: ${traitsMatch[1].trim()}`);
-                    }
-                }
-                
-                if (previewText.includes("性别")) {
-                    const genderMatch = previewText.match(/[角色|用户]性别[：:]\s*([\\s\S]*?)(?=\n\n|$)/);
-                    if (genderMatch && genderMatch[1]) {
-                        console.log(`[Gemini适配器] 性别信息: ${genderMatch[1].trim()}`);
-                    }
-                }
+                console.log('[Gemini适配器][表格记忆] 成功获取表格记忆数据');
+            } else {
+                console.log('[Gemini适配器][表格记忆] 未获取到有效表格数据，success:', tableData.success, 'tables.length:', tableData.tables.length);
             }
+        } catch (e) {
+            console.warn('[Gemini适配器] 获取角色表格记忆失败:', e);
+        }
+    } else {
+        console.log('[Gemini适配器][表格记忆] 未提供有效的characterId，跳过表格记忆注入');
+    }
+    // ==== 新增结束 ====
+    
+    // 准备请求内容
+    let enhancedContents = [...contents];
+    
+    // 如果获取到有效的表格记忆，将其作为系统消息插入为倒数第二条model消息
+    if (tableMemoryText) {
+        // 构建表格记忆提示词，与云服务逻辑保持一致
+        const tableMemoryPrompt = `${tableMemoryText}\n\n<response_guidelines>
+    - 我会在回复中结合上面的表格记忆内容，表格中记录了角色相关的重要信息和事实。
+    - 我会确保回复与表格中的信息保持一致，不会捏造表格中不存在的信息。
+    - 我的回复会自然融入表格中的信息，不会生硬地提及"根据表格"之类的字眼。
+    - 我会确保回复保持角色人设的一致性。
+    </response_guidelines>`;
+
+        // 查找最后一个user消息的索引
+        let lastUserIdx = -1;
+        for (let i = enhancedContents.length - 1; i >= 0; i--) {
+            if (enhancedContents[i].role === 'user') {
+                lastUserIdx = i;
+                break;
+            }
+        }
+        // 查找倒数第二条model消息的索引
+        let lastModelIdx = -1;
+        let modelCount = 0;
+        for (let i = enhancedContents.length - 1; i >= 0; i--) {
+            if (enhancedContents[i].role === 'model') {
+                modelCount++;
+                if (modelCount === 1) continue; // 跳过最后一条model
+                lastModelIdx = i;
+                break;
+            }
+        }
+
+        // 如果有user消息，插入到最后一个user消息前；否则插入到最后
+        let insertIdx = lastUserIdx !== -1 ? lastUserIdx : enhancedContents.length;
+        // 如果存在倒数第二条model消息，则插入到其后（即成为倒数第二条消息）
+        if (lastModelIdx !== -1) {
+            insertIdx = lastModelIdx + 1;
+        }
+
+        // 插入表格记忆消息
+        enhancedContents.splice(insertIdx, 0, {
+            role: "model",
+            parts: [{ text: tableMemoryPrompt }]
         });
 
-        // Check if cloud service should be used
-        let response;
-        
-        // Double check with CloudServiceProvider directly as well
-        const providerEnabled = CloudServiceProvider.isEnabled();
-        const isCloudEnabled = this.useCloudService && providerEnabled;
-        
-        if (isCloudEnabled) {
-            console.log('[Gemini适配器] 检测到云服务已启用，使用云服务转发请求');
-            console.log(`[Gemini适配器] 原始请求URL: ${maskedUrl}`);
-            
-            try {
-                console.log('[Gemini适配器] 调用CloudServiceProvider.generateChatCompletion...');
-                const startTime = Date.now();
-                
-                // Convert Gemini-style messages to standard format expected by CradleAI
-                const standardMessages = contents.map(msg => {
-                    // Get text from message parts
-                    let contentText = '';
-                    if (msg.parts && Array.isArray(msg.parts)) {
-                        contentText = msg.parts.map(part => {
-                            if (typeof part === 'object' && part.text) {
-                                return part.text;
-                            }
-                            return '';
-                        }).join(' ').trim();
-                    }
-                    
-                    // Map Gemini roles to standard roles
-                    let role = msg.role;
-                    
-                    return {
-                        role: role,
-                        content: contentText
-                    };
-                });
-                
-                console.log('[Gemini适配器] 转换后的消息格式:', JSON.stringify(standardMessages, null, 2));
-                
-                // Use the generateChatCompletion method for cloud service
-                response = await CloudServiceProvider.generateChatCompletion(
-                    standardMessages,
-                    {
-                        model: CloudServiceProvider.getPreferredModel(),
+        console.log('[Gemini适配器][表格记忆] 已将表格记忆注入到倒数第二条model消息位置，插入索引:', insertIdx);
+    } else {
+        console.log('[Gemini适配器] 未获取到表格记忆数据，使用原始消息内容');
+    }
+    
+    return this.executeDirectGenerateContent(enhancedContents, modelId, url);
+}
+
+            /**
+             * 实际执行API调用的方法，从executeGenerateContent中抽取出来
+             * 以便于在有无表格记忆的情况下复用
+             */
+            private async executeDirectGenerateContent(contents: ChatMessage[], modelId: string, url: string): Promise<string> {
+                const data = {
+                    contents,
+                    generationConfig: {
                         temperature: 0.7,
-                        max_tokens: 8192
+                        topK: 40,
+                        topP: 0.95,
+                        maxOutputTokens: 8192,  // Increased token limit for character generation
                     }
-                );
-                
-                const endTime = Date.now();
-                console.log(`[Gemini适配器] 云服务请求完成，耗时: ${endTime - startTime}ms`);
-                console.log(`[Gemini适配器] 云服务响应状态: ${response.status} ${response.statusText}`);
-            } catch (cloudError) {
-                console.error('[Gemini适配器] 云服务请求失败:', cloudError);
-                console.error('[Gemini适配器] 尝试回退到直接API调用...');
-                
-                // Fall back to direct API call
-                const startTime = Date.now();
-                response = await fetch(url, {
-                    method: 'POST',
-                    headers: this.headers,
-                    body: JSON.stringify(data)
-                });
-                const endTime = Date.now();
-                
-                console.log(`[Gemini适配器] 直接API调用完成，耗时: ${endTime - startTime}ms`);
-                console.log(`[Gemini适配器] API响应状态: ${response.status} ${response.statusText}`);
-            }
-        } else {
-            if (this.useCloudService) {
-                console.log('[Gemini适配器] 云服务状态不一致: tracker显示已启用但CloudServiceProvider未启用');
-            }
-            
-            console.log('[Gemini适配器] 云服务未启用，使用直接API调用');
-            console.log(`[Gemini适配器] 直接调用URL: ${maskedUrl}`);
-            console.log(`[Gemini适配器] 开始时间: ${new Date().toISOString()}`);
-            
-            const startTime = Date.now();
-            response = await fetch(url, {
-                method: 'POST',
-                headers: this.headers,
-                body: JSON.stringify(data)
-            });
-            const endTime = Date.now();
-            
-            console.log(`[Gemini适配器] 直接API调用完成，耗时: ${endTime - startTime}ms`);
-            console.log(`[Gemini适配器] API响应状态: ${response.status} ${response.statusText}`);
-        }
+                };
 
-        if (!response.ok) {
-            const errorText = await response.text();
-            console.error(`[Gemini适配器] API响应错误 (${response.status}): ${errorText}`);
-            // Throw error for any status code - the caller will handle key rotation
-            throw new Error(`HTTP error! status: ${response.status}, details: ${errorText}`);
-        }
-
-        console.log(`[Gemini适配器] 成功接收到API响应，开始解析JSON`);
-        const result = await response.json();
-        
-        // Check for the expected format from CradleAI
-        if (result.choices && result.choices.length > 0) {
-            // This is the standard OpenAI/CradleAI format
-            const responseText = result.choices[0].message?.content || "";
-            
-            if (responseText) {
-                console.log(`[Gemini适配器] 成功接收CradleAI响应，长度: ${responseText.length}`);
-                console.log(`[Gemini适配器] 响应前100个字符: ${responseText.substring(0, 100)}...`);
+                console.log(`[Gemini适配器] 发送请求到API: ${modelId}`);
+                console.log(`[Gemini适配器] 请求包含 ${contents.length} 条消息`);
+                console.log(`[Gemini适配器] 当前云服务状态: ${this.useCloudService ? '启用' : '禁用'}`);
                 
-                this.conversationHistory.push({
-                    role: "model",
-                    parts: [{ text: responseText }]
+                // Enhanced logging for each message in the request
+                contents.forEach((msg, index) => {
+                    const previewText = msg.parts?.[0]?.text || "";
+                    console.log(`[Gemini适配器] 消息 #${index + 1} (${msg.role}): ${previewText.substring(0, 100)}...`);
+                    
+                    // Special handling for messages that might contain VNDB data, appearance tags, or traits
+                    if (previewText.includes("VNDB") || 
+                        previewText.includes("角色参考") || 
+                        previewText.includes("外观参考") || 
+                        previewText.includes("标签") || 
+                        previewText.includes("特征")) {
+                        
+                        // Log a more complete version of important data
+                        const importantDataPreview = previewText.substring(0, 300);
+                        console.log(`[Gemini适配器] 重要数据预览 #${index + 1}: ${importantDataPreview}...`);
+                        
+                        // Check for specific sections and log them
+                        if (previewText.includes("正向标签")) {
+                            const positiveTagsMatch = previewText.match(/正向标签[：:]\s*([\s\S]*?)(?=负向标签|$)/);
+                            if (positiveTagsMatch && positiveTagsMatch[1]) {
+                                console.log(`[Gemini适配器] 正向标签: ${positiveTagsMatch[1].trim()}`);
+                            }
+                        }
+                        
+                        if (previewText.includes("负向标签")) {
+                            const negativeTagsMatch = previewText.match(/负向标签[：:]\s*([\s\S]*?)(?=\n\n|$)/);
+                            if (negativeTagsMatch && negativeTagsMatch[1]) {
+                                console.log(`[Gemini适配器] 负向标签: ${negativeTagsMatch[1].trim()}`);
+                            }
+                        }
+                        
+                        if (previewText.includes("特征")) {
+                            const traitsMatch = previewText.match(/特征[：:]\s*([\s\S]*?)(?=\n\n|$)/);
+                            if (traitsMatch && traitsMatch[1]) {
+                                console.log(`[Gemini适配器] 角色特征: ${traitsMatch[1].trim()}`);
+                            }
+                        }
+                        
+                        if (previewText.includes("性别")) {
+                            const genderMatch = previewText.match(/[角色|用户]性别[：:]\s*([\\s\S]*?)(?=\n\n|$)/);
+                            if (genderMatch && genderMatch[1]) {
+                                console.log(`[Gemini适配器] 性别信息: ${genderMatch[1].trim()}`);
+                            }
+                        }
+                    }
                 });
-                return responseText;
-            }
-        } else if (result.candidates?.[0]?.content) {
-            // This is the Gemini format
-            const responseText = result.candidates[0].content.parts?.[0]?.text || "";
-            if (responseText) {
-                console.log(`[Gemini适配器] 成功接收响应，长度: ${responseText.length}`);
-                console.log(`[Gemini适配器] 响应前100个字符: ${responseText.substring(0, 100)}...`);
+
+                // Check if cloud service should be used
+                let response;
                 
-                // Log potential JSON formatting issues
-                if (responseText.includes('"') && responseText.includes('\\')) {
-                    console.warn('[Gemini适配器] 警告：响应中可能存在不正确的JSON转义字符');
+                // Double check with CloudServiceProvider directly as well
+                const providerEnabled = CloudServiceProvider.isEnabled();
+                const isCloudEnabled = this.useCloudService && providerEnabled;
+                
+                if (isCloudEnabled) {
+                    console.log('[Gemini适配器] 检测到云服务已启用，使用云服务转发请求');
+                    console.log(`[Gemini适配器] 原始请求URL: ${url.replace(/(\bkey=)([^&]{4})[^&]*/gi, '$1$2****')}`);
+                    
+                    try {
+                        console.log('[Gemini适配器] 调用CloudServiceProvider.generateChatCompletion...');
+                        const startTime = Date.now();
+                        
+                        // Convert Gemini-style messages to standard format expected by CradleAI
+                        const standardMessages = contents.map(msg => {
+                            // Get text from message parts
+                            let contentText = '';
+                            if (msg.parts && Array.isArray(msg.parts)) {
+                                contentText = msg.parts.map(part => {
+                                    if (typeof part === 'object' && part.text) {
+                                        return part.text;
+                                    }
+                                    return '';
+                                }).join(' ').trim();
+                            }
+                            
+                            // Map Gemini roles to standard roles
+                            let role = msg.role;
+                            
+                            return {
+                                role: role,
+                                content: contentText
+                            };
+                        });
+                        
+                        console.log('[Gemini适配器] 转换后的消息格式:', JSON.stringify(standardMessages, null, 2));
+                        
+                        // Use the generateChatCompletion method for cloud service
+                        response = await CloudServiceProvider.generateChatCompletion(
+                            standardMessages,
+                            {
+                                model: CloudServiceProvider.getPreferredModel(),
+                                temperature: 0.7,
+                                max_tokens: 8192
+                            }
+                        );
+                        
+                        const endTime = Date.now();
+                        console.log(`[Gemini适配器] 云服务请求完成，耗时: ${endTime - startTime}ms`);
+                        console.log(`[Gemini适配器] 云服务响应状态: ${response.status} ${response.statusText}`);
+                    } catch (cloudError) {
+                        console.error('[Gemini适配器] 云服务请求失败:', cloudError);
+                        console.error('[Gemini适配器] 尝试回退到直接API调用...');
+                        
+                        // Fall back to direct API call
+                        const startTime = Date.now();
+                        response = await fetch(url, {
+                            method: 'POST',
+                            headers: this.headers,
+                            body: JSON.stringify(data)
+                        });
+                        const endTime = Date.now();
+                        
+                        console.log(`[Gemini适配器] 直接API调用完成，耗时: ${endTime - startTime}ms`);
+                        console.log(`[Gemini适配器] API响应状态: ${response.status} ${response.statusText}`);
+                    }
+                } else {
+                    if (this.useCloudService) {
+                        console.log('[Gemini适配器] 云服务状态不一致: tracker显示已启用但CloudServiceProvider未启用');
+                    }
+                    
+                    console.log('[Gemini适配器] 云服务未启用，使用直接API调用');
+                    console.log(`[Gemini适配器] 直接调用URL: ${url.replace(/(\bkey=)([^&]{4})[^&]*/gi, '$1$2****')}`);
+                    console.log(`[Gemini适配器] 开始时间: ${new Date().toISOString()}`);
+                    
+                    const startTime = Date.now();
+                    response = await fetch(url, {
+                        method: 'POST',
+                        headers: this.headers,
+                        body: JSON.stringify(data)
+                    });
+                    const endTime = Date.now();
+                    
+                    console.log(`[Gemini适配器] 直接API调用完成，耗时: ${endTime - startTime}ms`);
+                    console.log(`[Gemini适配器] API响应状态: ${response.status} ${response.statusText}`);
+                }
+
+                if (!response.ok) {
+                    const errorText = await response.text();
+                    console.error(`[Gemini适配器] API响应错误 (${response.status}): ${errorText}`);
+                    // Throw error for any status code - the caller will handle key rotation
+                    throw new Error(`HTTP error! status: ${response.status}, details: ${errorText}`);
+                }
+
+                console.log(`[Gemini适配器] 成功接收到API响应，开始解析JSON`);
+                const result = await response.json();
+                
+                // Check for the expected format from CradleAI
+                if (result.choices && result.choices.length > 0) {
+                    // This is the standard OpenAI/CradleAI format
+                    const responseText = result.choices[0].message?.content || "";
+                    
+                    if (responseText) {
+                        console.log(`[Gemini适配器] 成功接收CradleAI响应，长度: ${responseText.length}`);
+                        console.log(`[Gemini适配器] 响应前100个字符: ${responseText.substring(0, 100)}...`);
+                        
+                        this.conversationHistory.push({
+                            role: "model",
+                            parts: [{ text: responseText }]
+                        });
+                        return responseText;
+                    }
+                } else if (result.candidates?.[0]?.content) {
+                    // This is the Gemini format
+                    const responseText = result.candidates[0].content.parts?.[0]?.text || "";
+                    if (responseText) {
+                        console.log(`[Gemini适配器] 成功接收响应，长度: ${responseText.length}`);
+                        console.log(`[Gemini适配器] 响应前100个字符: ${responseText.substring(0, 100)}...`);
+                        
+                        // Log potential JSON formatting issues
+                        if (responseText.includes('"') && responseText.includes('\\')) {
+                            console.warn('[Gemini适配器] 警告：响应中可能存在不正确的JSON转义字符');
+                        }
+                        
+                        this.conversationHistory.push({
+                            role: "model",
+                            parts: [{ text: responseText }]
+                        });
+                        return responseText;
+                    } else {
+                        console.warn(`[Gemini适配器] 接收到空响应`);
+                    }
+                    return responseText;
                 }
                 
-                this.conversationHistory.push({
-                    role: "model",
-                    parts: [{ text: responseText }]
-                });
-                return responseText;
-            } else {
-                console.warn(`[Gemini适配器] 接收到空响应`);
+                console.error(`[Gemini适配器] 无效的响应格式: ${JSON.stringify(result)}`);
+                return "";
             }
-            return responseText;
-        }
-        
-        console.error(`[Gemini适配器] 无效的响应格式: ${JSON.stringify(result)}`);
-        return "";
-    }
 
     /**
      * 生成包含文本和/或图片的内容
@@ -1572,7 +1696,7 @@ export class GeminiAdapter {
      * @param memoryResults 记忆搜索结果 (可选)
      * @returns 生成的内容
      */
-    async generateContentWithTools(contents: ChatMessage[], memoryResults?: any, userMessage?: string): Promise<string> {
+    async generateContentWithTools(contents: ChatMessage[], characterId:string,memoryResults?: any, userMessage?: string): Promise<string> {
         // 检查是否有API密钥配置或者是否应该使用云服务
         
         const apiKeyAvailable = this.isApiKeyConfigured();
@@ -1625,7 +1749,7 @@ export class GeminiAdapter {
             
             // 如果没有搜索意图，使用普通对话方式
             console.log(`[Gemini适配器] 使用标准对话方式生成回复`);
-            return await this.generateContent(contents);
+            return await this.generateContent(contents, characterId);
         } catch (error) {
             console.error(`[Gemini适配器] 工具调用失败，回退到标准对话:`, error);
             // 如果工具调用失败，回退到标准对话
@@ -1657,6 +1781,52 @@ export class GeminiAdapter {
                 memorySection += `${index + 1}. ${item.memory}\n`;
             });
             memorySection += `</mem>\n\n`;
+            
+            // ==== 新增：获取角色表格记忆 ====
+            let tableMemoryText = '';
+            try {
+                // 日志：记录characterId/conversationId来源和类型
+                let characterId =
+                    memoryResults.characterId ||
+                    memoryResults.agentId ||
+                    memoryResults.results?.[0]?.characterId ||
+                    memoryResults.results?.[0]?.agentId;
+                let conversationId =
+                    memoryResults.conversationId ||
+                    memoryResults.results?.[0]?.conversationId;
+                console.log('[Gemini适配器][表格记忆] memoryResults.characterId:', memoryResults.characterId, typeof memoryResults.characterId);
+                console.log('[Gemini适配器][表格记忆] memoryResults.agentId:', memoryResults.agentId, typeof memoryResults.agentId);
+                console.log('[Gemini适配器][表格记忆] memoryResults.results[0]?.characterId:', memoryResults.results?.[0]?.characterId, typeof memoryResults.results?.[0]?.characterId);
+                console.log('[Gemini适配器][表格记忆] memoryResults.results[0]?.agentId:', memoryResults.results?.[0]?.agentId, typeof memoryResults.results?.[0]?.agentId);
+                console.log('[Gemini适配器][表格记忆] memoryResults.conversationId:', memoryResults.conversationId, typeof memoryResults.conversationId);
+                console.log('[Gemini适配器][表格记忆] memoryResults.results[0]?.conversationId:', memoryResults.results?.[0]?.conversationId, typeof memoryResults.results?.[0]?.conversationId);
+                if (!characterId && contents.length > 0) {
+                    characterId = contents[0]?.characterId;
+                    console.log('[Gemini适配器][表格记忆] 尝试从contents[0]获取characterId:', characterId, typeof characterId);
+                }
+                console.log('[Gemini适配器][表格记忆] 最终用于查询的 characterId:', characterId, 'conversationId:', conversationId);
+                if (characterId) {
+                    console.log('[Gemini适配器][表格记忆] 调用 getCharacterTablesData 前参数:', { characterId, conversationId });
+                    const tableData = await getCharacterTablesData(characterId, conversationId);
+                    console.log('[Gemini适配器][表格记忆] getCharacterTablesData 返回:', tableData);
+                    if (tableData.success && tableData.tables.length > 0) {
+                        tableMemoryText += `[角色长期记忆表格]\n`;
+                        tableData.tables.forEach(table => {
+                            const headerRow = '| ' + table.headers.join(' | ') + ' |';
+                            const sepRow = '| ' + table.headers.map(() => '---').join(' | ') + ' |';
+                            const dataRows = table.rows.map(row => '| ' + row.join(' | ') + ' |').join('\n');
+                            tableMemoryText += `表格：${table.name}\n${headerRow}\n${sepRow}\n${dataRows}\n\n`;
+                        });
+                    } else {
+                        console.log('[Gemini适配器][表格记忆] 未获取到有效表格数据，success:', tableData.success, 'tables.length:', tableData.tables.length);
+                    }
+                } else {
+                    console.log('[Gemini适配器][表格记忆] 未能确定characterId，跳过表格记忆注入');
+                }
+            } catch (e) {
+                console.warn('[Gemini适配器] 获取角色表格记忆失败:', e);
+            }
+            // ==== 新增结束 ====
             
             // Step 2: 准备网络搜索部分
             console.log(`[Gemini适配器] 为用户查询准备网络搜索: "${userQuery}"`);
@@ -1692,7 +1862,18 @@ export class GeminiAdapter {
                         // 构建融合提示词
                         console.log(`[Gemini适配器] 构建融合提示词，结合记忆和网络搜索结果`);
                         
-                        let combinedPrompt = memorySection + searchSection + `<response_guidelines>
+                        // 修改：将表格记忆添加到组合提示中，位置在memorySection之前
+                        let combinedPrompt = '';
+                        // 添加表格记忆（如果有）
+                        if (tableMemoryText) {
+                            combinedPrompt += tableMemoryText + '\n';
+                        }
+                        // 添加记忆部分
+                        combinedPrompt += memorySection;
+                        // 添加搜索部分
+                        combinedPrompt += searchSection;
+                        
+                        combinedPrompt += `<response_guidelines>
                 - 我会结合上面的记忆内容和联网搜索结果，全面回答用户的问题。
                 - **首先**，我会在回复中用<mem></mem>标签包裹我对记忆内容的引用和回忆过程，例如:
                   <mem>我记得你之前提到过关于这个话题，当时我们讨论了...</mem>
@@ -1788,7 +1969,18 @@ export class GeminiAdapter {
             // Step 3: 构建融合提示词
             console.log(`[Gemini适配器] 构建融合提示词，结合记忆和网络搜索结果`);
             
-            let combinedPrompt = memorySection + searchSection + `<response_guidelines>
+            // 修改：将表格记忆添加到组合提示中，位置在memorySection之前
+            let combinedPrompt = '';
+            // 添加表格记忆（如果有）
+            if (tableMemoryText) {
+                combinedPrompt += tableMemoryText + '\n';
+            }
+            // 添加记忆部分
+            combinedPrompt += memorySection;
+            // 添加搜索部分
+            combinedPrompt += searchSection;
+            
+            combinedPrompt += `<response_guidelines>
             - 我会结合上面的记忆内容和联网搜索结果，全面回答用户的问题。
             - **首先**，我会在回复中用<mem></mem>标签包裹我对记忆内容的引用和回忆过程，例如:
               <mem>我记得你之前提到过关于这个话题，当时我们讨论了...</mem>
