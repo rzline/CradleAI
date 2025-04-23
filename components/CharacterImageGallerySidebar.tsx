@@ -82,6 +82,10 @@ const CharacterImageGallerySidebar: React.FC<CharacterImageGallerySidebarProps> 
   const [persistedImages, setPersistedImages] = useState<CharacterImage[]>([]);
   const { setCharacterAvatar, setCharacterBackgroundImage } = useCharacters();
 
+  // 新增：记录上一次生成图片的设置和seed
+  const [lastImageGenSettings, setLastImageGenSettings] = useState<any>(null);
+  const [lastImageGenSeed, setLastImageGenSeed] = useState<string | number | undefined>(undefined);
+
   useEffect(() => {
     const loadPersistedImages = async () => {
       try {
@@ -341,6 +345,7 @@ const CharacterImageGallerySidebar: React.FC<CharacterImageGallerySidebarProps> 
     }
   };
 
+  // 重新生成图片时，带入上次设置和seed
   const handleRegenerateImage = (image: CharacterImage) => {
     if (image.generationConfig || (image.tags && (image.tags.positive || image.tags.negative))) {
       const config = {
@@ -350,9 +355,9 @@ const CharacterImageGallerySidebar: React.FC<CharacterImageGallerySidebarProps> 
         customPrompt: image.generationConfig?.customPrompt || '',
         useCustomPrompt: image.generationConfig?.useCustomPrompt || false,
         characterTags: image.generationConfig?.characterTags || [],
-        seed: image.generationConfig?.seed || image.seed || '', // 保留seed
-        novelaiSettings: image.generationConfig?.novelaiSettings || undefined, // 保留novelai设置
-        animagine4Settings: image.generationConfig?.animagine4Settings || undefined // 保留animagine4设置
+        seed: image.generationConfig?.seed || image.seed || lastImageGenSeed || '', // 优先用图片的seed，否则用上次seed
+        novelaiSettings: image.generationConfig?.novelaiSettings || lastImageGenSettings?.novelaiSettings,
+        animagine4Settings: image.generationConfig?.animagine4Settings || lastImageGenSettings?.animagine4Settings
       };
       setRegenerationImageConfig(config);
       setShowRegenerationModal(true);
@@ -871,9 +876,15 @@ const CharacterImageGallerySidebar: React.FC<CharacterImageGallerySidebarProps> 
             visible={showRegenerationModal}
             character={character}
             onClose={() => setShowRegenerationModal(false)}
-            onSuccess={(newImage) => {
+            // 优化：传入上次设置和seed
+            initialSettingsState={lastImageGenSettings}
+            initialSeed={lastImageGenSeed}
+            onSuccess={(newImage, settingsState, usedSeed) => {
               addImageAndPersist(newImage);
               setShowRegenerationModal(false);
+              // 记录本次设置和seed
+              if (settingsState) setLastImageGenSettings(settingsState);
+              if (usedSeed) setLastImageGenSeed(usedSeed);
             }}
             existingImageConfig={regenerationImageConfig}
           />

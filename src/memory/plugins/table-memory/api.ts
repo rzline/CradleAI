@@ -401,7 +401,7 @@ export async function getCharacterTablesData(
     console.error('[TableMemory] 获取角色表格数据失败:', error);
     return {
       success: false,
-      tables: [],
+      tables: [], 
       error: error instanceof Error ? error.message : '未知错误'
     };
   }
@@ -683,7 +683,9 @@ export async function getSelectedTemplateIds(): Promise<string[]> {
 export async function rebuildSheet(
   sheetId: string,
   chatContent: string,
-  promptType: 'rebuild_base' | 'rebuild_compatible' | 'rebuild_summary' | 'rebuild_fix_all' | 'rebuild_fix_simplify_all' | 'rebuild_fix_simplify_without_history' | 'rebuild_simplify_history' = 'rebuild_base'
+  promptType: 'rebuild_base' | 'rebuild_compatible' | 'rebuild_summary' | 'rebuild_fix_all' | 
+              'rebuild_fix_simplify_all' | 'rebuild_fix_simplify_without_history' | 
+              'rebuild_simplify_history' | 'refresh_table_old' = 'rebuild_base'
 ): Promise<boolean> {
   try {
     // 检查插件是否启用
@@ -703,18 +705,28 @@ export async function rebuildSheet(
     // 从profile_prompts中获取对应的提示词
     let prompt = '';
     try {
-      const profilePrompts = require('../../../ref_prompt/profile_prompts').profile_prompts;
-      const selectedPrompt = profilePrompts[promptType];
+      // 获取profile_prompts
+      const { profile_prompts } = require('@/src/memory/ref_prompt/profile_prompts');
+      const selectedPrompt = profile_prompts[promptType];
       
       if (selectedPrompt && selectedPrompt.core_rules) {
         prompt = selectedPrompt.core_rules;
+        console.log(`[TableMemory] 成功加载 ${promptType} 提示词`);
       } else {
-        throw new Error(`未找到提示词类型 ${promptType}`);
+        console.warn(`[TableMemory] 未找到提示词类型 ${promptType}，尝试使用默认提示词`);
+        // 尝试使用rebuild_base提示词
+        const basePrompt = profile_prompts['rebuild_base'];
+        if (basePrompt && basePrompt.core_rules) {
+          prompt = basePrompt.core_rules;
+          console.log(`[TableMemory] 使用 rebuild_base 作为备用提示词`);
+        } else {
+          throw new Error(`未找到有效的提示词`);
+        }
       }
     } catch (error) {
       console.error('[TableMemory] 获取提示词失败，使用默认提示词:', error);
       // 使用默认提示词
-      prompt = `请分析对话内容，更新表格。你可以添加新行、更新现有行或删除不再相关的行。`;
+      prompt = `请分析对话内容和当前表格，更新或修复表格内容。根据需要添加新行、更新现有行或删除不再相关的行，保持表格格式规范且内容准确。`;
     }
     
     // 使用自定义提示词处理表格
@@ -723,6 +735,12 @@ export async function rebuildSheet(
       chatContent,
       prompt
     );
+    
+    if (updated) {
+      console.log(`[TableMemory] 表格 "${sheet.name}" 使用 ${promptType} 提示词重建成功`);
+    } else {
+      console.log(`[TableMemory] 表格 "${sheet.name}" 无需更新或重建失败`);
+    }
     
     return updated;
   } catch (error) {

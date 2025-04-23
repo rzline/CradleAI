@@ -689,7 +689,7 @@ const styles = StyleSheet.create({
     marginTop: 20,
   },
   generateButtonText: {
-    color: '#fff',
+    color: 'black',
     marginLeft: 8,
     fontWeight: 'bold',
   },

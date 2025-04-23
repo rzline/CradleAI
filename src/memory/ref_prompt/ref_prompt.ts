@@ -177,3 +177,4 @@ export function getUpdateMemoryMessages(
   export function removeCodeBlocks(text: string): string {
     return text.replace(/```[^`]*```/g, "");
   }
+

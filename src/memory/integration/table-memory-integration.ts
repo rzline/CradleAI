@@ -569,32 +569,26 @@ export async function getTableDataForPrompt(
   if (!tableMemoryEnabled) {
     return null;
   }
-  
+
   try {
     // FIXED: Ensure consistent ID handling
     const safeCharacterId = String(characterId);
     const safeConversationId = conversationId ? String(conversationId) : safeCharacterId;
-    
+
     console.log(`[TableMemoryIntegration] Getting table data for characterId: "${safeCharacterId}", conversationId: "${safeConversationId}"`);
-    
-    // 获取该角色的所有表格
-    const sheets = await TableMemory.API.getCharacterSheets(safeCharacterId, safeConversationId);
-    
-    if (!sheets || sheets.length === 0) {
+
+    // 使用 getCharacterTablesData 替代 getCharacterSheets
+    const tablesData = await TableMemory.API.getCharacterTablesData(safeCharacterId, safeConversationId);
+
+    if (!tablesData.success || !tablesData.tables || tablesData.tables.length === 0) {
       console.log(`[TableMemoryIntegration] 未找到角色 ${safeCharacterId} 的表格`);
       return null;
     }
-    
-    console.log(`[TableMemoryIntegration] Found ${sheets.length} tables for character ${safeCharacterId}`);
-    
-    // 获取表格数据
-    const tableData = sheets.map(sheet => ({
-      sheetId: sheet.uid,
-      name: sheet.name,
-      tableText: toText(sheet)
-    }));
-    
-    return tableData;
+
+    console.log(`[TableMemoryIntegration] Found ${tablesData.tables.length} tables for character ${safeCharacterId}`);
+
+    // 直接返回tablesData.tables，结构为 { id, name, headers, rows, text }
+    return tablesData.tables;
   } catch (error) {
     console.error('[TableMemoryIntegration] 获取表格数据时出错:', error);
     return null;

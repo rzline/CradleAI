@@ -76,7 +76,7 @@ const ArtistReferenceSelector: React.FC<ArtistReferenceSelectorProps> = ({
             style={styles.actionButton}
             onPress={rollArtist}
           >
-            <Ionicons name="dice-outline" size={18} color="#FFD700" />
+            <Ionicons name="dice-outline" size={18} color="#ff9f1c" />
             <Text style={styles.actionButtonText}>Roll</Text>
           </TouchableOpacity>
           <TouchableOpacity
@@ -113,7 +113,7 @@ const ArtistReferenceSelector: React.FC<ArtistReferenceSelectorProps> = ({
               </Text>
               {isSelected(item) && (
                 <View style={styles.selectedIndicator}>
-                  <Ionicons name="checkmark-circle" size={16} color="#4CAF50" />
+                  <Ionicons name="checkmark-circle" size={16} color="black" />
                 </View>
               )}
             </TouchableOpacity>
@@ -135,12 +135,11 @@ const ArtistReferenceSelector: React.FC<ArtistReferenceSelectorProps> = ({
 const styles = StyleSheet.create({
   // Selected artist styles
   selectedArtistContainer: {
-    borderColor: '#4CAF50',
     borderWidth: 2,
     backgroundColor: `#ff9f1c`,
   },
   selectedArtistText: {
-    color: '#4CAF50',
+    color: 'black',
     fontWeight: 'bold',
   },
   selectedIndicator: {

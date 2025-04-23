@@ -1203,11 +1203,58 @@ ${chatContent}
           console.log("[TableMemory] 未检测到有效的JSON操作指令，尝试解析为markdown表格:", error);
         }
         
+    // ----------- 新增：尝试解析 profile_prompts 格式的 JSON 数组 -----------
+    try {
+      let jsonArray: any = null;
+      if (llmResponse.trim().startsWith('[')) {
+        jsonArray = JSON.parse(llmResponse.trim());
+      }
+      if (Array.isArray(jsonArray)) {
+        // 查找当前表格
+        const tableObj = jsonArray.find((t: any) =>
+          t.tableName === sheet.name ||
+          t.tableName === sheet.name.replace(/表格$/, '') ||
+          sheet.name === (t.tableName + '表格')
+        );
+        if (tableObj && Array.isArray(tableObj.columns) && Array.isArray(tableObj.content)) {
+          // 清除除标题行外的所有单元格
+          sheet.cells = sheet.cells.filter(cell => cell.rowIndex === 0);
+          // 更新标题行（可选：如需要同步columns）
+          const headerRow = sheet.cells.filter(cell => cell.rowIndex === 0);
+          for (let c = 0; c < tableObj.columns.length; c++) {
+            if (headerRow[c] && headerRow[c].value !== tableObj.columns[c]) {
+              headerRow[c].value = tableObj.columns[c];
+            }
+          }
+          // 添加新数据行
+          for (let r = 0; r < tableObj.content.length; r++) {
+            const rowArr = tableObj.content[r];
+            for (let c = 0; c < rowArr.length; c++) {
+              sheet.cells.push(
+                createCell({
+                  sheetId: sheet.uid,
+                  rowIndex: r + 1,
+                  colIndex: c,
+                  value: rowArr[c]
+                })
+              );
+            }
+          }
+          await this.updateSheet(sheet);
+          console.log(`[TableMemory] 成功用 profile_prompts 格式数据更新表格 ${sheet.name}`);
+          return true;
+        }
+      }
+    } catch (error) {
+      // 不是 profile_prompts 格式，继续尝试markdown表格
+    }
+    // ----------- 新增结束 -----------
+
         // 如果不是JSON格式，则按照markdown表格处理
         const updatedTableText = llmResponse;
         
         // 解析表格文本为结构化表格数据
-        const updatedSheetData = this.parseTableText(updatedTableText, sheet);
+        const updatedSheetData = this.parseTableText(llmResponse, sheet);
         
         // 检查是否有变更
         if (!updatedSheetData || updatedSheetData.length === 0) {
@@ -1373,9 +1420,17 @@ ${chatContent || '对话内容为空，请基于当前表格内容进行更新�
         ]
       );
       
-      // 解析LLM的响应
-      const llmResponse = typeof response === 'string' ? response : response.content;
-        
+    // 解析LLM的响应
+    let llmResponse = typeof response === 'string' ? response : response.content;
+    // 新增：打印完整响应内容，便于调试
+    // ----------- 新增：strip markdown code block -----------
+    // 去除 ```json ... ``` 或 ``` ... ``` 包裹
+    llmResponse = llmResponse
+      .replace(/^\s*```json\s*/i, '')
+      .replace(/^\s*```\s*/i, '')
+      .replace(/\s*```[\s\n]*$/i, '')
+      .trim();
+      console.log('[TableMemory] LLM完整响应内容:', llmResponse);
       // 首先检查是否返回了JSON格式的表格操作指令
       try {
         // 尝试提取JSON部分
@@ -1693,6 +1748,25 @@ ${chatContent || '对话内容为空，请基于当前表格内容进行更新�
                      */
                     private static parseTableText(tableText: string, originalSheet: Sheet): string[][] {
                       try {
+                            // 新增：优先尝试解析 profile_prompts 格式的 JSON 数组
+    const trimmed = tableText.trim();
+    if (trimmed.startsWith('[')) {
+      try {
+        const jsonArray = JSON.parse(trimmed);
+        // 查找与当前表格名称匹配的对象
+        const tableObj = jsonArray.find((t: any) =>
+          t.tableName === originalSheet.name ||
+          t.tableName === originalSheet.name.replace(/表格$/, '') ||
+          originalSheet.name === (t.tableName + '表格')
+        );
+        if (tableObj && Array.isArray(tableObj.columns) && Array.isArray(tableObj.content)) {
+          // 返回二维数组，第一行为 columns，后续为 content
+          return [tableObj.columns, ...tableObj.content];
+        }
+      } catch (e) {
+        // 不是合法的JSON数组，继续走markdown表格逻辑
+      }
+    }
                         // 只保留markdown表格部分
                         let markdownTable = tableText;
                         

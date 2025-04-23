@@ -25,7 +25,16 @@ interface MemoOverlayProps {
   characterId?: string;
   conversationId?: string;
 }
-
+interface SimpleSheet {
+  uid: string;
+  name: string;
+  cells: any[];
+  characterId: string;
+  conversationId: string;
+  templateId: string; // Add the missing properties
+  createdAt: string;
+  updatedAt: string;
+}
 // Define tabs for the UI
 enum TabType {
   TEMPLATES = 'templates',
@@ -41,18 +50,21 @@ const MemoOverlay: React.FC<MemoOverlayProps> = ({ isVisible, onClose, character
   const [initialized, setInitialized] = useState<boolean>(false);
 
   // State for templates - update to have allTemplates separate from selectedTemplates
+  
   const [allTemplates, setAllTemplates] = useState<TableMemory.SheetTemplate[]>([]);
   const [selectedTemplateIds, setSelectedTemplateIds] = useState<string[]>([]);
 
-  // State for tables
-  const [tables, setTables] = useState<TableMemory.Sheet[]>([]);
+  // State for tables - using SimpleSheet type to fix TS error
+  const [tables, setTables] = useState<SimpleSheet[]>([]);
   const [selectedTableId, setSelectedTableId] = useState<string | null>(null);
-  const [tableData, setTableData] = useState<any[][]>([]);
   const [editingCell, setEditingCell] = useState<{ rowIndex: number; colIndex: number; value: string } | null>(null);
 
   // State for plugin settings
   const [pluginEnabled, setPluginEnabled] = useState<boolean>(false);
-  
+
+  // 新增：角色表格数据
+  const [characterTablesData, setCharacterTablesData] = useState<Awaited<ReturnType<typeof TableMemory.getCharacterTablesData>> | null>(null);
+
   // Reference to track if component is mounted
   const isMountedRef = useRef<boolean>(false);
 
@@ -83,10 +95,10 @@ const MemoOverlay: React.FC<MemoOverlayProps> = ({ isVisible, onClose, character
         defaultTemplates: true,
         enabled: true
       });
-      
+
       setPluginEnabled(isTableMemoryEnabled());
       setInitialized(success);
-      
+
       if (success) {
         console.log('[MemoOverlay] Table memory plugin initialized successfully');
         if (characterId) {
@@ -106,78 +118,65 @@ const MemoOverlay: React.FC<MemoOverlayProps> = ({ isVisible, onClose, character
   // Load all data (templates & tables) with option to force refresh
   const loadData = async (forceRefresh = false) => {
     if (!characterId) return;
-    
+
     if (forceRefresh || tables.length === 0) {
       setLoading(true);
     }
-    
+
     try {
       // Load ALL available templates from the API, not just selected ones
       const templateManager = TableMemory.API;
-      
+
       // Use getAllTemplates from the API instead of getSelectedTemplates
       try {
         const availableTemplates = await templateManager.getAllTemplates();
         console.log(`[MemoOverlay] Loaded ${availableTemplates.length} total templates`);
-        
+
         if (isMountedRef.current) {
           setAllTemplates(availableTemplates);
         }
       } catch (templateError) {
         console.error('[MemoOverlay] Failed to load all templates:', templateError);
       }
-      
+
       // Load selected template IDs (separate from all templates)
       const selectedIds = await TableMemory.getSelectedTemplateIds();
       console.log(`[MemoOverlay] Loaded ${selectedIds.length} selected template IDs`);
-      
+
       if (isMountedRef.current) {
         setSelectedTemplateIds(selectedIds);
       }
-      
-      // Load character tables with proper error handling
+
+      // 加载角色表格数据（通过getCharacterTablesData）
       try {
-        console.log(`[MemoOverlay] Loading tables for character ${characterId}, conversation ${conversationId || characterId}`);
-        
-        // Use the characterId as the conversationId fallback
-        // This is important for synchronization with TableMemory
         const effectiveConversationId = conversationId || characterId;
-        
-        // FIXED: Ensure consistent ID handling to match the way the API works
         const safeCharacterId = String(characterId);
         const safeConversationId = String(effectiveConversationId);
-        
-        console.log(`[MemoOverlay] Getting tables with safeCharacterId: "${safeCharacterId}", safeConversationId: "${safeConversationId}"`);
-        
-        // Direct call to prevent caching issues
-        const characterTables = await TableMemory.API.getCharacterSheets(
-          safeCharacterId, 
-          safeConversationId
+
+        // 用新API获取角色所有表格及内容
+        const tablesData = await TableMemory.getCharacterTablesData(
+          safeCharacterId,
+          safeConversationId          
         );
-        
-        console.log(`[MemoOverlay] Loaded ${characterTables.length} character tables for character ${characterId}`);
-        
-        // Log the table IDs for debugging
-        characterTables.forEach(table => {
-          console.log(`[MemoOverlay] Table: "${table.name}", ID: ${table.uid}, ConvID: ${table.conversationId}`);
-        });
-        
         if (isMountedRef.current) {
-          setTables(characterTables);
-          
-          // If there are tables but none selected, select the first one
-          if (characterTables.length > 0 && !selectedTableId) {
-            setSelectedTableId(characterTables[0].uid);
-            setTableData(tableToMatrix(characterTables[0]));
-          } else if (selectedTableId) {
-            // If a table was previously selected, try to find it in the new table list
-            const selectedTable = characterTables.find(table => table.uid === selectedTableId);
-            if (selectedTable) {
-              setTableData(tableToMatrix(selectedTable));
-            } else if (characterTables.length > 0) {
-              // If selected table no longer exists, select the first one
-              setSelectedTableId(characterTables[0].uid);
-              setTableData(tableToMatrix(characterTables[0]));
+          setCharacterTablesData(tablesData);
+          // 兼容旧逻辑：生成tables和默认选中表格
+          if (tablesData.success) {
+            setTables(
+              tablesData.tables.map(t => ({
+                uid: t.id,
+                name: t.name,
+                cells: [], // cells不再直接用，内容用tablesData.tables
+                characterId: safeCharacterId,
+                conversationId: safeConversationId,
+                templateId: '', // Add empty string for templateId (required by type)
+                createdAt: new Date().toISOString(), // Add a timestamp for createdAt
+                updatedAt: new Date().toISOString(), // Add a timestamp for updatedAt
+
+              }))
+            );
+            if (tablesData.tables.length > 0 && !selectedTableId) {
+              setSelectedTableId(tablesData.tables[0].id);
             }
           }
         }
@@ -195,42 +194,21 @@ const MemoOverlay: React.FC<MemoOverlayProps> = ({ isVisible, onClose, character
     }
   };
 
-  // Convert table to 2D array for easier display/editing
-  const tableToMatrix = useCallback((table: TableMemory.Sheet): string[][] => {
-    if (!table || !table.cells || table.cells.length === 0) return [];
-    
-    // Find max row and column indices
-    const maxRowIndex = Math.max(...table.cells.map(cell => cell.rowIndex));
-    const maxColIndex = Math.max(...table.cells.map(cell => cell.colIndex));
-    
-    // Create empty matrix
-    const matrix: string[][] = Array(maxRowIndex + 1)
-      .fill(null)
-      .map(() => Array(maxColIndex + 1).fill(''));
-    
-    // Fill with cell values
-    table.cells.forEach(cell => {
-      matrix[cell.rowIndex][cell.colIndex] = cell.value;
-    });
-    
-    return matrix;
-  }, []);
-
   // Handle template selection
   const handleTemplateSelection = async (templateId: string, selected: boolean) => {
     try {
       let newSelectedIds: string[];
-      
+
       if (selected) {
         newSelectedIds = [...selectedTemplateIds, templateId];
       } else {
         newSelectedIds = selectedTemplateIds.filter(id => id !== templateId);
       }
-      
+
       // Update selected templates
       await TableMemory.API.selectTemplates(newSelectedIds);
       setSelectedTemplateIds(newSelectedIds);
-      
+
       console.log(`[MemoOverlay] Template ${templateId} ${selected ? 'selected' : 'unselected'}`);
     } catch (error) {
       console.error('[MemoOverlay] Failed to update template selection:', error);
@@ -244,52 +222,46 @@ const MemoOverlay: React.FC<MemoOverlayProps> = ({ isVisible, onClose, character
       Alert.alert('Error', 'Character ID is missing');
       return;
     }
-    
+
     try {
       setLoading(true);
-      
+
       // Use the characterId as the conversationId fallback
       const effectiveConversationId = conversationId || characterId;
-      
+
       console.log(`[MemoOverlay] Creating tables from templates for character ${characterId}, conversation ${effectiveConversationId}`);
       console.log(`[MemoOverlay] Selected template IDs: ${selectedTemplateIds.join(', ')}`);
-      
+
       // Get the selected templates first to ensure they exist
       const selectedTemplates = await TableMemory.getSelectedTemplates();
-      const validTemplates = selectedTemplates.filter(template => 
+      const validTemplates = selectedTemplates.filter(template =>
         selectedTemplateIds.includes(template.uid)
       );
-      
+
       if (validTemplates.length === 0) {
         Alert.alert('No Templates Selected', 'Please select valid templates first.');
         setLoading(false);
         return;
       }
-      
+
       // Create tables using exported createSheetsFromTemplates method
       const createdTableIds = await TableMemory.createSheetsFromTemplates(
         validTemplates, // Pass the actual template objects instead of just IDs
         characterId,
         effectiveConversationId
       );
-      
+
       if (createdTableIds.length > 0) {
         console.log(`[MemoOverlay] Created ${createdTableIds.length} tables with IDs: ${createdTableIds.join(', ')}`);
-        
+
         // Reload data to display newly created tables
         await loadData(true);
-        
+
         // Set the first created table as selected
         if (createdTableIds[0]) {
           setSelectedTableId(createdTableIds[0]);
-          
-          // Load data for the selected table
-          const newTable = await TableMemory.API.getSheet(createdTableIds[0]);
-          if (newTable) {
-            setTableData(tableToMatrix(newTable));
-          }
         }
-        
+
         setActiveTab(TabType.TABLES);
       } else {
         Alert.alert('No Tables Created', 'No tables were created. Please select templates first.');
@@ -304,88 +276,37 @@ const MemoOverlay: React.FC<MemoOverlayProps> = ({ isVisible, onClose, character
     }
   };
 
-  // Select a table to view/edit with improved error handling
+  // 选中表格时，只需切换selectedTableId
   const handleSelectTable = (tableId: string) => {
-    console.log(`[MemoOverlay] Selecting table with ID: ${tableId}`);
-    
-    // First try to find the table in our current list
-    const selectedTable = tables.find(table => table.uid === tableId);
-    
-    if (selectedTable) {
-      console.log(`[MemoOverlay] Found table in current list: ${selectedTable.name}`);
-      setSelectedTableId(tableId);
-      setTableData(tableToMatrix(selectedTable));
-    } else {
-      console.log(`[MemoOverlay] Table with ID ${tableId} not found in current tables list, fetching directly`);
-      
-      // Directly fetch the table by ID
-      setLoading(true);
-      
-      TableMemory.API.getSheet(tableId)
-        .then(freshTable => {
-          if (freshTable) {
-            console.log(`[MemoOverlay] Successfully fetched table: ${freshTable.name}`);
-            setSelectedTableId(tableId);
-            setTableData(tableToMatrix(freshTable));
-            
-            // Also add this table to our tables list if it's not already there
-            setTables(prevTables => {
-              const exists = prevTables.some(t => t.uid === tableId);
-              return exists ? prevTables : [...prevTables, freshTable];
-            });
-          } else {
-            console.log(`[MemoOverlay] Could not find table with ID ${tableId}`);
-            Alert.alert('Error', `Table with ID ${tableId} not found`);
-          }
-        })
-        .catch(err => {
-          console.error(`[MemoOverlay] Error fetching table ${tableId}:`, err);
-          Alert.alert('Error', 'Failed to load the selected table');
-        })
-        .finally(() => {
-          if (isMountedRef.current) {
-            setLoading(false);
-          }
-        });
-    }
+    setSelectedTableId(tableId);
   };
 
   // Handle cell edit start
   const handleEditCell = (rowIndex: number, colIndex: number, value: string) => {
     // Don't allow editing the header row
     if (rowIndex === 0) return;
-    
+
     setEditingCell({ rowIndex, colIndex, value });
   };
 
   // Save cell edit
   const handleSaveCellEdit = async () => {
     if (!editingCell || !selectedTableId) return;
-    
+
     const { rowIndex, colIndex, value } = editingCell;
-    
+
     try {
       setLoading(true);
-      
+
       // Create row data object with just this cell's data
       const rowData: Record<number, string> = { [colIndex]: value };
-      
+
       // Update the row in the table
       await TableMemory.API.updateRow(selectedTableId, rowIndex, rowData);
-      
-      // Update local data
-      const newTableData = [...tableData];
-      newTableData[rowIndex][colIndex] = value;
-      
-      if (isMountedRef.current) {
-        setTableData(newTableData);
-        setEditingCell(null);
-      }
-      
-      console.log(`[MemoOverlay] Updated cell at row ${rowIndex}, col ${colIndex}`);
-      
-      // Refresh the data after updating to ensure consistency
+
+      // 不再直接setTableData，直接刷新
       setTimeout(() => loadData(), 500);
+      setEditingCell(null);
     } catch (error) {
       console.error('[MemoOverlay] Failed to update cell:', error);
       Alert.alert('Error', 'Failed to update table cell');
@@ -404,26 +325,25 @@ const MemoOverlay: React.FC<MemoOverlayProps> = ({ isVisible, onClose, character
   // Add a new row to the table
   const handleAddRow = async () => {
     if (!selectedTableId) return;
-    
+
     try {
       setLoading(true);
-      
-      // Create an empty row data object
+
+      // 获取当前表格的列数
+      const table = characterTablesData?.tables.find(t => t.id === selectedTableId);
+      if (!table) throw new Error('Table not found');
+      const colCount = table.headers.length;
+
+      // 构造空行
       const rowData: Record<number, string> = {};
-      
-      // Add empty values for each column
-      if (tableData[0]) {
-        tableData[0].forEach((_, colIndex) => {
-          rowData[colIndex] = '';
-        });
+      for (let i = 0; i < colCount; i++) {
+        rowData[i] = '';
       }
-      
-      // Insert the row
-      const newRowIndex = await TableMemory.API.insertRow(selectedTableId, rowData);
-      
-      console.log(`[MemoOverlay] Added row at index ${newRowIndex}`);
-      
-      // Reload the table data to ensure consistency
+
+      // 插入行
+      await TableMemory.insertRow(selectedTableId, rowData);
+
+      // 刷新
       await loadData(true);
     } catch (error) {
       console.error('[MemoOverlay] Failed to add row:', error);
@@ -437,17 +357,12 @@ const MemoOverlay: React.FC<MemoOverlayProps> = ({ isVisible, onClose, character
 
   // Delete a row from the table
   const handleDeleteRow = async (rowIndex: number) => {
-    // Don't allow deleting the header row
+    // 不允许删除表头
     if (rowIndex === 0 || !selectedTableId) return;
-    
+
     try {
       setLoading(true);
-      
-      await TableMemory.API.deleteRow(selectedTableId, rowIndex);
-      
-      console.log(`[MemoOverlay] Deleted row at index ${rowIndex}`);
-      
-      // Reload the table data to ensure consistency
+      await TableMemory.deleteRow(selectedTableId, rowIndex);
       await loadData(true);
     } catch (error) {
       console.error('[MemoOverlay] Failed to delete row:', error);
@@ -462,7 +377,6 @@ const MemoOverlay: React.FC<MemoOverlayProps> = ({ isVisible, onClose, character
   // Delete an entire table
   const handleDeleteTable = async (tableId: string) => {
     if (!tableId) return;
-    
     Alert.alert(
       'Delete Table',
       'Are you sure you want to delete this table? This action cannot be undone.',
@@ -474,24 +388,14 @@ const MemoOverlay: React.FC<MemoOverlayProps> = ({ isVisible, onClose, character
           onPress: async () => {
             try {
               setLoading(true);
-              // Use exported deleteSheet method to delete table
               const success = await TableMemory.deleteSheet(tableId);
               if (success) {
-                console.log(`[MemoOverlay] Successfully deleted table ${tableId}`);
-                
-                // Remove from tables list
                 setTables(prevTables => prevTables.filter(table => table.uid !== tableId));
-                
-                // Clear selection if it was selected
                 if (selectedTableId === tableId) {
                   setSelectedTableId(null);
-                  setTableData([]);
                 }
-                
-                // Refresh the data
                 setTimeout(() => loadData(), 500);
               } else {
-                console.log(`[MemoOverlay] Failed to delete table ${tableId}`);
                 Alert.alert('Error', 'Failed to delete table');
               }
             } catch (error) {
@@ -529,32 +433,31 @@ const MemoOverlay: React.FC<MemoOverlayProps> = ({ isVisible, onClose, character
   // Rebuild or repair table data
   const handleRebuildTable = async (tableId: string, promptType: string) => {
     if (!characterId || !tableId) return;
-    
+
     try {
       setLoading(true);
-      
+
       // Get all chat messages for this character
       // Note: This is placeholder code - you'll need to integrate with your chat history
       const chatContent = "";
-      
+
       // Rebuild the table
       const success = await TableMemory.API.rebuildSheet(
         tableId,
         chatContent,
         promptType as any
       );
-      
+
+      // Show appropriate message based on the operation result
       if (success) {
-        // Reload tables with fresh data
-        await loadData(true);
-        
-        Alert.alert('Success', 'Table rebuilt successfully');
+        Alert.alert('成功', '表格更新完成');
       } else {
-        Alert.alert('Error', 'Failed to rebuild table');
+        // This isn't an error, it just means no changes were needed
+        Alert.alert('信息', '表格无需更新或已是最新状态');
       }
     } catch (error) {
       console.error('[MemoOverlay] Failed to rebuild table:', error);
-      Alert.alert('Error', 'Failed to rebuild table');
+      Alert.alert('错误', '更新表格时发生错误，请重试');
     } finally {
       if (isMountedRef.current) {
         setLoading(false);
@@ -571,7 +474,7 @@ const MemoOverlay: React.FC<MemoOverlayProps> = ({ isVisible, onClose, character
           <Text style={styles.selectedCount}> • {selectedTemplateIds.length} 已选</Text>
         )}
       </Text>
-      
+
       {/* Multi-select helper text */}
       <View style={styles.helperTextContainer}>
         <Ionicons name="information-circle-outline" size={16} color="#ff9f1c" />
@@ -579,7 +482,7 @@ const MemoOverlay: React.FC<MemoOverlayProps> = ({ isVisible, onClose, character
           您可以选择多个模板以一次创建多个表格. 这些表格会由AI自动填充,作为长期记忆.
         </Text>
       </View>
-      
+
       <FlatList
         data={allTemplates}
         keyExtractor={item => item.uid}
@@ -600,7 +503,7 @@ const MemoOverlay: React.FC<MemoOverlayProps> = ({ isVisible, onClose, character
               <Text style={styles.templateName}>{item.name}</Text>
             </View>
             <Text style={styles.templateDesc}>{item.note}</Text>
-            
+
             <View style={styles.templateMetadata}>
               <Text style={styles.templateMetaText}>类型: <Text style={styles.metaValue}>{item.type}</Text></Text>
               <Text style={styles.templateMetaText}>列数: <Text style={styles.metaValue}>{item.columns.length}</Text></Text>
@@ -622,11 +525,11 @@ const MemoOverlay: React.FC<MemoOverlayProps> = ({ isVisible, onClose, character
           </View>
         )}
       />
-      
+
       <View style={styles.tabActions}>
         <TouchableOpacity
           style={[
-            styles.actionButton, 
+            styles.actionButton,
             styles.primaryButton,
             selectedTemplateIds.length === 0 && styles.disabledButton
           ]}
@@ -638,7 +541,7 @@ const MemoOverlay: React.FC<MemoOverlayProps> = ({ isVisible, onClose, character
             创建 {selectedTemplateIds.length} 个表格
           </Text>
         </TouchableOpacity>
-        
+
         {selectedTemplateIds.length > 0 && (
           <TouchableOpacity
             style={[styles.actionButton, styles.secondaryButton, styles.clearButton]}
@@ -654,30 +557,30 @@ const MemoOverlay: React.FC<MemoOverlayProps> = ({ isVisible, onClose, character
     </View>
   );
 
-  // Render the tables tab with improved tag-based table selection and full-width table
+  // Render the tables tab with tag-based table selection and full-width table
   const renderTablesTab = () => (
     <View style={styles.tabContent}>
       {/* 表格选择Tag */}
       <View style={styles.tableTagsContainer}>
-        {tables.length > 0 ? (
-          tables.map((table) => (
+        {characterTablesData?.success && characterTablesData.tables.length > 0 ? (
+          characterTablesData.tables.map((table) => (
             <TouchableOpacity
-              key={table.uid}
+              key={table.id}
               style={[
                 styles.tableTag,
-                selectedTableId === table.uid && styles.tableTagSelected
+                selectedTableId === table.id && styles.tableTagSelected
               ]}
-              onPress={() => handleSelectTable(table.uid)}
+              onPress={() => handleSelectTable(table.id)}
             >
               <Text style={[
                 styles.tableTagText,
-                selectedTableId === table.uid && styles.tableTagTextSelected
+                selectedTableId === table.id && styles.tableTagTextSelected
               ]}>
                 {table.name}
               </Text>
               <TouchableOpacity
                 style={styles.tableTagDelete}
-                onPress={() => handleDeleteTable(table.uid)}
+                onPress={() => handleDeleteTable(table.id)}
               >
                 <Ionicons name="close-circle" size={16} color="#ff6b6b" />
               </TouchableOpacity>
@@ -702,63 +605,76 @@ const MemoOverlay: React.FC<MemoOverlayProps> = ({ isVisible, onClose, character
       <View style={styles.tableDataContainerFull}>
         <View style={styles.tablesHeader}>
           <Text style={styles.tabTitle}>
-            {selectedTableId ? tables.find(t => t.uid === selectedTableId)?.name || '表格数据' : '请选择表格'}
+            {selectedTableId
+              ? characterTablesData?.tables.find(t => t.id === selectedTableId)?.name || '表格数据'
+              : '请选择表格'}
           </Text>
           {selectedTableId && (
             <Text style={styles.tableIdText}>{selectedTableId}</Text>
           )}
         </View>
-        {selectedTableId && tableData.length > 0 ? (
-          <>
-            <ScrollView horizontal>
-              <ScrollView>
-                <View style={styles.tableGrid}>
-                  {tableData.map((row, rowIndex) => (
-                    <View key={`row-${rowIndex}`} style={styles.tableRow}>
-                      {row.map((cell, colIndex) => (
-                        <TouchableOpacity
-                          key={`cell-${rowIndex}-${colIndex}`}
-                          style={[
-                            styles.tableCell,
-                            rowIndex === 0 && styles.tableHeaderCell,
-                            editingCell?.rowIndex === rowIndex && editingCell?.colIndex === colIndex && styles.tableCellEditing
-                          ]}
-                          onPress={() => rowIndex > 0 && handleEditCell(rowIndex, colIndex, cell)}
-                          disabled={rowIndex === 0}
-                        >
-                          <Text
+        {selectedTableId && characterTablesData?.success ? (() => {
+          const table = characterTablesData.tables.find(t => t.id === selectedTableId);
+          if (!table) {
+            return (
+              <View style={styles.emptyState}>
+                <Text style={styles.emptyText}>该表格暂无数据</Text>
+              </View>
+            );
+          }
+          const matrix = [table.headers, ...table.rows];
+          return (
+            <>
+              <ScrollView horizontal>
+                <ScrollView>
+                  <View style={styles.tableGrid}>
+                    {matrix.map((row, rowIndex) => (
+                      <View key={`row-${rowIndex}`} style={styles.tableRow}>
+                        {row.map((cell, colIndex) => (
+                          <TouchableOpacity
+                            key={`cell-${rowIndex}-${colIndex}`}
                             style={[
-                              styles.tableCellText,
-                              rowIndex === 0 && styles.tableHeaderCellText
+                              styles.tableCell,
+                              rowIndex === 0 && styles.tableHeaderCell,
+                              editingCell?.rowIndex === rowIndex && editingCell?.colIndex === colIndex && styles.tableCellEditing
                             ]}
-                            numberOfLines={2}
+                            onPress={() => rowIndex > 0 && handleEditCell(rowIndex, colIndex, cell)}
+                            disabled={rowIndex === 0}
                           >
-                            {cell}
-                          </Text>
-                        </TouchableOpacity>
-                      ))}
-                      {rowIndex > 0 && (
-                        <TouchableOpacity
-                          style={styles.rowDeleteButton}
-                          onPress={() => handleDeleteRow(rowIndex)}
-                        >
-                          <Ionicons name="close-circle" size={18} color="#ff6b6b" />
-                        </TouchableOpacity>
-                      )}
-                    </View>
-                  ))}
-                </View>
+                            <Text
+                              style={[
+                                styles.tableCellText,
+                                rowIndex === 0 && styles.tableHeaderCellText
+                              ]}
+                              numberOfLines={2}
+                            >
+                              {cell}
+                            </Text>
+                          </TouchableOpacity>
+                        ))}
+                        {rowIndex > 0 && (
+                          <TouchableOpacity
+                            style={styles.rowDeleteButton}
+                            onPress={() => handleDeleteRow(rowIndex)}
+                          >
+                            <Ionicons name="close-circle" size={18} color="#ff6b6b" />
+                          </TouchableOpacity>
+                        )}
+                      </View>
+                    ))}
+                  </View>
+                </ScrollView>
               </ScrollView>
-            </ScrollView>
-            <TouchableOpacity
-              style={[styles.actionButton, styles.addRowButton]}
-              onPress={handleAddRow}
-            >
-              <Ionicons name="add" size={20} color="#fff" />
-              <Text style={styles.actionButtonText}>添加行</Text>
-            </TouchableOpacity>
-          </>
-        ) : selectedTableId ? (
+              <TouchableOpacity
+                style={[styles.actionButton, styles.addRowButton]}
+                onPress={handleAddRow}
+              >
+                <Ionicons name="add" size={20} color="#fff" />
+                <Text style={styles.actionButtonText}>添加行</Text>
+              </TouchableOpacity>
+            </>
+          );
+        })() : selectedTableId ? (
           <View style={styles.emptyState}>
             <Text style={styles.emptyText}>该表格暂无数据</Text>
           </View>
@@ -775,7 +691,7 @@ const MemoOverlay: React.FC<MemoOverlayProps> = ({ isVisible, onClose, character
   const renderSettingsTab = () => (
     <View style={styles.tabContent}>
       <Text style={styles.tabTitle}>记忆增强设置</Text>
-      
+
       <View style={styles.settingItem}>
         <View style={styles.settingLabel}>
           <Text style={styles.settingTitle}>启用表格记忆</Text>
@@ -790,19 +706,19 @@ const MemoOverlay: React.FC<MemoOverlayProps> = ({ isVisible, onClose, character
           ]}
           onPress={() => handleTogglePluginEnabled(!pluginEnabled)}
         >
-          <View 
+          <View
             style={[
               styles.toggleThumb,
               pluginEnabled ? styles.toggleThumbActive : styles.toggleThumbInactive
-            ]} 
+            ]}
           />
         </TouchableOpacity>
       </View>
-      
+
       {selectedTableId && (
         <>
           <Text style={styles.sectionTitle}>表格维护</Text>
-          
+
           <TouchableOpacity
             style={styles.maintenanceButton}
             onPress={() => handleRebuildTable(selectedTableId, 'rebuild_base')}
@@ -810,7 +726,7 @@ const MemoOverlay: React.FC<MemoOverlayProps> = ({ isVisible, onClose, character
             <MaterialIcons name="build" size={20} color="#ccc" />
             <Text style={styles.maintenanceButtonText}>重建表格</Text>
           </TouchableOpacity>
-          
+
           <TouchableOpacity
             style={styles.maintenanceButton}
             onPress={() => handleRebuildTable(selectedTableId, 'rebuild_fix_all')}
@@ -818,7 +734,7 @@ const MemoOverlay: React.FC<MemoOverlayProps> = ({ isVisible, onClose, character
             <MaterialIcons name="healing" size={20} color="#ccc" />
             <Text style={styles.maintenanceButtonText}>修复表格数据</Text>
           </TouchableOpacity>
-          
+
           <TouchableOpacity
             style={styles.maintenanceButton}
             onPress={() => handleRebuildTable(selectedTableId, 'rebuild_simplify_history')}
@@ -1050,7 +966,7 @@ const styles = StyleSheet.create({
     borderBottomColor: 'rgba(255, 255, 255, 0.1)',
     paddingBottom: 6,
   },
-  
+
   // Template styles
   templateItem: {
     backgroundColor: 'rgba(60, 60, 60, 0.6)',
@@ -1103,7 +1019,7 @@ const styles = StyleSheet.create({
     color: '#ff9f1c',
     fontWeight: 'bold',
   },
-  
+
   // Tables styles
   tablesContainer: {
     flex: 1,
@@ -1187,7 +1103,7 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     alignItems: 'center',
   },
-  
+
   // Cell edit modal
   modalOverlay: {
     flex: 1,
@@ -1239,7 +1155,7 @@ const styles = StyleSheet.create({
     color: '#fff',
     fontWeight: 'bold',
   },
-  
+
   // Actions
   tabActions: {
     marginTop: 16,
@@ -1266,7 +1182,7 @@ const styles = StyleSheet.create({
     fontWeight: 'bold',
     marginLeft: 8,
   },
-  
+
   // Settings
   settingItem: {
     flexDirection: 'row',
@@ -1315,7 +1231,7 @@ const styles = StyleSheet.create({
     backgroundColor: '#ccc',
     alignSelf: 'flex-start',
   },
-  
+
   // Maintenance
   maintenanceButton: {
     flexDirection: 'row',
@@ -1330,7 +1246,7 @@ const styles = StyleSheet.create({
     fontSize: 14,
     marginLeft: 10,
   },
-  
+
   // Empty states
   emptyState: {
     padding: 20,

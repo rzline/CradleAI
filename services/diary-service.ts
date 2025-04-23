@@ -111,6 +111,27 @@ export class DiaryService {
 当前日期: ${new Date().toLocaleDateString('zh-CN')}
 当前时间: ${new Date().toLocaleTimeString('zh-CN')}`;
 
+      // 获取前一天的日记内容
+      let previousDiaryContent = '';
+      try {
+        const allEntries = await this.getDiaryEntriesByCharacterId(character.id);
+        // 找到前一天的日记（不是今天的最新一条）
+        const today = new Date();
+        today.setHours(0, 0, 0, 0);
+        const prevEntry = allEntries
+          .filter(entry => {
+            const entryDate = new Date(entry.createdAt);
+            entryDate.setHours(0, 0, 0, 0);
+            return entryDate.getTime() < today.getTime();
+          })
+          .sort((a, b) => b.createdAt - a.createdAt)[0];
+        if (prevEntry) {
+          previousDiaryContent = prevEntry.content;
+        }
+      } catch (e) {
+        // 忽略错误
+      }
+
       // Build the prompt
       const prompt = `你是一位名为${character.name}的角色，需要写一篇日记来反思今天的经历。
 
@@ -126,6 +147,7 @@ export class DiaryService {
 4. 日记内容应约${settings.wordCount || 300}字左右
 5. 不要机械地重复聊天记录，而是应该深入思考并展现${character.name}的内心独白
 6. 日记内容应该保持一致的语气和风格，与角色设定相符
+7. 请参考前一天的日记内容，结合今天的经历进行反思${previousDiaryContent ? '（前一天的日记内容已提供）' : '（如有）'}
 
 角色设定:
 ${characterInfo}
@@ -133,7 +155,10 @@ ${characterInfo}
 世界信息:
 ${worldInfo}
 
-${circleMemoryContext ? `朋友圈记忆:
+${previousDiaryContent ? `前一天的日记内容:
+${previousDiaryContent}
+
+` : ''}${circleMemoryContext ? `朋友圈记忆:
 ${circleMemoryContext}
 
 ` : ''}最近的聊天记录:

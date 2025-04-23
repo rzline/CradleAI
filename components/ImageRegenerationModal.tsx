@@ -33,7 +33,14 @@ import NovelAIService, {
 import { useUser } from '@/constants/UserContext';
 import { BlurView } from 'expo-blur';
 import { useCharacters } from '@/constants/CharactersContext';
+import AsyncStorage from '@react-native-async-storage/async-storage';
+import artistData from '@/app/data/v4-artist.json';
+import characterData from '@/app/data/character_data.json';
 
+// 新增：Roll按钮相关辅助函数
+const ROLL_TAG_CATEGORIES = [
+  "姿势&状态", "特殊特征", "环境", "风格", "身份", "头发&发饰", "五官&表情", "眼睛", "身体", "服装", "袜子&腿饰", "鞋", "装饰", "动作"
+];
 const IMAGE_SERVICE_BASE_URL = 'https://image.cradleintro.top';
 
 const DEFAULT_GENERATION_SETTINGS = {
@@ -83,7 +90,7 @@ interface ImageRegenerationModalProps {
   visible: boolean;
   character: CradleCharacter;
   onClose: () => void;
-  onSuccess: (imageData: CharacterImage) => void;
+  onSuccess: (imageData: CharacterImage, settingsState?: any, usedSeed?: string | number) => void;
   existingImageConfig?: {
     positiveTags: string[];
     negativeTags: string[];
@@ -91,17 +98,26 @@ interface ImageRegenerationModalProps {
     customPrompt: string;
     useCustomPrompt: boolean;
     characterTags?: string[];
-    seed?: number | string; // 新增
-    novelaiSettings?: Partial<typeof DEFAULT_NOVELAI_SETTINGS>; // 新增
-    animagine4Settings?: Partial<typeof DEFAULT_ANIMAGINE4_SETTINGS>; // 新增
+    seed?: number | string;
+    novelaiSettings?: Partial<typeof DEFAULT_NOVELAI_SETTINGS>;
+    animagine4Settings?: Partial<typeof DEFAULT_ANIMAGINE4_SETTINGS>;
   };
-  onSavePreviewImage?: (imageUrl: string) => void; // 新增的保存预览图片的回调
+  onSavePreviewImage?: (imageUrl: string) => void;
+  initialSettingsState?: {
+    imageProvider: 'animagine4' | 'novelai';
+    sizePresetId: string;
+    novelaiSettings: any;
+    animagine4Settings: any;
+  };
+  initialSeed?: string | number;
 }
 
 interface TagItem {
   tag: string;
   type: 'positive' | 'negative';
 }
+
+const SETTINGS_STORAGE_KEY = 'ImageRegenerationModal_lastSettings';
 
 const getGenderTagsFromTagData = () => {
   const genderCategory = tagData.general_categories.find(
@@ -150,7 +166,10 @@ const ImageRegenerationModal: React.FC<ImageRegenerationModalProps> = ({
   character,
   onClose,
   onSuccess,
-  existingImageConfig
+  existingImageConfig,
+  onSavePreviewImage,
+  initialSettingsState,
+  initialSeed,
 }) => {
   const { user } = useUser();
   const { setCharacterAvatar, setCharacterBackgroundImage } = useCharacters();
@@ -159,7 +178,7 @@ const ImageRegenerationModal: React.FC<ImageRegenerationModalProps> = ({
   const [positiveTags, setPositiveTags] = useState<string[]>([]);
   const [negativeTags, setNegativeTags] = useState<string[]>([]);
   const [tagSelectorVisible, setTagSelectorVisible] = useState(false);
-  const [replaceBackground, setReplaceBackground] = useState(true);
+  const [replaceBackground, setReplaceBackground] = useState(false);
   const [replaceAvatar, setReplaceAvatar] = useState(false);
   const [generatedImageUrl, setGeneratedImageUrl] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -174,6 +193,7 @@ const ImageRegenerationModal: React.FC<ImageRegenerationModalProps> = ({
   const [artistReferenceSelectorVisible, setArtistReferenceSelectorVisible] = useState(false);
   const [generationSettingsVisible, setGenerationSettingsVisible] = useState(false);
   const [generationSettings, setGenerationSettings] = useState({ ...DEFAULT_GENERATION_SETTINGS });
+  const [settingsLoaded, setSettingsLoaded] = useState(false);
   
   const [imageProvider, setImageProvider] = useState<'animagine4' | 'novelai'>('animagine4');
   const [sizePresetId, setSizePresetId] = useState<string>('portrait');
@@ -192,7 +212,55 @@ const ImageRegenerationModal: React.FC<ImageRegenerationModalProps> = ({
   const [showCharacterPositionControls, setShowCharacterPositionControls] = useState(false);
   const [characterTagSelectorForPromptIndex, setCharacterTagSelectorForPromptIndex] = useState<number | null>(null);
   const [generatedSeed, setGeneratedSeed] = useState<number | null>(null);
-  
+  // 新增：Roll按钮处理函数
+  const handleRollTags = () => {
+    // 1. 随机genderTag
+    let genderTag = '';
+    const genderList = Math.random() < 0.5 ? maleGenderTags : femaleGenderTags;
+    if (genderList.length > 0) {
+      genderTag = genderList[Math.floor(Math.random() * genderList.length)];
+    }
+
+    // 2. 随机characterTag
+    let randomCharacterTag = '';
+    if (characterData && Array.isArray(characterData) && characterData.length > 0) {
+      const char = characterData[Math.floor(Math.random() * characterData.length)];
+      // 格式同CharacterTagSelector
+      randomCharacterTag = [char.english_name, ...(char.works || [])].join(',');
+    }
+
+    // 3. 随机artistTag
+    let randomArtistPrompt = '';
+    if (artistData && Array.isArray(artistData) && artistData.length > 0) {
+      const artist = artistData[Math.floor(Math.random() * artistData.length)];
+      randomArtistPrompt = artist.artist_prompt;
+    }
+
+    // 4. 指定分类中随机tag
+    let randomCategoryTag = '';
+    if (tagData && Array.isArray(tagData.general_categories)) {
+      // 找到所有目标分类下的所有tag
+      let allTargetTags: string[] = [];
+      tagData.general_categories.forEach((cat: any) => {
+        if (ROLL_TAG_CATEGORIES.includes(cat.name) && cat.sub_categories) {
+          Object.values(cat.sub_categories).forEach((tags: any) => {
+            if (Array.isArray(tags)) {
+              allTargetTags.push(...tags);
+            }
+          });
+        }
+      });
+      if (allTargetTags.length > 0) {
+        randomCategoryTag = allTargetTags[Math.floor(Math.random() * allTargetTags.length)];
+      }
+    }
+
+    // 更新state
+    setPositiveTags(genderTag ? [genderTag, randomCategoryTag].filter(Boolean) : [randomCategoryTag].filter(Boolean));
+    setCharacterTags(randomCharacterTag ? [randomCharacterTag] : []);
+    setSelectedArtistPrompt(randomArtistPrompt || null);
+    setUseExistingArtistPrompt(true);
+  };  
   // NEW: Add state for character tag selector with prompt index
   const [characterTagSelectorForCharacterPrompt, setCharacterTagSelectorForCharacterPrompt] = useState<number | null>(null);
 
@@ -315,6 +383,74 @@ const ImageRegenerationModal: React.FC<ImageRegenerationModalProps> = ({
   }, []);
 
   useEffect(() => {
+    if (visible && !settingsLoaded) {
+      (async () => {
+        let restored = false;
+        if (initialSettingsState) {
+          setImageProvider(initialSettingsState.imageProvider || 'animagine4');
+          setSizePresetId(initialSettingsState.sizePresetId || 'portrait');
+          setNovelaiSettings({ ...DEFAULT_NOVELAI_SETTINGS, ...initialSettingsState.novelaiSettings });
+          setAnimagine4Settings({ ...DEFAULT_ANIMAGINE4_SETTINGS, ...initialSettingsState.animagine4Settings });
+          restored = true;
+        } else {
+          try {
+            const json = await AsyncStorage.getItem(SETTINGS_STORAGE_KEY);
+            if (json) {
+              const last = JSON.parse(json);
+              setImageProvider(last.imageProvider || 'animagine4');
+              setSizePresetId(last.sizePresetId || 'portrait');
+              setNovelaiSettings({ ...DEFAULT_NOVELAI_SETTINGS, ...last.novelaiSettings });
+              setAnimagine4Settings({ ...DEFAULT_ANIMAGINE4_SETTINGS, ...last.animagine4Settings });
+              restored = true;
+            }
+          } catch {}
+        }
+        setSettingsLoaded(true);
+      })();
+    }
+  }, [visible]);
+
+  useEffect(() => {
+    if (!visible && settingsLoaded) {
+      const save = async () => {
+        await AsyncStorage.setItem(
+          SETTINGS_STORAGE_KEY,
+          JSON.stringify({
+            imageProvider,
+            sizePresetId,
+            novelaiSettings,
+            animagine4Settings,
+          })
+        );
+      };
+      save();
+    }
+  }, [visible === false]);
+
+  useEffect(() => {
+    if (settingsLoaded) {
+      AsyncStorage.setItem(
+        SETTINGS_STORAGE_KEY,
+        JSON.stringify({
+          imageProvider,
+          sizePresetId,
+          novelaiSettings,
+          animagine4Settings,
+        })
+      );
+    }
+  }, [imageProvider, sizePresetId, JSON.stringify(novelaiSettings), JSON.stringify(animagine4Settings)]);
+
+  useEffect(() => {
+    if (visible) {
+      if (typeof initialSeed !== 'undefined' && initialSeed !== null) {
+        setNovelaiSettings(prev => ({ ...prev, seed: String(initialSeed) }));
+        setGeneratedSeed(Number(initialSeed));
+      }
+    }
+  }, [visible, initialSeed]);
+
+  useEffect(() => {
     if (visible) {
       if (existingImageConfig) {
         setPositiveTags(existingImageConfig.positiveTags || []);
@@ -323,7 +459,6 @@ const ImageRegenerationModal: React.FC<ImageRegenerationModalProps> = ({
         setUseExistingArtistPrompt(!!existingImageConfig.artistPrompt);
         setCustomPrompt(existingImageConfig.customPrompt || '');
         setCharacterTags(existingImageConfig.characterTags || []);
-        // 新增：恢复seed和生成设置
         if (existingImageConfig.seed !== undefined && existingImageConfig.seed !== null) {
           setNovelaiSettings(prev => ({ ...prev, seed: String(existingImageConfig.seed) }));
           setGeneratedSeed(Number(existingImageConfig.seed));
@@ -361,7 +496,7 @@ const ImageRegenerationModal: React.FC<ImageRegenerationModalProps> = ({
       setError(null);
       setIsLoading(false);
       setProgressMessage(null);
-      setReplaceBackground(true);
+      setReplaceBackground(false);
       setReplaceAvatar(false);
       if (!existingImageConfig) {
         setCustomPrompt('');
@@ -371,7 +506,6 @@ const ImageRegenerationModal: React.FC<ImageRegenerationModalProps> = ({
     }
   }, [visible, character, existingImageConfig]);
 
-  // Listen for app state changes to resume polling if needed
   useEffect(() => {
     const handleAppStateChange = (nextAppState: string) => {
       if (
@@ -381,7 +515,6 @@ const ImageRegenerationModal: React.FC<ImageRegenerationModalProps> = ({
         pollingTaskIdRef.current &&
         pollingCharacterIdRef.current
       ) {
-        // Resume polling if modal is visible, loading, and we have a taskId
         checkImageGenerationStatus(pollingCharacterIdRef.current, pollingTaskIdRef.current);
       }
     };
@@ -391,24 +524,21 @@ const ImageRegenerationModal: React.FC<ImageRegenerationModalProps> = ({
     };
   }, [visible, isLoading]);
 
-  // Handle adding a new character prompt
   const handleAddCharacterPrompt = () => {
     setCharacterPrompts(prev => [
       ...prev, 
       {
-        prompt: '',  // Empty string by default
+        prompt: '',  
         position: { x: 0.5, y: 0.5 },
         color: DEFAULT_COLORS[prev.length % DEFAULT_COLORS.length]
       }
     ]);
   };
 
-  // Handle removing a character prompt
   const handleRemoveCharacterPrompt = (index: number) => {
     setCharacterPrompts(prev => prev.filter((_, i) => i !== index));
   };
 
-  // Handle updating a character prompt
   const handleUpdateCharacterPrompt = (index: number, prompt: string) => {
     setCharacterPrompts(prev => 
       prev.map((item, i) => 
@@ -417,7 +547,6 @@ const ImageRegenerationModal: React.FC<ImageRegenerationModalProps> = ({
     );
   };
 
-  // Handle position change from CharacterPosition component
   const handlePositionChange = (index: number, position: { x: number, y: number }) => {
     setCharacterPrompts(prev => 
       prev.map((item, i) => 
@@ -426,14 +555,11 @@ const ImageRegenerationModal: React.FC<ImageRegenerationModalProps> = ({
     );
   };
 
-  // Convert character prompts to the format required by NovelAIService
   const getCharacterPromptsData = (): CharacterPromptData[] => {
     let prompts: CharacterPrompt[] = [...characterPrompts];
-    // 针对NovelAI，如果characterTags有内容，则追加一个prompt
     if (
       imageProvider === 'novelai' &&
       characterTags.length > 0 &&
-      // 避免重复添加
       !prompts.some(
         p =>
           p.prompt === characterTags.join(', ') &&
@@ -446,7 +572,7 @@ const ImageRegenerationModal: React.FC<ImageRegenerationModalProps> = ({
         {
           prompt: characterTags.join(', '),
           position: { x: 0, y: 0 },
-          color: '#70A1FF', // 可选：给角色标签一个特殊颜色
+          color: '#70A1FF', 
         },
       ];
     }
@@ -456,9 +582,7 @@ const ImageRegenerationModal: React.FC<ImageRegenerationModalProps> = ({
     }));
   };
 
-  // Handle seed input changes
   const handleSeedChange = (text: string) => {
-    // Allow empty string (for random seed) or valid numbers
     if (text === '' || (!isNaN(Number(text)) && Number(text) >= 0)) {
       setNovelaiSettings(prev => ({ ...prev, seed: text }));
     }
@@ -480,7 +604,6 @@ const ImageRegenerationModal: React.FC<ImageRegenerationModalProps> = ({
     }
   };
 
-  // NEW: Handle adding a character tag to specific character prompt
   const handleAddCharacterPromptTag = (tagString: string) => {
     if (characterTagSelectorForCharacterPrompt !== null) {
       const index = characterTagSelectorForCharacterPrompt;
@@ -524,7 +647,6 @@ const ImageRegenerationModal: React.FC<ImageRegenerationModalProps> = ({
 
     const ratingTag = imageProvider === 'animagine4' ? "safe" : null;
     
-    // Clean artist tag for Animagine4 or NovelAI
     const artistTag = selectedArtistPrompt && useExistingArtistPrompt
       ? cleanArtistTag(selectedArtistPrompt, imageProvider)
       : null;
@@ -630,7 +752,6 @@ const ImageRegenerationModal: React.FC<ImageRegenerationModalProps> = ({
       
       setProgressMessage('NovelAI正在生成图像...');
       
-      // Get seed value (use random if empty)
       const seedValue = novelaiSettings.seed ? parseInt(novelaiSettings.seed) : Math.floor(Math.random() * 2 ** 32);
       console.log(`[图片重生成] 使用seed值: ${seedValue}`);
       
@@ -668,16 +789,14 @@ const ImageRegenerationModal: React.FC<ImageRegenerationModalProps> = ({
       
       if (result && result.imageUrls && result.imageUrls.length > 0) {
         console.log(`[图片重生成] NovelAI生成成功，获取到 ${result.imageUrls.length} 张图像`);
-        setGeneratedSeed(result.seed); // Store the used seed value
+        setGeneratedSeed(result.seed); 
         
-        // Check if the image is already a local file (indicated by the #localNovelAI flag)
         const imageUrl = result.imageUrls[0];
         const isLocalNovelAIFile = imageUrl.includes('#localNovelAI');
         const cleanImageUrl = isLocalNovelAIFile ? imageUrl.split('#localNovelAI')[0] : imageUrl;
         
         console.log(`[图片重生成] 图像URL: ${cleanImageUrl}, 是本地NovelAI文件: ${isLocalNovelAIFile}`);
         
-        // Set the preview image
         setPreviewImageUrl(cleanImageUrl);
         
         const completedImage: CharacterImage = {
@@ -691,11 +810,10 @@ const ImageRegenerationModal: React.FC<ImageRegenerationModalProps> = ({
           },
           isFavorite: false,
           generationStatus: 'success',
-          // When it's a local file from NovelAI, set the localUri directly to avoid download
           localUri: isLocalNovelAIFile ? cleanImageUrl : undefined,
           setAsBackground: replaceBackground,
           isAvatar: replaceAvatar,
-          seed: result.seed, // Save the seed value
+          seed: result.seed, 
           generationConfig: {
             positiveTags: positiveTags,
             negativeTags: negativeTags,
@@ -703,9 +821,9 @@ const ImageRegenerationModal: React.FC<ImageRegenerationModalProps> = ({
             customPrompt: '',
             useCustomPrompt: false,
             characterTags: characterTags,
-            seed: result.seed, // Save the seed value
-            novelaiSettings, // 保留全部novelai设置
-            animagine4Settings // 保留全部animagine4设置
+            seed: result.seed, 
+            novelaiSettings, 
+            animagine4Settings 
           }
         };
         
@@ -830,7 +948,6 @@ const ImageRegenerationModal: React.FC<ImageRegenerationModalProps> = ({
       } else if (data.urls && Array.isArray(data.urls) && data.urls.length > 0) {
         console.log(`[图片重生成] 服务器直接返回了图片URL: ${data.urls[0]}`);
         
-        // Set the preview image
         setPreviewImageUrl(data.urls[0]);
         setProgressMessage('图像生成完成');
         
@@ -854,9 +971,9 @@ const ImageRegenerationModal: React.FC<ImageRegenerationModalProps> = ({
             customPrompt: '',
             useCustomPrompt: false,
             characterTags: characterTags,
-            seed: generatedSeed, // Save the seed value
-            novelaiSettings, // 保留全部novelai设置
-            animagine4Settings // 保留全部animagine4设置
+            seed: generatedSeed, 
+            novelaiSettings, 
+            animagine4Settings 
           }
         };
         
@@ -877,7 +994,6 @@ const ImageRegenerationModal: React.FC<ImageRegenerationModalProps> = ({
           characterTags: characterTags
         };
 
-        // Start polling for status
         checkImageGenerationStatus(character.id, taskId);
         
         return;
@@ -957,7 +1073,6 @@ const ImageRegenerationModal: React.FC<ImageRegenerationModalProps> = ({
           if (isSuccess && imageUrl) {
             console.log(`[图片重生成] 图像生成成功: ${imageUrl}`);
             
-            // Set the preview image
             setPreviewImageUrl(imageUrl);
             setProgressMessage('图像生成完成');
 
@@ -982,9 +1097,9 @@ const ImageRegenerationModal: React.FC<ImageRegenerationModalProps> = ({
                 customPrompt: '',
                 useCustomPrompt: false,
                 characterTags: characterTags,
-                seed: generatedSeed, // Save the seed value
-                novelaiSettings, // 保留全部novelai设置
-                animagine4Settings // 保留全部animagine4设置
+                seed: generatedSeed, 
+                novelaiSettings, 
+                animagine4Settings 
               }
             };
 
@@ -1037,10 +1152,8 @@ const ImageRegenerationModal: React.FC<ImageRegenerationModalProps> = ({
     poll();
   };
 
-  // 新增：防御性去重，避免重复图片
   const handleSuccess = (completedImage: CharacterImage) => {
     if (typeof onSuccess === 'function') {
-      // 这里不直接访问图片列表，实际去重在外部完成
       onSuccess(completedImage);
     }
   };
@@ -1054,11 +1167,9 @@ const ImageRegenerationModal: React.FC<ImageRegenerationModalProps> = ({
     try {
       await submitImageGeneration();
     } catch (e) {
-      // 错误已在submitImageGeneration中处理
     }
   };
 
-  // UI Rendering Functions
   const renderCharacterTags = () => {
     if (characterTags.length === 0) {
       return (
@@ -1237,7 +1348,6 @@ const ImageRegenerationModal: React.FC<ImageRegenerationModalProps> = ({
     );
   };
   
-  // Render character prompt management UI
   const renderCharacterPrompts = () => {
     if (imageProvider !== 'novelai') return null;
     
@@ -1321,7 +1431,6 @@ const ImageRegenerationModal: React.FC<ImageRegenerationModalProps> = ({
                     placeholderTextColor="#888"
                   />
                   
-                  {/* Modified: Add two buttons for tag selection */}
                   <View style={styles.characterPromptActionButtons}>
                     <TouchableOpacity
                       style={styles.addTagToCharacterButton}
@@ -1358,7 +1467,6 @@ const ImageRegenerationModal: React.FC<ImageRegenerationModalProps> = ({
     );
   };
 
-  // Render seed control UI
   const renderSeedControl = () => {
     if (imageProvider !== 'novelai') return null;
     
@@ -1453,7 +1561,6 @@ const ImageRegenerationModal: React.FC<ImageRegenerationModalProps> = ({
           </View>
         </View>
         
-        {/* Add seed control */}
         {renderSeedControl()}
         
         {generatedSeed && (
@@ -1495,28 +1602,31 @@ const ImageRegenerationModal: React.FC<ImageRegenerationModalProps> = ({
 
   const renderTagHeaderButtons = () => (
     <View style={styles.tagHeaderButtons}>
+            {/* 新增Roll按钮 */}
+            <TouchableOpacity
+        style={styles.tagHeaderButton}
+        onPress={handleRollTags}
+      >
+        <Ionicons name="dice-outline" size={16} color="#ff9f1c" />
+      </TouchableOpacity>
       <TouchableOpacity 
         style={styles.tagHeaderButton}
         onPress={() => setTagSelectorVisible(true)}
       >
         <Ionicons name="pricetag-outline" size={16} color="#fff" />
-        <Text style={styles.tagHeaderButtonText}>常规</Text>
       </TouchableOpacity>
       <TouchableOpacity 
         style={styles.tagHeaderButton}
         onPress={() => setCharacterTagSelectorVisible(true)}
       >
         <Ionicons name="person-add-outline" size={16} color="#fff" />
-        <Text style={styles.tagHeaderButtonText}>角色</Text>
       </TouchableOpacity>
       <TouchableOpacity 
         style={styles.tagHeaderButton}
         onPress={() => setArtistReferenceSelectorVisible(true)}
       >
         <Ionicons name="color-palette-outline" size={16} color="#fff" />
-        <Text style={styles.tagHeaderButtonText}>画风</Text>
       </TouchableOpacity>
-      {/* 权重按钮 */}
       <TouchableOpacity
         style={[
           styles.tagHeaderButton,
@@ -1540,18 +1650,8 @@ const ImageRegenerationModal: React.FC<ImageRegenerationModalProps> = ({
           size={16}
           color={tagWeightMode === 'none' ? '#fff' : '#000'}
         />
-        <Text style={[
-          styles.tagHeaderButtonText,
-          tagWeightMode !== 'none' && { color: '#000', fontWeight: 'bold' }
-        ]}>
-          {tagWeightMode === 'increase'
-            ? '加权'
-            : tagWeightMode === 'decrease'
-            ? '降权'
-            : '权重'}
-        </Text>
+
       </TouchableOpacity>
-      {/* 管理按钮 */}
       <TouchableOpacity
         style={[
           styles.tagHeaderButton,
@@ -1560,20 +1660,12 @@ const ImageRegenerationModal: React.FC<ImageRegenerationModalProps> = ({
         onPress={() => setManageMode(m => !m)}
       >
         <Ionicons name="construct-outline" size={16} color={manageMode ? '#000' : '#fff'} />
-        <Text style={[
-          styles.tagHeaderButtonText,
-          manageMode && { color: '#000', fontWeight: 'bold' }
-        ]}>
-          管理
-        </Text>
       </TouchableOpacity>
     </View>
   );
 
-  // Render the preview image section - enhanced for tabbed layout
   const renderPreviewImage = () => {
     const imageUrl = generatedImageUrl || previewImageUrl;
-    
     return (
       <View style={styles.previewImageContainer}>
         {imageUrl ? (
@@ -1583,31 +1675,20 @@ const ImageRegenerationModal: React.FC<ImageRegenerationModalProps> = ({
               style={styles.previewImage}
               resizeMode="contain"
             />
-            
             <View style={styles.overlayButtonsContainer}>
               <View style={styles.overlayOptionRow}>
-                
                 <TouchableOpacity 
                   style={[styles.overlayButton, replaceBackground && styles.activeOverlayButton]}
                   onPress={() => setReplaceBackground(!replaceBackground)}
                 >
                   <Ionicons name="image" size={18} color="#fff" />
                 </TouchableOpacity>
-                
                 <TouchableOpacity 
                   style={[styles.overlayButton, replaceAvatar && styles.activeOverlayButton]}
-                  onPress={async () => {
-                    const newValue = !replaceAvatar;
-                    setReplaceAvatar(newValue);
-                    // 立即设置头像
-                    if (newValue && setCharacterAvatar) {
-                      await setCharacterAvatar(character.id, imageUrl.includes('#localNovelAI') ? imageUrl.split('#localNovelAI')[0] : imageUrl);
-                    }
-                  }}
+                  onPress={() => setReplaceAvatar(!replaceAvatar)}
                 >
                   <Ionicons name="person" size={18} color="#fff" />
                 </TouchableOpacity>
-                
                 <TouchableOpacity 
                   style={styles.overlayButton}
                   onPress={() => {
@@ -1618,7 +1699,6 @@ const ImageRegenerationModal: React.FC<ImageRegenerationModalProps> = ({
                 >
                   <Ionicons name="refresh" size={18} color="#fff" />
                 </TouchableOpacity>
-                
                 <TouchableOpacity 
                   style={styles.confirmOverlayButton}
                   onPress={async () => {
@@ -1645,7 +1725,7 @@ const ImageRegenerationModal: React.FC<ImageRegenerationModalProps> = ({
                           customPrompt: '',
                           useCustomPrompt: false,
                           characterTags: characterTags,
-                          seed: generatedSeed // Save the seed value
+                          seed: generatedSeed 
                         }
                       };
                       if (replaceAvatar && setCharacterAvatar) {
@@ -1654,7 +1734,16 @@ const ImageRegenerationModal: React.FC<ImageRegenerationModalProps> = ({
                       if (replaceBackground && setCharacterBackgroundImage) {
                         await setCharacterBackgroundImage(character.id, completedImage.localUri || completedImage.url);
                       }
-                      handleSuccess(completedImage);
+                      onSuccess(
+                        completedImage,
+                        {
+                          imageProvider,
+                          sizePresetId,
+                          novelaiSettings,
+                          animagine4Settings,
+                        },
+                        completedImage.seed || novelaiSettings.seed
+                      );
                     }
                   }}
                 >
@@ -1662,7 +1751,6 @@ const ImageRegenerationModal: React.FC<ImageRegenerationModalProps> = ({
                 </TouchableOpacity>
               </View>
             </View>
-            
             {generatedSeed && (
               <View style={styles.seedOverlay}>
                 <Text style={styles.seedOverlayText}>Seed: {generatedSeed}</Text>
@@ -1678,29 +1766,10 @@ const ImageRegenerationModal: React.FC<ImageRegenerationModalProps> = ({
     );
   };
 
-  // Render loading indicator with progress message
-  const renderLoading = () => {
-    if (!isLoading) return null;
-    
-    return (
-      <View style={styles.loadingOverlay}>
-        <View style={styles.loadingContainer}>
-          <ActivityIndicator size="large" color="#4A90E2" />
-          {progressMessage && (
-            <Text style={styles.progressMessage}>{progressMessage}</Text>
-          )}
-        </View>
-      </View>
-    );
-  };
-  
-  // Render the generation tab content
   const renderGenerationTab = () => (
     <View style={styles.tabContent}>
-      {/* Image Preview Section */}
       {renderPreviewImage()}
 
-      {/* 主提示词Header固定 */}
       <View style={styles.tagSection}>
         <View style={styles.tagSectionHeader}>
           <Text style={styles.tagSectionTitle}>主提示词</Text>
@@ -1708,14 +1777,12 @@ const ImageRegenerationModal: React.FC<ImageRegenerationModalProps> = ({
         </View>
       </View>
 
-      {/* 滚动区域：画风、标签、角色标签、操作栏 */}
       <ScrollView
         style={styles.generationScrollArea}
         contentContainerStyle={styles.generationScrollContent}
         keyboardShouldPersistTaps="handled"
         showsVerticalScrollIndicator={false}
       >
-        {/* 画风显示 */}
         {renderArtistPromptDisplay()}
 
         <View style={styles.expandedTagDisplayContainer}>
@@ -1739,7 +1806,6 @@ const ImageRegenerationModal: React.FC<ImageRegenerationModalProps> = ({
         {renderActionButtonsBar()}
       </ScrollView>
 
-      {/* Generate Button */}
       <View style={styles.buttonContainer}>
         {!isLoading ? (
           <TouchableOpacity 
@@ -1771,20 +1837,15 @@ const ImageRegenerationModal: React.FC<ImageRegenerationModalProps> = ({
     </View>
   );
   
-  // Render the settings tab content
   const renderSettingsTab = () => (
     <View style={styles.tabContent}>
     <ScrollView showsVerticalScrollIndicator={false}>   
-      {/* Provider selector */}
       {renderProviderSelector()}
       
-      {/* Image size selector */}
       {renderSizeSelector()}
       
-      {/* Provider specific settings */}
       {imageProvider === 'novelai' ? renderNovelAISettings() : renderAnimagine4Settings()}
       
-      {/* Render character prompts for NovelAI */}
       {imageProvider === 'novelai' && renderCharacterPrompts()}
       </ScrollView>   
     </View>
@@ -1855,7 +1916,6 @@ const ImageRegenerationModal: React.FC<ImageRegenerationModalProps> = ({
               selectedGender={(character.gender === 'male' || character.gender === 'female' || character.gender === 'other' ? character.gender : 'female')}
               onSelectArtist={(artistPrompt) => {
                 if (artistPrompt) {
-                  // Always clean brackets when selecting artist prompt
                   setSelectedArtistPrompt(removeBrackets(artistPrompt));
                   setUseExistingArtistPrompt(true);
                 }
@@ -2078,7 +2138,6 @@ const ImageRegenerationModal: React.FC<ImageRegenerationModalProps> = ({
             </View>
           </Modal>
 
-          {/* Add character tag selector for specific prompt */}
           <Modal
             visible={characterTagSelectorForPromptIndex !== null}
             transparent={true}
@@ -2107,7 +2166,7 @@ const ImageRegenerationModal: React.FC<ImageRegenerationModalProps> = ({
                     handleUpdateCharacterPrompt(characterTagSelectorForPromptIndex, updatedPrompt);
                   }
                 }}
-                onAddNegative={() => {}} // We don't need negative tags here
+                onAddNegative={() => {}} 
                 existingPositiveTags={
                   characterTagSelectorForPromptIndex !== null 
                   ? characterPrompts[characterTagSelectorForPromptIndex].prompt.split(',').map(item => item.trim()) 
@@ -2126,14 +2185,12 @@ const ImageRegenerationModal: React.FC<ImageRegenerationModalProps> = ({
             </View>
           </Modal>
           
-          {/* NEW: Add CharacterTagSelector for prompts */}
           <CharacterTagSelector
             visible={characterTagSelectorForCharacterPrompt !== null}
             onClose={() => setCharacterTagSelectorForCharacterPrompt(null)}
             onAddCharacter={handleAddCharacterPromptTag}
           />
           
-          {renderLoading()}
         </BlurView>
         
       </View>
@@ -2142,7 +2199,6 @@ const ImageRegenerationModal: React.FC<ImageRegenerationModalProps> = ({
 };
 
 const styles = StyleSheet.create({
-  // Core layout styles based on MemoOverlay
   fullScreenContainer: {
     flex: 1,
     backgroundColor: 'rgba(0,0,0,0.7)',
@@ -2209,8 +2265,6 @@ const styles = StyleSheet.create({
     flex: 1,
     padding: 16,
   },
-  
-  // Preview image styles
   previewImageContainer: {
     height: 300,
     marginBottom: 16,
@@ -2334,8 +2388,6 @@ const styles = StyleSheet.create({
     fontSize: 15,
     marginLeft: 8,
   },
-  
-  // Tag section styles
   tagSection: {
     marginBottom: 16,
   },
@@ -2424,8 +2476,6 @@ const styles = StyleSheet.create({
     marginLeft: 6,
     fontSize: 12,
   },
-  
-  // Character tags styles
   selectedCharacterTagsContainer: {
     backgroundColor: 'rgba(60, 60, 60, 0.6)',
     borderRadius: 8,
@@ -2442,7 +2492,7 @@ const styles = StyleSheet.create({
   characterTag: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: 'rgba(100, 149, 237, 0.8)',
+    backgroundColor: 'rgba(255, 224, 195, 0.8)',
     borderRadius: 16,
     paddingVertical: 4,
     paddingHorizontal: 8,
@@ -2450,12 +2500,10 @@ const styles = StyleSheet.create({
     marginBottom: 8,
   },
   characterTagText: {
-    color: '#fff',
+    color: 'black',
     fontSize: 14,
     marginRight: 6,
   },
-  
-  // Action buttons bar
   actionButtonsBar: {
     flexDirection: 'row',
     justifyContent: 'space-between',
@@ -2477,8 +2525,6 @@ const styles = StyleSheet.create({
     fontWeight: '500',
     fontSize: 13,
   },
-  
-  // Generate button
   buttonContainer: {
     marginBottom: 16,
   },
@@ -2518,8 +2564,6 @@ const styles = StyleSheet.create({
   loadingButtonNovelAI: {
     backgroundColor: '#6a1b9a',
   },
-  
-  // Error display
   errorContainer: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -2532,8 +2576,6 @@ const styles = StyleSheet.create({
     color: '#FF4444',
     marginLeft: 8,
   },
-  
-  // Model selection styles
   providerSelectorContainer: {
     backgroundColor: 'rgba(60, 60, 60, 0.6)',
     borderRadius: 8,
@@ -2576,8 +2618,6 @@ const styles = StyleSheet.create({
   disabledProviderOptionText: {
     color: '#aaa',
   },
-  
-  // Size selector styles
   sizeSelectorContainer: {
     backgroundColor: 'rgba(60, 60, 60, 0.6)',
     borderRadius: 8,
@@ -2615,8 +2655,6 @@ const styles = StyleSheet.create({
     fontSize: 12,
     marginTop: 4,
   },
-  
-  // Provider settings styles
   animagineSettingsContainer: {
     backgroundColor: 'rgba(60, 60, 60, 0.6)',
     borderRadius: 8,
@@ -2713,8 +2751,6 @@ const styles = StyleSheet.create({
   selectedModelOptionText: {
     color: '#fff',
   },
-  
-  // NovelAI settings styles
   seedControlContainer: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -2796,8 +2832,6 @@ const styles = StyleSheet.create({
   selectedScheduleOptionText: {
     color: '#fff',
   },
-  
-  // Character prompts styles
   characterPromptsContainer: {
     backgroundColor: 'rgba(60, 60, 60, 0.6)',
     borderRadius: 8,
@@ -2923,8 +2957,6 @@ const styles = StyleSheet.create({
     marginTop: 10,
     paddingHorizontal: 10,
   },
-  
-  // Loading overlay
   loadingOverlay: {
     ...StyleSheet.absoluteFillObject,
     backgroundColor: 'rgba(0, 0, 0, 0.7)',
@@ -2946,8 +2978,6 @@ const styles = StyleSheet.create({
     fontSize: 16,
     textAlign: 'center',
   },
-  
-  // Modal styles
   tagSelectorModalContainer: {
     flex: 1,
     backgroundColor: '#222',
