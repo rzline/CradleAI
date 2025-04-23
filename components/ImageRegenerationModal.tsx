@@ -505,7 +505,7 @@ const ImageRegenerationModal: React.FC<ImageRegenerationModalProps> = ({
       setGenerationSettings({ ...DEFAULT_GENERATION_SETTINGS });
       setAnimagine4Settings({ ...DEFAULT_ANIMAGINE4_SETTINGS });
     }
-  }, [visible, character, existingImageConfig]);
+  }, [visible, character?.id, existingImageConfig]);
 
   useEffect(() => {
     const handleAppStateChange = (nextAppState: string) => {
@@ -1554,7 +1554,6 @@ const ImageRegenerationModal: React.FC<ImageRegenerationModalProps> = ({
               style={styles.copySeedButton}
               onPress={() => {
                 setNovelaiSettings(prev => ({ ...prev, seed: generatedSeed.toString() }));
-                Alert.alert('已复制', `Seed值 ${generatedSeed} 已设置为当前值`);
               }}
             >
               <Ionicons name="copy-outline" size={16} color="#ddd" />
@@ -2643,7 +2642,7 @@ const styles = StyleSheet.create({
     color: '#fff',
   },
   sizeOptionDimensions: {
-    color: '#bbb',
+    color: '#fff',
     fontSize: 12,
     marginTop: 4,
   },

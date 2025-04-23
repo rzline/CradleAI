@@ -454,7 +454,7 @@ export interface CharacterImage {
 // Now it's just an extension with some specialized cradle fields
 
 export interface CradleCharacter extends Character {
-  inCradleSystem: boolean; // Must be true for cradle characters
+  inCradleSystem?: boolean; // Must be true for cradle characters
   importedFromCharacter?: boolean; // Was this imported from a normal character
   importedCharacterId?: string; // ID of the original character if imported
   cradleAnimation?: CradleAnimation;

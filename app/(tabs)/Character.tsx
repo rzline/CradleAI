@@ -712,12 +712,10 @@ const CharactersScreen: React.FC = () => {
           visible={showImageGenModal}
           character={{
             ...imageGenCharacter,
-            inCradleSystem: imageGenCharacter?.inCradleSystem || false
           }}
           onClose={() => setShowImageGenModal(false)}
           onSuccess={img => {
             handleImageGenSuccess(img);
-            setShowImageGenModal(false);
           }}
         />
       )}
