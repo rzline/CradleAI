@@ -221,6 +221,28 @@ const App = () => {
   // Add transient error state for temporary error messages
   const [transientError, setTransientError] = useState<string | null>(null);
 
+    // --- 新增: 启动时自动同步 MemoryProcessingControl 的记忆处理间隔 ---
+    useEffect(() => {
+      const SETTINGS_STORAGE_KEY = 'MemoryProcessingControl:settings';
+      (async () => {
+        try {
+          const saved = await AsyncStorage.getItem(SETTINGS_STORAGE_KEY);
+          if (saved) {
+            const parsed = JSON.parse(saved);
+            if (typeof parsed.currentInterval === 'number') {
+              const mem0Service = Mem0Service.getInstance();
+              if (mem0Service.setProcessingInterval) {
+                mem0Service.setProcessingInterval(parsed.currentInterval);
+                console.log(`[Index] 已自动同步记忆处理间隔为 ${parsed.currentInterval}`);
+              }
+            }
+          }
+        } catch (e) {
+          console.warn('[Index] 自动同步记忆处理间隔失败', e);
+        }
+      })();
+    }, []);
+    
   // Toggle brave search function
   const toggleBraveSearch = () => {
     const newState = !braveSearchEnabled;

@@ -21,14 +21,12 @@ import Slider from '@react-native-community/slider';
 import { Ionicons, MaterialCommunityIcons, } from '@expo/vector-icons';
 import { useMemoryContext } from '../providers/MemoryProvider';
 import Mem0Service from '../services/Mem0Service';
-import { theme } from '@/constants/theme';
 import { Character } from '@/shared/types';
 import * as DocumentPicker from 'expo-document-picker';
 import * as FileSystem from 'expo-file-system';
 import * as Sharing from 'expo-sharing';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 
-const { width: SCREEN_WIDTH, height: SCREEN_HEIGHT } = Dimensions.get('window');
 
 const DB_SIZE_WARNING_THRESHOLD = 50; 
 const DB_SIZE_ALERT_THRESHOLD = 100;  
@@ -824,13 +822,13 @@ const SettingsPanel: React.FC<SettingsPanelProps> = ({
   return (
     <ScrollView style={styles.statsScrollView}>
       <View style={styles.settingsContainer}>
-        {characterId && conversationId && (
+        {/* {characterId && conversationId && (
           <View style={styles.settingsInfoSection}>
             <Text style={styles.settingsInfoTitle}>当前会话信息</Text>
             <Text style={styles.settingsInfoText}>角色ID: {characterId}</Text>
             <Text style={styles.settingsInfoText}>会话ID: {conversationId}</Text>
           </View>
-        )}
+        )} */}
         
         <View style={styles.settingSection}>
           <Text style={styles.settingSectionTitle}>记忆系统</Text>

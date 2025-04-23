@@ -461,7 +461,7 @@ const DiaryBook: React.FC<DiaryBookProps> = ({ character, onClose }) => {
             step={50}
             minimumTrackTintColor={theme.colors.primary}
             maximumTrackTintColor="#ddd"
-            thumbTintColor={theme.colors.primary}
+            thumbTintColor="#ff9f1c" 
           />
         </View>
 

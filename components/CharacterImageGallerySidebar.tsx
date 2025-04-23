@@ -348,7 +348,11 @@ const CharacterImageGallerySidebar: React.FC<CharacterImageGallerySidebarProps> 
         negativeTags: image.generationConfig?.negativeTags || image.tags?.negative || [],
         artistPrompt: image.generationConfig?.artistPrompt || null,
         customPrompt: image.generationConfig?.customPrompt || '',
-        useCustomPrompt: image.generationConfig?.useCustomPrompt || false
+        useCustomPrompt: image.generationConfig?.useCustomPrompt || false,
+        characterTags: image.generationConfig?.characterTags || [],
+        seed: image.generationConfig?.seed || image.seed || '', // 保留seed
+        novelaiSettings: image.generationConfig?.novelaiSettings || undefined, // 保留novelai设置
+        animagine4Settings: image.generationConfig?.animagine4Settings || undefined // 保留animagine4设置
       };
       setRegenerationImageConfig(config);
       setShowRegenerationModal(true);

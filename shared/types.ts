@@ -408,6 +408,9 @@ export interface ImageGenerationConfig {
   customPrompt: string;
   useCustomPrompt: boolean;
   characterTags: string[];
+  seed: number | string | null; // 支持number|string|null
+  novelaiSettings?: any; // 改为any或具体对象类型
+  animagine4Settings?: any; // 改为any或具体对象类型
 }
 
 export interface CharacterImage {

@@ -107,13 +107,13 @@ const Profile: React.FC = () => {
           subtitle="全部自设列表"
         />
         
-        <ListItem
+        {/* <ListItem
           title="存储管理器"
           leftIcon="folder-open-outline" 
           chevron={true}
           onPress={() => router.push('../pages/storage-manager')}
           subtitle="查看和清理应用存储"
-        />
+        /> */}
 
         <ListItem
           title="加入社区"

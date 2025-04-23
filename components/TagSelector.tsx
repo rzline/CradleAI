@@ -49,7 +49,6 @@ const TagSelector: React.FC<TagSelectorProps> = ({
   const [filteredTags, setFilteredTags] = useState<{ tag: string; category: string }[]>([]);
   const [showSearchResults, setShowSearchResults] = useState(false);
   const [showSelectedTags, setShowSelectedTags] = useState(true);
-  const [tagWeightMode, setTagWeightMode] = useState<'none' | 'increase' | 'decrease'>('none');
   
   // Add state to track the longest category name for auto width calculation
   const [longestCategoryWidth, setLongestCategoryWidth] = useState<number>(100);
@@ -190,14 +189,8 @@ const TagSelector: React.FC<TagSelectorProps> = ({
       
       // If already selected with the same type
       if (existingValue && prev[existingValue] === type) {
-        if (tagWeightMode !== 'none') {
-          // Apply weighting to existing tag
-          delete newTags[existingValue];
-          newTags[handleTagWeighting(cleanTag)] = type;
-        } else {
-          // Remove it if no weighting mode active
-          delete newTags[existingValue];
-        }
+        // Remove it
+        delete newTags[existingValue];
       } else {
         // Remove from opposite type if exists
         Object.keys(newTags).forEach(key => {
@@ -206,9 +199,8 @@ const TagSelector: React.FC<TagSelectorProps> = ({
           }
         });
         
-        // Add new tag with weighting if applicable
-        const tagToAdd = tagWeightMode !== 'none' ? handleTagWeighting(cleanTag) : cleanTag;
-        newTags[tagToAdd] = type;
+        // Add new tag
+        newTags[cleanTag] = type;
       }
       
       return newTags;
@@ -232,20 +224,6 @@ const TagSelector: React.FC<TagSelectorProps> = ({
     
     // Default: just return the tag
     return tag;
-  };
-
-  // Add tag weighting function
-  const handleTagWeighting = (tag: string) => {
-    if (tagWeightMode === 'none') return tag;
-    
-    // Remove any existing weighting first
-    let cleanTag = tag.replace(/^\{+|\}+$/g, '').replace(/^\[+|\]+$/g, '');
-    
-    if (tagWeightMode === 'increase') {
-      return `{${cleanTag}}`;
-    } else {
-      return `[${cleanTag}]`;
-    }
   };
 
   // Render category selector
@@ -469,7 +447,6 @@ const TagSelector: React.FC<TagSelectorProps> = ({
 
         {showSelectedTags && (
           <>
-            {renderWeightingControls()}
             {positiveTags.length > 0 && (
               <View style={styles.tagSection}>
                 <Text style={styles.tagSectionTitle}>正面标签 ({positiveTags.length})</Text>
@@ -510,50 +487,6 @@ const TagSelector: React.FC<TagSelectorProps> = ({
       </View>
     );
   };
-
-  // Add weighting UI component
-  const renderWeightingControls = () => (
-    <View style={styles.weightingContainer}>
-      <Text style={styles.weightingSectionTitle}>标签权重调整</Text>
-      <View style={styles.weightingButtons}>
-        <TouchableOpacity
-          style={[
-            styles.weightingButton,
-            tagWeightMode === 'increase' && styles.activeIncreaseButton
-          ]}
-          onPress={() => setTagWeightMode(tagWeightMode === 'increase' ? 'none' : 'increase')}
-        >
-          <Ionicons
-            name="arrow-up-circle"
-            size={20}
-            color={tagWeightMode === 'increase' ?`#ff9f1c` : "#aaa"}
-          />
-          <Text style={[
-            styles.weightingButtonText,
-            tagWeightMode === 'increase' && styles.activeWeightingText
-          ]}>加权 {tagWeightMode === 'increase' ? '(开启)' : ''}</Text>
-        </TouchableOpacity>
-        
-        <TouchableOpacity
-          style={[
-            styles.weightingButton,
-            tagWeightMode === 'decrease' && styles.activeDecreaseButton
-          ]}
-          onPress={() => setTagWeightMode(tagWeightMode === 'decrease' ? 'none' : 'decrease')}
-        >
-          <Ionicons
-            name="arrow-down-circle"
-            size={20}
-            color={tagWeightMode === 'decrease' ? "#ff4444" : "#aaa"}
-          />
-          <Text style={[
-            styles.weightingButtonText,
-            tagWeightMode === 'decrease' && styles.activeWeightingText
-          ]}>降权 {tagWeightMode === 'decrease' ? '(开启)' : ''}</Text>
-        </TouchableOpacity>
-      </View>
-    </View>
-  );
 
   return (
     <SafeAreaView style={styles.container}>
@@ -857,51 +790,6 @@ const styles = StyleSheet.create({
   scrollableContentArea: {
     flex: 1,
     flexDirection: 'column',
-  },
-  // Add styles for tag weighting UI
-  weightingContainer: {
-    backgroundColor: 'rgba(255,255,255,0.05)',
-    borderRadius: 8,
-    padding: 12,
-    marginVertical: 8,
-  },
-  weightingSectionTitle: {
-    color: '#fff',
-    fontSize: 14,
-    marginBottom: 8,
-  },
-  weightingButtons: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-  },
-  weightingButton: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: 'rgba(50, 50, 50, 0.8)',
-    paddingVertical: 6,
-    paddingHorizontal: 12,
-    borderRadius: 16,
-    flex: 0.48,
-    justifyContent: 'center',
-  },
-  activeIncreaseButton: {
-    backgroundColor: 'rgba(255, 224, 195, 0.2)',
-    borderWidth: 1,
-    borderColor: `#ff9f1c`,
-  },
-  activeDecreaseButton: {
-    backgroundColor: 'rgba(255, 68, 68, 0.2)',
-    borderWidth: 1,
-    borderColor: '#ff4444',
-  },
-  weightingButtonText: {
-    color: '#aaa',
-    marginLeft: 6,
-    fontSize: 13,
-  },
-  activeWeightingText: {
-    fontWeight: '500',
-    color: '#fff',
   },
 });
 

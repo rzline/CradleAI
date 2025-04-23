@@ -1729,7 +1729,20 @@ export class GeminiAdapter {
             
             // 确保MCP适配器已连接
             if (!mcpAdapter.isReady()) {
-                await mcpAdapter.connect();
+                try {
+                    await mcpAdapter.connect();
+                } catch (e) {
+                    console.error('[Gemini适配器] Brave本地搜索连接失败:', e);
+                    // 返回友好提示
+                    return await this.generateContent([
+                        ...contents.slice(0, -1),
+                        {
+                            role: "model",
+                            parts: [{ text: "（注意：搜索功能不可用。）" }]
+                        },
+                        contents[contents.length - 1]
+                    ]);
+                }
             }
             
             // 先使用Gemini分析消息，提取搜索关键词
@@ -1750,10 +1763,24 @@ export class GeminiAdapter {
             console.log(`[Gemini适配器] 提取的搜索关键词: ${finalQuery}`);
             
             // 使用MCP适配器执行搜索
-            const searchResults = await mcpAdapter.search({
-                query: finalQuery,
-                count: 5
-            });
+            let searchResults;
+            try {
+                searchResults = await mcpAdapter.search({
+                    query: finalQuery,
+                    count: 5
+                });
+            } catch (e) {
+                console.error('[Gemini适配器] Brave本地搜索执行失败:', e);
+                // 返回友好提示
+                return await this.generateContent([
+                    ...contents.slice(0, -1),
+                    {
+                        role: "model",
+                        parts: [{ text: "（注意：本地搜索功能不可用，请检查Brave API密钥配置。）" }]
+                    },
+                    contents[contents.length - 1]
+                ]);
+            }
             
             // 格式化搜索结果为可读文本
             const formattedResults = mcpAdapter.formatSearchResults(searchResults);

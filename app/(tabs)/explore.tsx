@@ -1262,14 +1262,6 @@ const Explore: React.FC = () => {
       style: 'destructive'
     });
     
-    // Add favorite option for character posts
-    if (isCharacterPost) {
-      options.push({
-        text: post.isFavorited ? '取消收藏' : '收藏',
-        onPress: () => toggleFavorite(post.characterId, post.id),
-        style: 'default'
-      });
-    }
        
     // Show alert with options
     Alert.alert(

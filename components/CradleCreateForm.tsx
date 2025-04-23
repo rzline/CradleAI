@@ -1957,7 +1957,7 @@ const styles = StyleSheet.create({
     borderLeftColor: 'transparent',
   },
   activeSidebarItem: {
-    backgroundColor: 'rgba(255, 215, 0, 0.1)',
+    backgroundColor: 'rgba(255, 224, 195, 0.1)',
     borderLeftColor: theme.colors.primary,
   },
   sidebarItemText: {

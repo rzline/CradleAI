@@ -13,6 +13,7 @@ import {
   Platform,
   TextInput,
   StatusBar,
+  AppState,
 } from 'react-native';
 import { Ionicons, MaterialIcons } from '@expo/vector-icons';
 import { CradleCharacter, CharacterImage } from '@/shared/types';
@@ -90,6 +91,9 @@ interface ImageRegenerationModalProps {
     customPrompt: string;
     useCustomPrompt: boolean;
     characterTags?: string[];
+    seed?: number | string; // 新增
+    novelaiSettings?: Partial<typeof DEFAULT_NOVELAI_SETTINGS>; // 新增
+    animagine4Settings?: Partial<typeof DEFAULT_ANIMAGINE4_SETTINGS>; // 新增
   };
   onSavePreviewImage?: (imageUrl: string) => void; // 新增的保存预览图片的回调
 }
@@ -115,6 +119,31 @@ const getGenderTagsFromTagData = () => {
 };
 
 const { maleGenderTags, femaleGenderTags } = getGenderTagsFromTagData();
+
+// Utility: Remove outer brackets from a string, e.g. [artist:neco] -> artist:neco
+const removeBrackets = (str: string | null): string | null => {
+  if (!str) return null;
+  // Remove outer brackets if present
+  return str.replace(/^\[([^\]]+)\]$/, '$1').trim();
+};
+
+// Clean the artist tag based on provider
+const cleanArtistTag = (artistTag: string | null, provider: 'animagine4' | 'novelai' = 'animagine4'): string | null => {
+  if (!artistTag) return null;
+  // Always remove brackets first
+  let cleaned = removeBrackets(artistTag);
+  if (!cleaned) return null;
+  if (provider === 'animagine4') {
+    // Remove "artist:" prefix if present
+    if (cleaned.toLowerCase().startsWith('artist:')) {
+      cleaned = cleaned.substring(7).trim();
+    }
+    return cleaned;
+  } else {
+    // For novelai, keep "artist:" prefix if present
+    return cleaned;
+  }
+};
 
 const ImageRegenerationModal: React.FC<ImageRegenerationModalProps> = ({
   visible,
@@ -166,6 +195,59 @@ const ImageRegenerationModal: React.FC<ImageRegenerationModalProps> = ({
   
   // NEW: Add state for character tag selector with prompt index
   const [characterTagSelectorForCharacterPrompt, setCharacterTagSelectorForCharacterPrompt] = useState<number | null>(null);
+
+  // Track taskId for polling (for Animagine4)
+  const pollingTaskIdRef = useRef<string | null>(null);
+  const pollingCharacterIdRef = useRef<string | null>(null);
+
+  // 权重模式
+  const [tagWeightMode, setTagWeightMode] = useState<'none' | 'increase' | 'decrease'>('none');
+  // 管理模式
+  const [manageMode, setManageMode] = useState(false);
+
+  // 多层加权/降权
+  const addWeight = (tag: string, type: 'increase' | 'decrease') => {
+    if (type === 'increase') {
+      // 如果最外层是[]，去掉一层[]，否则加一层{}
+      if (/^\[.*\]$/.test(tag)) return tag.replace(/^\[(.*)\]$/, '$1');
+      return `{${tag}}`;
+    }
+    if (type === 'decrease') {
+      // 如果最外层是{}，去掉一层{}，否则加一层[]
+      if (/^\{.*\}$/.test(tag)) return tag.replace(/^\{(.*)\}$/, '$1');
+      return `[${tag}]`;
+    }
+    return tag;
+  };
+  // 去除一层权重
+  const removeOneWeight = (tag: string) => {
+    if (/^\{.*\}$/.test(tag)) return tag.replace(/^\{(.*)\}$/, '$1');
+    if (/^\[.*\]$/.test(tag)) return tag.replace(/^\[(.*)\]$/, '$1');
+    return tag;
+  };
+
+  // 标签点击：加/降权或删除
+  const handlePositiveTagPress = (tag: string) => {
+    if (manageMode) {
+      setPositiveTags(tags => tags.filter(t => t !== tag));
+    } else if (tagWeightMode === 'increase' || tagWeightMode === 'decrease') {
+      setPositiveTags(tags =>
+        tags.map(t => (t === tag ? addWeight(tag, tagWeightMode) : t))
+      );
+    }
+  };
+  const handleCharacterTagPress = (tag: string) => {
+    if (manageMode) {
+      setCharacterTags(tags => tags.filter(t => t !== tag));
+    } else if (tagWeightMode === 'increase' || tagWeightMode === 'decrease') {
+      setCharacterTags(tags =>
+        tags.map(t => (t === tag ? addWeight(tag, tagWeightMode) : t))
+      );
+    }
+  };
+
+  // 标签管理模式下的样式
+  const tagManageStyle = manageMode ? { borderWidth: 1, borderColor: '#ff9f1c', opacity: 0.7 } : {};
 
   useEffect(() => {
     if (visible) {
@@ -241,6 +323,20 @@ const ImageRegenerationModal: React.FC<ImageRegenerationModalProps> = ({
         setUseExistingArtistPrompt(!!existingImageConfig.artistPrompt);
         setCustomPrompt(existingImageConfig.customPrompt || '');
         setCharacterTags(existingImageConfig.characterTags || []);
+        // 新增：恢复seed和生成设置
+        if (existingImageConfig.seed !== undefined && existingImageConfig.seed !== null) {
+          setNovelaiSettings(prev => ({ ...prev, seed: String(existingImageConfig.seed) }));
+          setGeneratedSeed(Number(existingImageConfig.seed));
+        } else {
+          setNovelaiSettings(prev => ({ ...prev, seed: '' }));
+          setGeneratedSeed(null);
+        }
+        if (existingImageConfig.novelaiSettings) {
+          setNovelaiSettings(prev => ({ ...prev, ...existingImageConfig.novelaiSettings }));
+        }
+        if (existingImageConfig.animagine4Settings) {
+          setAnimagine4Settings(prev => ({ ...prev, ...existingImageConfig.animagine4Settings }));
+        }
       } else if (character.generationData?.appearanceTags) {
         setPositiveTags(character.generationData.appearanceTags.positive || []);
         setNegativeTags(character.generationData.appearanceTags.negative || []);
@@ -251,11 +347,15 @@ const ImageRegenerationModal: React.FC<ImageRegenerationModalProps> = ({
           setSelectedArtistPrompt(null);
         }
         setCharacterTags([]);
+        setNovelaiSettings(prev => ({ ...prev, seed: '' }));
+        setGeneratedSeed(null);
       } else {
         setPositiveTags([]);
         setNegativeTags([]);
         setSelectedArtistPrompt(null);
         setCharacterTags([]);
+        setNovelaiSettings(prev => ({ ...prev, seed: '' }));
+        setGeneratedSeed(null);
       }
       setGeneratedImageUrl(null);
       setError(null);
@@ -268,15 +368,28 @@ const ImageRegenerationModal: React.FC<ImageRegenerationModalProps> = ({
       }
       setGenerationSettings({ ...DEFAULT_GENERATION_SETTINGS });
       setAnimagine4Settings({ ...DEFAULT_ANIMAGINE4_SETTINGS });
-      
-      // Reset seed and generated seed for new generation
-      setNovelaiSettings(prev => ({ ...prev, seed: '' }));
-      setGeneratedSeed(null);
-      
-      // Default to generation tab when modal is opened
-      setActiveTab(TabType.GENERATION);
     }
   }, [visible, character, existingImageConfig]);
+
+  // Listen for app state changes to resume polling if needed
+  useEffect(() => {
+    const handleAppStateChange = (nextAppState: string) => {
+      if (
+        nextAppState === 'active' &&
+        visible &&
+        isLoading &&
+        pollingTaskIdRef.current &&
+        pollingCharacterIdRef.current
+      ) {
+        // Resume polling if modal is visible, loading, and we have a taskId
+        checkImageGenerationStatus(pollingCharacterIdRef.current, pollingTaskIdRef.current);
+      }
+    };
+    const subscription = AppState.addEventListener('change', handleAppStateChange);
+    return () => {
+      subscription.remove();
+    };
+  }, [visible, isLoading]);
 
   // Handle adding a new character prompt
   const handleAddCharacterPrompt = () => {
@@ -315,9 +428,31 @@ const ImageRegenerationModal: React.FC<ImageRegenerationModalProps> = ({
 
   // Convert character prompts to the format required by NovelAIService
   const getCharacterPromptsData = (): CharacterPromptData[] => {
-    return characterPrompts.map(char => ({
+    let prompts: CharacterPrompt[] = [...characterPrompts];
+    // 针对NovelAI，如果characterTags有内容，则追加一个prompt
+    if (
+      imageProvider === 'novelai' &&
+      characterTags.length > 0 &&
+      // 避免重复添加
+      !prompts.some(
+        p =>
+          p.prompt === characterTags.join(', ') &&
+          p.position.x === 0 &&
+          p.position.y === 0
+      )
+    ) {
+      prompts = [
+        ...prompts,
+        {
+          prompt: characterTags.join(', '),
+          position: { x: 0, y: 0 },
+          color: '#70A1FF', // 可选：给角色标签一个特殊颜色
+        },
+      ];
+    }
+    return prompts.map(char => ({
       prompt: char.prompt,
-      positions: [char.position]
+      positions: [char.position],
     }));
   };
 
@@ -374,34 +509,24 @@ const ImageRegenerationModal: React.FC<ImageRegenerationModalProps> = ({
     }
   };
 
-  // Clean the artist tag by removing "artist:" prefix
-  const cleanArtistTag = (artistTag: string | null): string | null => {
-    if (!artistTag) return null;
-    
-    // Remove "artist:" prefix if present
-    if (artistTag.toLowerCase().startsWith('artist:')) {
-      return artistTag.substring(7).trim();
-    }
-    
-    return artistTag;
-  };
-
   const organizeTagsForPrompt = () => {
     const genderTags = positiveTags.filter(tag => 
-      maleGenderTags.includes(tag) || femaleGenderTags.includes(tag)
+      maleGenderTags.includes(tag.replace(/^\{+|\}+$/g, '').replace(/^\[+|\]+$/g, '')) ||
+      femaleGenderTags.includes(tag.replace(/^\{+|\}+$/g, '').replace(/^\[+|\]+$/g, ''))
     );
     
     const qualityTags = DEFAULT_POSITIVE_PROMPTS;
     
     const normalTags = positiveTags.filter(tag => 
-      !maleGenderTags.includes(tag) && !femaleGenderTags.includes(tag)
+      !maleGenderTags.includes(tag.replace(/^\{+|\}+$/g, '').replace(/^\[+|\]+$/g, '')) &&
+      !femaleGenderTags.includes(tag.replace(/^\{+|\}+$/g, '').replace(/^\[+|\]+$/g, ''))
     );
 
     const ratingTag = imageProvider === 'animagine4' ? "safe" : null;
     
-    // Clean artist tag for Animagine4
-    const artistTag = selectedArtistPrompt && useExistingArtistPrompt ? 
-      (imageProvider === 'animagine4' ? cleanArtistTag(selectedArtistPrompt) : selectedArtistPrompt) 
+    // Clean artist tag for Animagine4 or NovelAI
+    const artistTag = selectedArtistPrompt && useExistingArtistPrompt
+      ? cleanArtistTag(selectedArtistPrompt, imageProvider)
       : null;
     
     return {
@@ -577,7 +702,10 @@ const ImageRegenerationModal: React.FC<ImageRegenerationModalProps> = ({
             artistPrompt: selectedArtistPrompt,
             customPrompt: '',
             useCustomPrompt: false,
-            characterTags: characterTags
+            characterTags: characterTags,
+            seed: result.seed, // Save the seed value
+            novelaiSettings, // 保留全部novelai设置
+            animagine4Settings // 保留全部animagine4设置
           }
         };
         
@@ -585,8 +713,6 @@ const ImageRegenerationModal: React.FC<ImageRegenerationModalProps> = ({
         setGeneratedImageUrl(cleanImageUrl);
         setProgressMessage(null);
         
-        // onSuccess(completedImage);
-        // onClose();
         return;
       } else {
         throw new Error("NovelAI未返回有效图像");
@@ -727,7 +853,10 @@ const ImageRegenerationModal: React.FC<ImageRegenerationModalProps> = ({
             artistPrompt: selectedArtistPrompt,
             customPrompt: '',
             useCustomPrompt: false,
-            characterTags: characterTags
+            characterTags: characterTags,
+            seed: generatedSeed, // Save the seed value
+            novelaiSettings, // 保留全部novelai设置
+            animagine4Settings // 保留全部animagine4设置
           }
         };
         
@@ -735,8 +864,6 @@ const ImageRegenerationModal: React.FC<ImageRegenerationModalProps> = ({
         setGeneratedImageUrl(data.urls[0]);
         setProgressMessage(null);
         
-        // onSuccess(completedImage);
-        // onClose();
         return;
       }
 
@@ -765,6 +892,9 @@ const ImageRegenerationModal: React.FC<ImageRegenerationModalProps> = ({
 
   const checkImageGenerationStatus = async (characterId: string, taskId: string) => {
     console.log(`[图片重生成] 开始检查任务状态: ${taskId}`);
+
+    pollingTaskIdRef.current = taskId;
+    pollingCharacterIdRef.current = characterId;
 
     const MAX_RETRIES = 60;
     let retries = 0;
@@ -851,7 +981,10 @@ const ImageRegenerationModal: React.FC<ImageRegenerationModalProps> = ({
                 artistPrompt: selectedArtistPrompt,
                 customPrompt: '',
                 useCustomPrompt: false,
-                characterTags: characterTags
+                characterTags: characterTags,
+                seed: generatedSeed, // Save the seed value
+                novelaiSettings, // 保留全部novelai设置
+                animagine4Settings // 保留全部animagine4设置
               }
             };
 
@@ -859,7 +992,6 @@ const ImageRegenerationModal: React.FC<ImageRegenerationModalProps> = ({
             setGeneratedImageUrl(imageUrl);
             setProgressMessage(null);
             
-            // onSuccess(completedImage);
             return;
           } else if (errorMessage) {
             console.error(`[图片重生成] 任务失败: ${errorMessage}`);
@@ -894,6 +1026,11 @@ const ImageRegenerationModal: React.FC<ImageRegenerationModalProps> = ({
           setError('检查状态时出错，请稍后在图库中查看结果');
           setIsLoading(false);
         }
+      } finally {
+        if (retries >= MAX_RETRIES) {
+          pollingTaskIdRef.current = null;
+          pollingCharacterIdRef.current = null;
+        }
       }
     };
 
@@ -906,7 +1043,19 @@ const ImageRegenerationModal: React.FC<ImageRegenerationModalProps> = ({
       // 这里不直接访问图片列表，实际去重在外部完成
       onSuccess(completedImage);
     }
-    onClose();
+  };
+
+  const handleRefreshPreview = async () => {
+    setIsLoading(true);
+    setError(null);
+    setProgressMessage('正在重新生成...');
+    setPreviewImageUrl(null);
+    setGeneratedImageUrl(null);
+    try {
+      await submitImageGeneration();
+    } catch (e) {
+      // 错误已在submitImageGeneration中处理
+    }
   };
 
   // UI Rendering Functions
@@ -916,21 +1065,22 @@ const ImageRegenerationModal: React.FC<ImageRegenerationModalProps> = ({
         <Text style={styles.noTagsText}>未选择角色标签</Text>
       );
     }
-
     return (
       <View style={styles.tagsContainer}>
         {characterTags.map((tag, index) => (
           <TouchableOpacity
             key={`char-tag-${index}`}
-            style={styles.characterTag}
-            onPress={() => removeCharacterTag(tag)}
+            style={[styles.characterTag, tagManageStyle]}
+            onPress={() => handleCharacterTagPress(tag)}
           >
             <Text style={styles.characterTagText}>{tag}</Text>
-            <Ionicons 
-              name="close-circle" 
-              size={14} 
-              color="rgba(255,255,255,0.7)" 
-            />
+            {manageMode && (
+              <Ionicons 
+                name="close-circle" 
+                size={14} 
+                color="rgba(255,255,255,0.7)" 
+              />
+            )}
           </TouchableOpacity>
         ))}
       </View>
@@ -943,32 +1093,26 @@ const ImageRegenerationModal: React.FC<ImageRegenerationModalProps> = ({
         <Text style={styles.noTagsText}>未添加任何标签</Text>
       );
     }
-
     return (
       <View style={styles.unifiedTagsContainer}>
         {positiveTags.map((tag, index) => (
           <TouchableOpacity
             key={`pos-tag-${index}`}
-            style={styles.selectedPositiveTag}
-            onPress={() => {
-              setPositiveTags(tags => tags.filter(t => t !== tag));
-            }}
+            style={[styles.selectedPositiveTag, tagManageStyle]}
+            onPress={() => handlePositiveTagPress(tag)}
           >
             <Text style={styles.tagText}>{tag}</Text>
-            <Ionicons name="close-circle" size={14} color="rgba(0,0,0,0.5)" />
+            {manageMode && (
+              <Ionicons name="close-circle" size={14} color="rgba(0,0,0,0.5)" />
+            )}
           </TouchableOpacity>
         ))}
-        
         {negativeTags.map((tag, index) => (
           <TouchableOpacity
             key={`neg-tag-${index}`}
             style={styles.selectedNegativeTag}
-            onPress={() => {
-              setNegativeTags(tags => tags.filter(t => t !== tag));
-            }}
           >
             <Text style={styles.negativeTagText}>{tag}</Text>
-            <Ionicons name="close-circle" size={14} color="rgba(255,255,255,0.5)" />
           </TouchableOpacity>
         ))}
       </View>
@@ -1085,28 +1229,6 @@ const ImageRegenerationModal: React.FC<ImageRegenerationModalProps> = ({
               }}
               keyboardType="numeric"
               maxLength={3}
-              placeholderTextColor="#888"
-            />
-          </View>
-        </View>
-        
-        <View style={styles.settingRow}>
-          <Text style={styles.settingLabel}>批次:</Text>
-          <View style={styles.settingInputContainer}>
-            <TextInput
-              style={styles.settingInput}
-              value={String(animagine4Settings.batch_size)}
-              onChangeText={(text) => {
-                const batch_size = parseInt(text);
-                if (!isNaN(batch_size) && batch_size > 0 && batch_size <= 4) {
-                  setAnimagine4Settings({
-                    ...animagine4Settings,
-                    batch_size
-                  });
-                }
-              }}
-              keyboardType="numeric"
-              maxLength={1}
               placeholderTextColor="#888"
             />
           </View>
@@ -1353,6 +1475,101 @@ const ImageRegenerationModal: React.FC<ImageRegenerationModalProps> = ({
     );
   };
   
+  const renderArtistPromptDisplay = () => {
+    if (!selectedArtistPrompt) return null;
+    return (
+      <View style={styles.artistPromptDisplayContainer}>
+        <Ionicons name="color-palette-outline" size={16} color="#ff9f1c" style={{marginRight: 4}} />
+        <Text style={styles.artistPromptDisplayText}>
+          {selectedArtistPrompt}
+        </Text>
+        <TouchableOpacity
+          style={styles.artistPromptRemoveButton}
+          onPress={() => setSelectedArtistPrompt(null)}
+        >
+          <Ionicons name="close" size={16} color="#aaa" />
+        </TouchableOpacity>
+      </View>
+    );
+  };
+
+  const renderTagHeaderButtons = () => (
+    <View style={styles.tagHeaderButtons}>
+      <TouchableOpacity 
+        style={styles.tagHeaderButton}
+        onPress={() => setTagSelectorVisible(true)}
+      >
+        <Ionicons name="pricetag-outline" size={16} color="#fff" />
+        <Text style={styles.tagHeaderButtonText}>常规</Text>
+      </TouchableOpacity>
+      <TouchableOpacity 
+        style={styles.tagHeaderButton}
+        onPress={() => setCharacterTagSelectorVisible(true)}
+      >
+        <Ionicons name="person-add-outline" size={16} color="#fff" />
+        <Text style={styles.tagHeaderButtonText}>角色</Text>
+      </TouchableOpacity>
+      <TouchableOpacity 
+        style={styles.tagHeaderButton}
+        onPress={() => setArtistReferenceSelectorVisible(true)}
+      >
+        <Ionicons name="color-palette-outline" size={16} color="#fff" />
+        <Text style={styles.tagHeaderButtonText}>画风</Text>
+      </TouchableOpacity>
+      {/* 权重按钮 */}
+      <TouchableOpacity
+        style={[
+          styles.tagHeaderButton,
+          tagWeightMode === 'increase' && { backgroundColor: '#ff9f1c' },
+          tagWeightMode === 'decrease' && { backgroundColor: '#FF4444' }
+        ]}
+        onPress={() => {
+          setTagWeightMode(mode => 
+            mode === 'none' ? 'increase' : mode === 'increase' ? 'decrease' : 'none'
+          );
+        }}
+      >
+        <Ionicons
+          name={
+            tagWeightMode === 'increase'
+              ? 'arrow-up-circle'
+              : tagWeightMode === 'decrease'
+              ? 'arrow-down-circle'
+              : 'swap-horizontal'
+          }
+          size={16}
+          color={tagWeightMode === 'none' ? '#fff' : '#000'}
+        />
+        <Text style={[
+          styles.tagHeaderButtonText,
+          tagWeightMode !== 'none' && { color: '#000', fontWeight: 'bold' }
+        ]}>
+          {tagWeightMode === 'increase'
+            ? '加权'
+            : tagWeightMode === 'decrease'
+            ? '降权'
+            : '权重'}
+        </Text>
+      </TouchableOpacity>
+      {/* 管理按钮 */}
+      <TouchableOpacity
+        style={[
+          styles.tagHeaderButton,
+          manageMode && { backgroundColor: '#ff9f1c' }
+        ]}
+        onPress={() => setManageMode(m => !m)}
+      >
+        <Ionicons name="construct-outline" size={16} color={manageMode ? '#000' : '#fff'} />
+        <Text style={[
+          styles.tagHeaderButtonText,
+          manageMode && { color: '#000', fontWeight: 'bold' }
+        ]}>
+          管理
+        </Text>
+      </TouchableOpacity>
+    </View>
+  );
+
   // Render the preview image section - enhanced for tabbed layout
   const renderPreviewImage = () => {
     const imageUrl = generatedImageUrl || previewImageUrl;
@@ -1427,7 +1644,8 @@ const ImageRegenerationModal: React.FC<ImageRegenerationModalProps> = ({
                           artistPrompt: selectedArtistPrompt,
                           customPrompt: '',
                           useCustomPrompt: false,
-                          characterTags: characterTags
+                          characterTags: characterTags,
+                          seed: generatedSeed // Save the seed value
                         }
                       };
                       if (replaceAvatar && setCharacterAvatar) {
@@ -1482,40 +1700,26 @@ const ImageRegenerationModal: React.FC<ImageRegenerationModalProps> = ({
       {/* Image Preview Section */}
       {renderPreviewImage()}
 
-      {/* Prompt Tags Section */}
+      {/* 主提示词Header固定 */}
       <View style={styles.tagSection}>
-      <View style={styles.tagSectionHeader}>
+        <View style={styles.tagSectionHeader}>
           <Text style={styles.tagSectionTitle}>主提示词</Text>
-          <View style={styles.tagHeaderButtons}>
-            <TouchableOpacity 
-              style={styles.tagHeaderButton}
-              onPress={() => setTagSelectorVisible(true)}
-            >
-              <Ionicons name="pricetag-outline" size={16} color="#fff" />
-              <Text style={styles.tagHeaderButtonText}>常规</Text>
-            </TouchableOpacity>
-            
-            <TouchableOpacity 
-              style={styles.tagHeaderButton}
-              onPress={() => setCharacterTagSelectorVisible(true)}
-            >
-              <Ionicons name="person-add-outline" size={16} color="#fff" />
-              <Text style={styles.tagHeaderButtonText}>角色</Text>
-            </TouchableOpacity>
-            
-            <TouchableOpacity 
-              style={styles.tagHeaderButton}
-              onPress={() => setArtistReferenceSelectorVisible(true)}
-            >
-              <Ionicons name="color-palette-outline" size={16} color="#fff" />
-              <Text style={styles.tagHeaderButtonText}>画风</Text>
-            </TouchableOpacity>
-          </View>
+          {renderTagHeaderButtons()}
         </View>
-        
+      </View>
+
+      {/* 滚动区域：画风、标签、角色标签、操作栏 */}
+      <ScrollView
+        style={styles.generationScrollArea}
+        contentContainerStyle={styles.generationScrollContent}
+        keyboardShouldPersistTaps="handled"
+        showsVerticalScrollIndicator={false}
+      >
+        {/* 画风显示 */}
+        {renderArtistPromptDisplay()}
+
         <View style={styles.expandedTagDisplayContainer}>
           {renderUnifiedTagDisplay()}
-          
           <View style={styles.tagActionButtonsContainer}>
             <TouchableOpacity
               style={styles.tagActionButton}
@@ -1526,16 +1730,14 @@ const ImageRegenerationModal: React.FC<ImageRegenerationModalProps> = ({
             </TouchableOpacity>
           </View>
         </View>
-      </View>
-      
-      {characterTags.length > 0 && (
-        <View style={styles.selectedCharacterTagsContainer}>
-          <Text style={styles.tagSectionTitle}>已选角色</Text>
-          {renderCharacterTags()}
-        </View>
-      )}
-      
-      {renderActionButtonsBar()}
+        {characterTags.length > 0 && (
+          <View style={styles.selectedCharacterTagsContainer}>
+            <Text style={styles.tagSectionTitle}>已选角色</Text>
+            {renderCharacterTags()}
+          </View>
+        )}
+        {renderActionButtonsBar()}
+      </ScrollView>
 
       {/* Generate Button */}
       <View style={styles.buttonContainer}>
@@ -1560,7 +1762,6 @@ const ImageRegenerationModal: React.FC<ImageRegenerationModalProps> = ({
           </View>
         )}
       </View>
-      
       {error && (
         <View style={styles.errorContainer}>
           <Ionicons name="alert-circle" size={20} color="#FF4444" />
@@ -1654,7 +1855,8 @@ const ImageRegenerationModal: React.FC<ImageRegenerationModalProps> = ({
               selectedGender={(character.gender === 'male' || character.gender === 'female' || character.gender === 'other' ? character.gender : 'female')}
               onSelectArtist={(artistPrompt) => {
                 if (artistPrompt) {
-                  setSelectedArtistPrompt(artistPrompt);
+                  // Always clean brackets when selecting artist prompt
+                  setSelectedArtistPrompt(removeBrackets(artistPrompt));
                   setUseExistingArtistPrompt(true);
                 }
                 setArtistReferenceSelectorVisible(false);
@@ -2862,6 +3064,37 @@ const styles = StyleSheet.create({
   },
   novelaiAdvancedSettingsContainer: {
     marginTop: 8,
+  },
+  artistPromptDisplayContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: 'rgba(255, 159, 28, 0.12)',
+    borderRadius: 14,
+    paddingVertical: 4,
+    paddingHorizontal: 10,
+    marginBottom: 8,
+    marginLeft: 2,
+    alignSelf: 'flex-start',
+    maxWidth: '100%',
+  },
+  artistPromptDisplayText: {
+    color: '#ff9f1c',
+    fontSize: 13,
+    fontWeight: 'bold',
+    marginRight: 4,
+    flexShrink: 1,
+  },
+  artistPromptRemoveButton: {
+    marginLeft: 2,
+    padding: 2,
+  },
+  generationScrollArea: {
+    flex: 1,
+    minHeight: 0,
+    marginBottom: 8,
+  },
+  generationScrollContent: {
+    paddingBottom: 8,
   },
 });
 

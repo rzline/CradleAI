@@ -870,7 +870,7 @@ const ApiSettings = () => {
                     </Text> */}
 
                     <View style={styles.cloudServiceContainer}>
-                      <Text style={styles.cloudServiceLabel}>启用云服务</Text>
+                      <Text style={styles.cloudServiceLabel}>启用</Text>
                       <Switch
                         value={useCloudService}
                         onValueChange={handleCloudServiceToggle}

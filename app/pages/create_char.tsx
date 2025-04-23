@@ -1754,7 +1754,7 @@ const CreateChar: React.FC<CreateCharProps> = ({
             onPress={() => setActiveTab('basic')}
           >
             <Ionicons 
-              name="document-outline"
+              name="image-outline"
               size={24} 
               color={activeTab === 'basic' ? theme.colors.primary : theme.colors.textSecondary} 
             />
@@ -1768,7 +1768,7 @@ const CreateChar: React.FC<CreateCharProps> = ({
             onPress={() => setActiveTab('advanced')}
           >
             <Ionicons 
-              name="settings-outline"
+              name="person-outline"
               size={24} 
               color={activeTab === 'advanced' ? theme.colors.primary : theme.colors.textSecondary} 
             />

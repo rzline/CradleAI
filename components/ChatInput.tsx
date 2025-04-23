@@ -873,16 +873,6 @@ ${recentMessagesContext ? `最近的对话记录:\n${recentMessagesContext}\n` :
                   <Text style={styles.actionMenuItemText}>生成图片</Text>
                 </View>
               </TouchableOpacity>
-
-              <TouchableOpacity 
-                style={styles.actionMenuItem}
-                activeOpacity={0.7}
-                onPress={openImageEditGenModal}>
-                <View style={styles.actionMenuItemInner}>
-                  <Ionicons name="color-wand" size={18} color="#8e44ad" />
-                  <Text style={styles.actionMenuItemText}>图片修改</Text>
-                </View>
-              </TouchableOpacity>
               
               <TouchableOpacity 
                 style={styles.actionMenuItem}

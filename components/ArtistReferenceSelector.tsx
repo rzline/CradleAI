@@ -137,7 +137,7 @@ const styles = StyleSheet.create({
   selectedArtistContainer: {
     borderColor: '#4CAF50',
     borderWidth: 2,
-    backgroundColor: 'rgba(76, 175, 80, 0.1)',
+    backgroundColor: `#ff9f1c`,
   },
   selectedArtistText: {
     color: '#4CAF50',
@@ -235,7 +235,7 @@ const styles = StyleSheet.create({
     marginLeft: 8,
   },
   actionButtonText: {
-    color: '#FFD700',
+    color: '#ff9f1c',
     fontSize: 13,
     marginLeft: 4,
   },
