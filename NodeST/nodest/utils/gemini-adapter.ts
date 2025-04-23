@@ -1612,7 +1612,7 @@ export class GeminiAdapter {
             if (hasMemoryResults && wouldNeedSearching) {
                 // 同时处理记忆和搜索
                 console.log(`[Gemini适配器] 同时检测到记忆结果和搜索意图，使用组合增强处理`);
-                return await this.handleCombinedMemoryAndSearch(contents, memoryResults);
+                return await this.handleCombinedMemoryAndSearch(contents, memoryResults, userMessage);
             } else if (hasMemoryResults) {
                 // 如果只有记忆搜索结果，仅使用记忆增强
                 console.log(`[Gemini适配器] 检测到记忆搜索结果，使用记忆增强处理`);
@@ -1642,12 +1642,10 @@ export class GeminiAdapter {
     private async handleCombinedMemoryAndSearch(contents: ChatMessage[], memoryResults: any, userMessage?: string): Promise<string> {
         console.log(`[Gemini适配器] 开始处理记忆搜索和网络搜索的组合请求`);
         
-        // 获取最后一条消息的内容
-        const lastMessage = contents[contents.length - 1];
-        // 优先使用 userMessage 参数
+        // userQuery 始终使用 userMessage 参数
         const userQuery = typeof userMessage === 'string'
             ? userMessage
-            : (lastMessage.parts?.[0]?.text || "");
+            : '';
         
         try {
             // Step 1: 准备记忆部分
@@ -1961,12 +1959,10 @@ export class GeminiAdapter {
      * @returns 搜索结果和回复
      */
     private async handleSearchIntent(contents: ChatMessage[], userMessage?: string): Promise<string> {
-        // 获取最后一条消息的内容
-        const lastMessage = contents[contents.length - 1];
         // 优先使用 userMessage 参数
         const searchQuery = typeof userMessage === 'string'
-            ? userMessage
-            : (lastMessage.parts?.[0]?.text || "");
+        ? userMessage
+        : (contents[contents.length - 1]?.parts?.[0]?.text || "");
         
         try {
             // 优先尝试通过云服务进行联网搜索
