@@ -2529,7 +2529,7 @@ const styles = StyleSheet.create({
     height: 50,
   },
   generateButtonNovelAI: {
-    backgroundColor: '#8a2be2',
+    backgroundColor: '#ff9f1c',
   },
   generateButtonText: {
     color: '#fff',
