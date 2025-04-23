@@ -135,6 +135,9 @@ const App = () => {
   const settingsSlideAnim = useRef(new Animated.Value(0)).current;
   const SIDEBAR_WIDTH = 280; // Match the sidebar width
 
+  // --- Add: Animated value for scaling content on keyboard show/hide ---
+  const contentScaleAnim = useRef(new Animated.Value(1)).current;
+
   // Create a stable memory configuration that won't change on every render
   const memoryConfig = useMemo(() => createStableMemoryConfig(user), []);
 
@@ -1030,12 +1033,26 @@ useEffect(() => {
       'keyboardWillShow',
       () => {
         setKeyboardVisible(true);
+        // Animate scale down smoothly
+        Animated.timing(contentScaleAnim, {
+          toValue: 0.96, // Slightly scale down
+          duration: 220,
+          easing: Easing.out(Easing.ease),
+          useNativeDriver: true,
+        }).start();
       }
     );
     const keyboardWillHideListener = Keyboard.addListener(
       'keyboardWillHide',
       () => {
         setKeyboardVisible(false);
+        // Animate scale back up smoothly
+        Animated.timing(contentScaleAnim, {
+          toValue: 1,
+          duration: 220,
+          easing: Easing.out(Easing.ease),
+          useNativeDriver: true,
+        }).start();
       }
     );
 
@@ -1043,7 +1060,7 @@ useEffect(() => {
       keyboardWillShowListener.remove();
       keyboardWillHideListener.remove();
     };
-  }, []);
+  }, [contentScaleAnim]);
 
   // Pass keyboard state to tab layout
   useEffect(() => {
@@ -1651,12 +1668,16 @@ useEffect(() => {
           style={[
             styles.contentMainContainer,
             {
-              transform: [{ 
-                translateX: Animated.add(
-                  contentSlideAnim,
-                  Animated.multiply(settingsSlideAnim, -1) // Negative value to move left
-                ) 
-              }],
+              transform: [
+                { 
+                  translateX: Animated.add(
+                    contentSlideAnim,
+                    Animated.multiply(settingsSlideAnim, -1) // Negative value to move left
+                  ) 
+                },
+                // --- Add: scale transform for keyboard animation ---
+                { scale: contentScaleAnim }
+              ],
               width: '100%',  // Ensure full width
             }
           ]}

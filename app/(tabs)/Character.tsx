@@ -893,40 +893,87 @@ const CharacterCard: React.FC<{
         )}
 
         <View style={styles.cardOverlay}>
-          <Text style={styles.cardName}>{item.name}</Text>
-          {/* 右下角按钮组 */}
-          {!isManaging && (
-            <View style={{ flexDirection: 'row', gap: 6 }}>
-              {/* 日记 */}
-              <TouchableOpacity
-                style={styles.diaryButton}
-                onPress={e => {
-                  e.stopPropagation();
-                  onOpenDiary(item.id);
-                }}
+          {/* 修改：大视图保持原样，中/小视图分两行 */}
+          {isLargeView ? (
+            <>
+              <Text style={styles.cardName}>{item.name}</Text>
+              {!isManaging && (
+                <View style={{ flexDirection: 'row', gap: 6 }}>
+                  {/* ...按钮组... */}
+                  <TouchableOpacity
+                    style={styles.diaryButton}
+                    onPress={e => {
+                      e.stopPropagation();
+                      onOpenDiary(item.id);
+                    }}
+                  >
+                    <Ionicons name="book-outline" size={18} color="#fff" />
+                  </TouchableOpacity>
+                  <TouchableOpacity
+                    style={styles.diaryButton}
+                    onPress={e => {
+                      e.stopPropagation();
+                      onOpenGallerySidebar(item);
+                    }}
+                  >
+                    <Ionicons name="images-outline" size={18} color="#fff" />
+                  </TouchableOpacity>
+                  <TouchableOpacity
+                    style={styles.diaryButton}
+                    onPress={e => {
+                      e.stopPropagation();
+                      onOpenImageGen(item);
+                    }}
+                  >
+                    <Ionicons name="color-wand-outline" size={18} color="#fff" />
+                  </TouchableOpacity>
+                </View>
+              )}
+            </>
+          ) : (
+            // 中/小视图：名字和按钮分两行
+            <View style={{ flex: 1, width: '100%' }}>
+              <Text
+                style={[
+                  styles.cardName,
+                  { marginBottom: 6, width: '100%' }
+                ]}
+                numberOfLines={1}
+                ellipsizeMode="tail"
               >
-                <Ionicons name="book-outline" size={18} color="#fff" />
-              </TouchableOpacity>
-              {/* 图库 */}
-              <TouchableOpacity
-                style={styles.diaryButton}
-                onPress={e => {
-                  e.stopPropagation();
-                  onOpenGallerySidebar(item);
-                }}
-              >
-                <Ionicons name="images-outline" size={18} color="#fff" />
-              </TouchableOpacity>
-              {/* 图片生成 */}
-              <TouchableOpacity
-                style={styles.diaryButton}
-                onPress={e => {
-                  e.stopPropagation();
-                  onOpenImageGen(item);
-                }}
-              >
-                <Ionicons name="color-wand-outline" size={18} color="#fff" />
-              </TouchableOpacity>
+                {item.name}
+              </Text>
+              {!isManaging && (
+                <View style={{ flexDirection: 'row', gap: 6 }}>
+                  <TouchableOpacity
+                    style={styles.diaryButton}
+                    onPress={e => {
+                      e.stopPropagation();
+                      onOpenDiary(item.id);
+                    }}
+                  >
+                    <Ionicons name="book-outline" size={18} color="#fff" />
+                  </TouchableOpacity>
+                  <TouchableOpacity
+                    style={styles.diaryButton}
+                    onPress={e => {
+                      e.stopPropagation();
+                      onOpenGallerySidebar(item);
+                    }}
+                  >
+                    <Ionicons name="images-outline" size={18} color="#fff" />
+                  </TouchableOpacity>
+                  <TouchableOpacity
+                    style={styles.diaryButton}
+                    onPress={e => {
+                      e.stopPropagation();
+                      onOpenImageGen(item);
+                    }}
+                  >
+                    <Ionicons name="color-wand-outline" size={18} color="#fff" />
+                  </TouchableOpacity>
+                </View>
+              )}
             </View>
           )}
         </View>

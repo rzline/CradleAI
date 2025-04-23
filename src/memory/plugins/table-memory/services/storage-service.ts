@@ -200,6 +200,21 @@ export class StorageService {
           } else {
             // 达到最大重试次数或非锁定错误，从队列中移除并拒绝Promise
             this.operationQueue.shift();
+            // ---- 新增死锁检测与日志报警 ----
+            if (isLockError && item.retry >= this.maxRetries) {
+              console.error('[TableMemory] 数据库长时间锁定，疑似死锁，已达最大重试次数。');
+              // SQLite 没有传统死锁，但长时间 busy/locked 可视为“死锁”
+              // 尝试回滚当前事务（如果有）
+              try {
+                if (db) {
+                  await db.execAsync('ROLLBACK');
+                  console.warn('[TableMemory] 已尝试执行 ROLLBACK 以解除锁定。');
+                }
+              } catch (rollbackErr) {
+                console.error('[TableMemory] 回滚事务失败:', rollbackErr);
+              }
+            }
+            // ---- end ----
             console.error('[TableMemory] 数据库操作失败，无法重试:', error);
             item.reject(error);
           }
@@ -562,21 +577,10 @@ export class StorageService {
       if (!db) {
         throw new Error('数据库未初始化');
       }
-      
-      // Enhanced logging to help debug the issue
-      console.log(`[StorageService] Running getSheetsByCharacter - characterId: "${characterId}" (${typeof characterId}), conversationId: "${conversationId}" (${typeof conversationId})`);
-      
-      // Ensure consistent ID handling by converting to string
+
       const safeCharacterId = String(characterId || '').trim();
       const safeConversationId = conversationId ? String(conversationId).trim() : safeCharacterId;
-      
-      console.log(`[StorageService] Normalized IDs - safeCharacterId: "${safeCharacterId}", safeConversationId: "${safeConversationId}"`);
-      
-      // First try a direct query without any string manipulation - just use parameters
-      // Log all database operations for debugging
-      console.log(`[StorageService] Database query: SELECT * FROM sheets WHERE character_id = ? AND conversation_id = ?`);
-      console.log(`[StorageService] Query parameters: [${safeCharacterId}, ${safeConversationId}]`);
-      
+
       // Query with both characterId and conversationId
       const exactResults = await db.getAllAsync<{
         uid: string;
@@ -590,22 +594,10 @@ export class StorageService {
         `SELECT * FROM sheets WHERE character_id = ? AND conversation_id = ?`,
         [safeCharacterId, safeConversationId]
       );
-      
-      console.log(`[StorageService] Direct match query found ${exactResults.length} sheets`);
-      
-      // Dump the first few results for inspection
+
       if (exactResults.length > 0) {
-        console.log(`[StorageService] First match details - ID: ${exactResults[0].uid}, name: ${exactResults[0].name}`);
-        console.log(`[StorageService] Match character_id: "${exactResults[0].character_id}", conversation_id: "${exactResults[0].conversation_id}"`);
-      }
-      
-      // If we found exact matches, process them
-      if (exactResults.length > 0) {
-        // Fetch cells for each sheet
         const sheets: Sheet[] = [];
-        
         for (const sheetResult of exactResults) {
-          // Get the cells for this sheet
           const cellResults = await db.getAllAsync<{
             uid: string;
             sheet_id: string;
@@ -616,9 +608,7 @@ export class StorageService {
             created_at: string;
             updated_at: string;
           }>(`SELECT * FROM cells WHERE sheet_id = ?`, [sheetResult.uid]);
-          
-          console.log(`[StorageService] Found ${cellResults.length} cells for sheet ${sheetResult.uid}`);
-          
+
           sheets.push({
             uid: sheetResult.uid,
             templateId: sheetResult.template_id,
@@ -639,16 +629,10 @@ export class StorageService {
             }))
           });
         }
-        
-        console.log(`[StorageService] Returning ${sheets.length} sheets from exact match`);
         return sheets;
       }
-      
+
       // Try a broader search by character ID only
-      console.log(`[StorageService] No exact match found, trying character-only search`);
-      console.log(`[StorageService] Query: SELECT * FROM sheets WHERE character_id = ?`);
-      console.log(`[StorageService] Parameters: [${safeCharacterId}]`);
-      
       const characterResults = await db.getAllAsync<{
         uid: string;
         template_id: string;
@@ -661,42 +645,32 @@ export class StorageService {
         `SELECT * FROM sheets WHERE character_id = ?`, 
         [safeCharacterId]
       );
-      
-      console.log(`[StorageService] Character-only query found ${characterResults.length} sheets`);
-      
-      // List what we found to help debugging
+
+      // Only update sheets whose conversation_id is different
+      const sheetsToUpdate = characterResults.filter(
+        sheetResult => sheetResult.conversation_id !== safeConversationId
+      );
+
       if (characterResults.length > 0) {
-        console.log(`[StorageService] Found tables by character ID:`);
-        characterResults.forEach((sheet, index) => {
-          console.log(`[StorageService] ${index + 1}. ID: ${sheet.uid}, name: ${sheet.name}, conversation_id: "${sheet.conversation_id}"`);
-        });
-      }
-      
-      // If we found sheets with the character ID, update their conversation ID
-      if (characterResults.length > 0) {
-        console.log(`[StorageService] Found ${characterResults.length} tables with characterId`);
-        
-        // Update the conversation IDs for all matching sheets
-        for (const sheetResult of characterResults) {
-          if (sheetResult.conversation_id !== safeConversationId) {
-            console.log(`[StorageService] Updating sheet ${sheetResult.uid} conversation_id from "${sheetResult.conversation_id}" to "${safeConversationId}"`);
-            
-            // Update the conversation ID in the database
-            await db.runAsync(
-              `UPDATE sheets SET conversation_id = ?, updated_at = ? WHERE uid = ?`,
-              [safeConversationId, new Date().toISOString(), sheetResult.uid]
-            );
-            
-            // Update the in-memory object too
-            sheetResult.conversation_id = safeConversationId;
+        if (sheetsToUpdate.length > 0) {
+          console.log(`[StorageService] 需要更新 ${sheetsToUpdate.length} 个表格的 conversation_id`);
+          for (const sheetResult of sheetsToUpdate) {
+            try {
+              await db.runAsync(
+                `UPDATE sheets SET conversation_id = ?, updated_at = ? WHERE uid = ?`,
+                [safeConversationId, new Date().toISOString(), sheetResult.uid]
+              );
+              sheetResult.conversation_id = safeConversationId;
+            } catch (err) {
+              console.error(`[StorageService] 更新 sheet ${sheetResult.uid} conversation_id 失败:`, err);
+            }
           }
+        } else {
+          console.log(`[StorageService] 所有表格的 conversation_id 已是目标值，无需更新`);
         }
-        
-        // Process the results
+
         const sheets: Sheet[] = [];
-        
         for (const sheetResult of characterResults) {
-          // Get the cells for this sheet
           const cellResults = await db.getAllAsync<{
             uid: string;
             sheet_id: string;
@@ -707,13 +681,13 @@ export class StorageService {
             created_at: string;
             updated_at: string;
           }>(`SELECT * FROM cells WHERE sheet_id = ?`, [sheetResult.uid]);
-          
+
           sheets.push({
             uid: sheetResult.uid,
             templateId: sheetResult.template_id,
             name: sheetResult.name,
             characterId: sheetResult.character_id,
-            conversationId: sheetResult.conversation_id, // This now has the updated value
+            conversationId: sheetResult.conversation_id,
             createdAt: sheetResult.created_at,
             updatedAt: sheetResult.updated_at,
             cells: cellResults.map(cell => ({
@@ -728,25 +702,9 @@ export class StorageService {
             }))
           });
         }
-        
-        console.log(`[StorageService] Returning ${sheets.length} sheets from character-only match`);
         return sheets;
       }
-      
-      // If we get here, we didn't find any sheets
-      console.log(`[StorageService] No sheets found for characterId: "${safeCharacterId}"`);
-      
-      // One more attempt - check for any similar character IDs
-      console.log(`[StorageService] Checking for any similar character IDs...`);
-      const allCharacterIds = await db.getAllAsync<{ character_id: string }>(
-        `SELECT DISTINCT character_id FROM sheets`
-      );
-      
-      console.log(`[StorageService] Found ${allCharacterIds.length} distinct character IDs in the database:`);
-      allCharacterIds.forEach((row, index) => {
-        console.log(`[StorageService]   ${index + 1}. "${row.character_id}"`);
-      });
-      
+
       return [];
     });
   }
@@ -1023,3 +981,11 @@ export class StorageService {
     }
   }
 }
+
+/**
+ * SQLite 死锁与锁死说明
+ * 
+ * SQLite 不会产生传统的多事务死锁，但如果有长事务或并发写入，可能导致 busy/locked 锁死。
+ * 本插件通过队列串行化所有数据库操作，理论上可避免绝大多数锁死。
+ * 若出现长时间 busy/locked，插件会重试并在多次失败后报警，并尝试回滚事务。
+ */

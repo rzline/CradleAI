@@ -31,7 +31,6 @@ import RichTextRenderer from '@/components/RichTextRenderer';
 import ImageManager from '@/utils/ImageManager';
 import { ttsService, AudioState } from '@/services/ttsService'; // Import the TTS service
 import { useDialogMode } from '@/constants/DialogModeContext';
-import AsyncStorage from '@react-native-async-storage/async-storage';
 
 // Update ChatDialogProps interface in the file or in shared/types.ts to include messageMemoryState
 interface ExtendedChatDialogProps extends ChatDialogProps {
@@ -48,13 +47,6 @@ const MAX_IMAGE_HEIGHT = 300; // Maximum height for images in chat
 // Constants for virtualization
 const INITIAL_LOAD_COUNT = 50; // Initial messages to show
 const BATCH_SIZE = 5; // How many messages to load per batch when scrolling up
-
-const VN_SETTINGS_KEY = 'visual_novel_settings';
-const defaultVNSettings = {
-  fontFamily: 'System',
-  textColor: '#FFFFFF',
-  backgroundColor: 'rgba(0, 0, 0, 0.7)',
-};
 
 const ChatDialog: React.FC<ExtendedChatDialogProps> = ({
   messages,
@@ -93,20 +85,6 @@ const ChatDialog: React.FC<ExtendedChatDialogProps> = ({
   
   // Get dialog mode from context
   const { mode, visualNovelSettings, isHistoryModalVisible, setHistoryModalVisible } = useDialogMode();
-
-  // 新增: 视觉小说全局设置
-  const [globalVNSettings, setGlobalVNSettings] = useState(defaultVNSettings);
-
-  useEffect(() => {
-    // 加载全局视觉小说设置
-    AsyncStorage.getItem(VN_SETTINGS_KEY).then(data => {
-      if (data) {
-        try {
-          setGlobalVNSettings(JSON.parse(data));
-        } catch {}
-      }
-    });
-  }, []);
   
   // Add states for virtualized list
   const [virtualizedMessages, setVirtualizedMessages] = useState<Message[]>([]);
@@ -1213,18 +1191,11 @@ const ChatDialog: React.FC<ExtendedChatDialogProps> = ({
     const isUser = showUserMessage;
     const isRegenerating = regeneratingMessageId === lastMessage.id;
     const messageRating = getMessageRating(lastMessage.id);
-
-    // 优先使用全局设置
-    const vnSettings = {
-      ...defaultVNSettings,
-      ...globalVNSettings,
-      ...visualNovelSettings, // context优先级最低，页面设置优先
-    };
   
     return (
       <View style={[
         styles.visualNovelContainer,
-        { backgroundColor: vnSettings.backgroundColor }
+        { backgroundColor: visualNovelSettings.backgroundColor }
       ]}>
         <View style={styles.visualNovelHeader}>
           <Image
@@ -1233,7 +1204,7 @@ const ChatDialog: React.FC<ExtendedChatDialogProps> = ({
           />
           <Text style={[
             styles.visualNovelCharacterName,
-            { color: vnSettings.textColor, fontFamily: vnSettings.fontFamily }
+            { color: visualNovelSettings.textColor }
           ]}>
             {displayName}
           </Text>
@@ -1242,6 +1213,7 @@ const ChatDialog: React.FC<ExtendedChatDialogProps> = ({
             onPress={() => setHistoryModalVisible(true)}
           >
             <Ionicons name="time-outline" size={20} color="#fff" />
+            <Text style={styles.historyButtonText}>查看历史</Text>
           </TouchableOpacity>
         </View>
         <ScrollView style={styles.visualNovelTextContainer}>
@@ -1250,8 +1222,8 @@ const ChatDialog: React.FC<ExtendedChatDialogProps> = ({
               <RichTextRenderer 
                 html={optimizeHtmlForRendering(displayText)}
                 baseStyle={{ 
-                  color: vnSettings.textColor,
-                  fontFamily: vnSettings.fontFamily,
+                  color: visualNovelSettings.textColor,
+                  fontFamily: visualNovelSettings.fontFamily,
                   fontSize: 16,
                   lineHeight: 22
                 }}
@@ -1262,8 +1234,8 @@ const ChatDialog: React.FC<ExtendedChatDialogProps> = ({
               <Text style={[
                 styles.visualNovelText,
                 { 
-                  fontFamily: vnSettings.fontFamily, 
-                  color: vnSettings.textColor 
+                  fontFamily: visualNovelSettings.fontFamily, 
+                  color: visualNovelSettings.textColor 
                 }
               ]}>
                 {displayText}
@@ -1276,7 +1248,7 @@ const ChatDialog: React.FC<ExtendedChatDialogProps> = ({
           {!isUser && !lastMessage.isLoading && (
             <>
               {renderTTSButtons(lastMessage)}
-              {/* {onRegenerateMessage && (
+              {onRegenerateMessage && (
                 <TouchableOpacity
                   style={[
                     styles.visualNovelActionButton,
@@ -1295,7 +1267,7 @@ const ChatDialog: React.FC<ExtendedChatDialogProps> = ({
                     <Ionicons name="refresh-circle" size={26} color="rgba(255,255,255,0.9)" />
                   )}
                 </TouchableOpacity>
-              )} */}
+              )}
               {onRateMessage && (
                 <View style={styles.visualNovelRateButtons}>
                   <TouchableOpacity

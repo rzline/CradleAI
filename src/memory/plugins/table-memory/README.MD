@@ -264,6 +264,50 @@ interface TablesData {
 }
 ```
 
+## 数据库锁死（database is locked）排查与解锁方法
+
+在 Expo 或 React Native 环境下，SQLite 数据库出现 `database is locked` 错误，通常是由于：
+- 有未完成或未关闭的事务/连接
+- 多个进程/标签页/应用实例同时访问同一个数据库文件
+- 某次写入操作异常中断，导致数据库长时间持有锁
+
+### 处理建议
+
+1. **完全关闭 App 并重启**
+   - 彻底关闭你的 App（包括所有前台和后台进程），然后重新启动。
+   - 这会释放所有未关闭的数据库连接和锁。
+
+2. **确保没有多实例访问**
+   - 检查是否有多个 Expo/Metro 进程、模拟器、真机或浏览器标签页同时运行同一个 App。
+   - 只保留一个实例，避免并发访问同一数据库文件。
+
+3. **重启 Expo 开发服务器**
+   - 关闭所有终端中的 `expo start` 或 `npx expo start` 进程。
+   - 重新启动开发服务器。
+
+4. **清理 SQLite 数据库文件（仅开发环境）**
+   - 如果数据库一直无法解锁，可尝试删除本地数据库文件（如 `table_memory.db`），让应用重新初始化数据库。
+   - 路径通常在 `FileSystem.documentDirectory` 下，或你自定义的路径。
+   - **注意：此操作会丢失所有表格数据，仅适用于开发测试环境！**
+
+5. **代码层面建议**
+   - 确保所有数据库操作都通过 StorageService 队列串行化，避免绕过队列直接访问数据库。
+   - 避免在事务中执行耗时操作或 await 其他异步任务。
+   - 遇到锁死时，建议重启 App，或调用 `StorageService.close()` 主动关闭数据库连接。
+
+### 参考代码：主动关闭数据库连接
+
+```typescript
+// 在 App 退出或切换账号等场景调用
+import { StorageService } from './memory/plugins/table-memory/services/storage-service';
+
+await StorageService.close();
+```
+
+---
+
+**如果上述方法仍无法解锁数据库，请重启开发环境或清理数据库文件。生产环境请避免多进程/多实例并发访问同一数据库。**
+
 ## 故障排查
 
 如果表格记忆功能不正常工作：

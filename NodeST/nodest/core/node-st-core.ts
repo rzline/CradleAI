@@ -1412,6 +1412,12 @@ export class NodeSTCore {
                 hasMemoryResults: memoryResults?.results?.length > 0
             });
 
+            // 新增：如果用工具调用，则自动为userMessage加前缀
+            let toolUserMessage = userMessage;
+            if (toolUserMessage && !toolUserMessage.startsWith('需要搜索：')) {
+                toolUserMessage = '需要搜索：' + toolUserMessage;
+            }
+
             // 1. 加载框架内容
             const preset = await this.loadJson<PresetJson>(`nodest_${sessionId}_preset`);
             const worldBook = await this.loadJson<WorldBookJson>(`nodest_${sessionId}_world`);
@@ -1458,7 +1464,7 @@ export class NodeSTCore {
                     parts: chatHistory.parts.filter(msg => !msg.is_d_entry)
                 },
                 dEntries,
-                userMessage
+                toolUserMessage
             );
 
             // 确保正确插入聊天历史
@@ -1509,7 +1515,7 @@ export class NodeSTCore {
             // 清理内容用于Gemini
             const cleanedContents = this.cleanContentsForGemini(
                 contents,
-                userMessage,
+                toolUserMessage,
                 roleCard.name,
                 customUserName || "", // Use customUserName if provided, otherwise empty string
                 roleCard
@@ -1557,7 +1563,7 @@ export class NodeSTCore {
             console.log('[NodeSTCore] Sending to API with tool calls...');
             // 如果使用工具调用，则传递记忆搜索结果
             if (activeAdapter) {
-                const response = await activeAdapter.generateContentWithTools(cleanedContents, memoryResults, userMessage);
+                const response = await activeAdapter.generateContentWithTools(cleanedContents, memoryResults, toolUserMessage);
                 console.log('[NodeSTCore] API response received:', {
                     hasResponse: !!response,
                     responseLength: response?.length || 0

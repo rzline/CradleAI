@@ -226,12 +226,7 @@ const ChatInput: React.FC<ChatInputProps> = ({
       
       if (result.success) {
         const processedResponse = applyRegexTools(result.text || '抱歉，未收到有效回复。', 'ai');
-        // 检查AI回复是否为错误提示
-        if (processedResponse === '抱歉，未收到有效回复。') {
-          onSendMessage(processedResponse, 'bot', false, { isErrorMessage: true });
-        } else {
-          onSendMessage(processedResponse, 'bot');
-        }
+        onSendMessage(processedResponse, 'bot');
         
         if (userMemoryAdded && selectedCharacter?.id && !isImageRelated) {
           try {
@@ -377,14 +372,9 @@ ${recentMessagesContext ? `最近的对话记录:\n${recentMessagesContext}\n` :
       
       if (response) {
         const processedResponse = applyRegexTools(response, 'ai');
-        // 检查AI回复是否为错误提示
-        if (processedResponse === '抱歉，未收到有效回复。') {
-          onSendMessage(processedResponse, 'bot', false, { isErrorMessage: true });
-        } else {
-          onSendMessage(processedResponse, 'bot');
-        }
+        onSendMessage(processedResponse, 'bot');
       } else {
-        onSendMessage('抱歉，无法解析这张图片。', 'bot', false, { isErrorMessage: true });
+        onSendMessage('抱歉，无法解析这张图片。', 'bot');
       }
       
       setSelectedImage(null);
@@ -392,7 +382,7 @@ ${recentMessagesContext ? `最近的对话记录:\n${recentMessagesContext}\n` :
       
     } catch (error) {
       console.error('Error sending image:', error);
-      onSendMessage('抱歉，处理图片时出现了错误，请重试。', 'bot', false, { isErrorMessage: true });
+      onSendMessage('抱歉，处理图片时出现了错误，请重试。', 'bot');
     } finally {
       setIsLoading(false);
       setShowActions(false);
@@ -466,11 +456,11 @@ ${recentMessagesContext ? `最近的对话记录:\n${recentMessagesContext}\n` :
           onSendMessage('图像已生成，但保存过程中出现错误。', 'bot');
         }
       } else {
-        onSendMessage('抱歉，我现在无法生成这个图片。可能是描述需要更具体，或者该内容不适合生成。', 'bot', false, { isErrorMessage: true });
+        onSendMessage('抱歉，我现在无法生成这个图片。可能是描述需要更具体，或者该内容不适合生成。', 'bot');
       }
     } catch (error) {
       console.error('Error generating image:', error);
-      onSendMessage('抱歉，生成图片时出现了错误，请重试。', 'bot', false, { isErrorMessage: true });
+      onSendMessage('抱歉，生成图片时出现了错误，请重试。', 'bot');
     } finally {
       setIsGeneratingImage(false);
       setShowImageGenModal(false);
@@ -556,11 +546,11 @@ ${recentMessagesContext ? `最近的对话记录:\n${recentMessagesContext}\n` :
           onSendMessage('图像已编辑，但保存过程中出现错误。', 'bot');
         }
       } else {
-        onSendMessage('抱歉，我无法编辑这张图片。可能是因为编辑指令不够明确，或者模型暂不支持这种编辑操作。', 'bot', false, { isErrorMessage: true });
+        onSendMessage('抱歉，我无法编辑这张图片。可能是因为编辑指令不够明确，或者模型暂不支持这种编辑操作。', 'bot');
       }
     } catch (error) {
       console.error('Error editing image:', error);
-      onSendMessage('抱歉，编辑图片时出现了错误，请重试。', 'bot', false, { isErrorMessage: true });
+      onSendMessage('抱歉，编辑图片时出现了错误，请重试。', 'bot');
     } finally {
       setIsGeneratingImage(false);
       setShowImageEditGenModal(false);

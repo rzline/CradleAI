@@ -1574,6 +1574,7 @@ export class GeminiAdapter {
      */
     async generateContentWithTools(contents: ChatMessage[], memoryResults?: any, userMessage?: string): Promise<string> {
         // 检查是否有API密钥配置或者是否应该使用云服务
+        
         const apiKeyAvailable = this.isApiKeyConfigured();
         const cloudServiceAvailable = this.useCloudService && CloudServiceProvider.isEnabled();
         
@@ -1602,7 +1603,7 @@ export class GeminiAdapter {
         console.log(`[Gemini适配器] userMessage是否适合搜索: ${wouldNeedSearching}`);
         
         try {
-            // 检查是否同时存在记忆结果和搜索意图
+            // 检查是否同时存在记忆结果和搜索意图ff
             const hasMemoryResults = memoryResults && 
                                    memoryResults.results && 
                                    memoryResults.results.length > 0;
@@ -1619,7 +1620,7 @@ export class GeminiAdapter {
             } else if (wouldNeedSearching) {
                 // 如果没有记忆结果但有搜索意图，使用网络搜索
                 console.log(`[Gemini适配器] 检测到搜索意图，尝试使用网络搜索`);
-                return await this.handleSearchIntent(contents);
+                return await this.handleSearchIntent(contents, analyzedUserMessage);
             }
             
             // 如果没有搜索意图，使用普通对话方式
@@ -1632,17 +1633,21 @@ export class GeminiAdapter {
         }
     }
     /**
+    /**
      * 处理同时具有记忆搜索结果和网络搜索意图的请求
      * @param contents 消息内容
      * @param memoryResults 记忆搜索结果
      * @returns 生成的融合回复
      */
-    private async handleCombinedMemoryAndSearch(contents: ChatMessage[], memoryResults: any): Promise<string> {
+    private async handleCombinedMemoryAndSearch(contents: ChatMessage[], memoryResults: any, userMessage?: string): Promise<string> {
         console.log(`[Gemini适配器] 开始处理记忆搜索和网络搜索的组合请求`);
         
         // 获取最后一条消息的内容
         const lastMessage = contents[contents.length - 1];
-        const userQuery = lastMessage.parts?.[0]?.text || "";
+        // 优先使用 userMessage 参数
+        const userQuery = typeof userMessage === 'string'
+            ? userMessage
+            : (lastMessage.parts?.[0]?.text || "");
         
         try {
             // Step 1: 准备记忆部分
@@ -1662,6 +1667,8 @@ export class GeminiAdapter {
             if (this.useCloudService && CloudServiceProvider.isEnabled()) {
                 try {
                     console.log(`[Gemini适配器] 优先通过云服务处理联网搜索请求`);
+                    // 新增：打印请求内容
+                    console.log(`[Gemini适配器][云服务搜索] 请求内容:`, userQuery);
                     const response = await CloudServiceProvider.generateSearchResult(userQuery, {
                         model: CloudServiceProvider.getMultiModalModel(),
                         temperature: 0.7,
@@ -1679,6 +1686,8 @@ export class GeminiAdapter {
                     } else if (typeof result === 'string') {
                         searchResultText = result;
                     }
+                    // 新增：打印云服务返回的搜索结果
+                    console.log(`[Gemini适配器][云服务搜索] 返回结果:`, searchResultText);
                     if (searchResultText) {
                         let searchSection = `<websearch>\n搜索引擎返回的联网检索结果：\n${searchResultText}\n</websearch>\n\n`;
                         
@@ -1918,16 +1927,27 @@ export class GeminiAdapter {
      * @param contents 消息内容
      * @returns 搜索结果和回复
      */
-    private async handleSearchIntent(contents: ChatMessage[]): Promise<string> {
+    /**
+     * 处理搜索意图
+     * @param contents 消息内容
+     * @param userMessage 可选，用户真实输入
+     * @returns 搜索结果和回复
+     */
+    private async handleSearchIntent(contents: ChatMessage[], userMessage?: string): Promise<string> {
         // 获取最后一条消息的内容
         const lastMessage = contents[contents.length - 1];
-        const searchQuery = lastMessage.parts?.[0]?.text || "";
+        // 优先使用 userMessage 参数
+        const searchQuery = typeof userMessage === 'string'
+            ? userMessage
+            : (lastMessage.parts?.[0]?.text || "");
         
         try {
             // 优先尝试通过云服务进行联网搜索
             if (this.useCloudService && CloudServiceProvider.isEnabled()) {
                 try {
                     console.log(`[Gemini适配器] 优先通过云服务处理联网搜索请求`);
+                    // 新增：打印请求内容
+                    console.log(`[Gemini适配器][云服务搜索] 请求内容:`, searchQuery);
                     const response = await CloudServiceProvider.generateSearchResult(searchQuery, {
                         model: CloudServiceProvider.getMultiModalModel(),
                         temperature: 0.7,
@@ -1945,9 +1965,11 @@ export class GeminiAdapter {
                     } else if (typeof result === 'string') {
                         searchResultText = result;
                     }
+                    // 新增：打印云服务返回的搜索结果
+                    console.log(`[Gemini适配器][云服务搜索] 返回结果:`, searchResultText);
                     if (searchResultText) {
                         // 构建带有搜索结果的修改版提示
-                        let combinedPrompt = `${searchQuery}\n\n`;
+                        let combinedPrompt = `我在对用户消息：${searchQuery}\n\n进行联网搜索`;
                         
                         // 添加网络搜索结果
                         combinedPrompt += `<websearch>\n搜索引擎返回的联网检索结果：\n${searchResultText}\n</websearch>\n\n`;
@@ -2013,7 +2035,7 @@ export class GeminiAdapter {
             console.log(`[Gemini适配器] 获取到搜索结果，正在生成回复`);
             
             // 构建网络搜索结果的修改版提示
-            let combinedPrompt = `${searchQuery}\n\n`;
+            let combinedPrompt = `我在对用户消息：${searchQuery}\n\n进行联网搜索`;
             
             // 添加网络搜索结果
             combinedPrompt += `<websearch>\n搜索引擎返回的联网检索结果：\n${formattedResults}\n</websearch>\n\n`;
