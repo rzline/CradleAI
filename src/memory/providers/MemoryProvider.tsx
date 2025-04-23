@@ -16,6 +16,9 @@ import {
 import { ConfigManager } from '../config/manager';
 import { useUser } from '@/constants/UserContext';
 import Mem0Service from '@/src/memory/services/Mem0Service';
+
+const SETTINGS_STORAGE_KEY = 'MemoryProcessingControl:settings'; // 新增
+
 interface MemoryContextType {
   loading: boolean;
   error: Error | null;
@@ -60,8 +63,29 @@ export const MemoryProvider: React.FC<MemoryProviderProps> = ({ children, config
   // Create a stable configuration reference to break update cycles
   const configRef = useRef(config);
   
-  // Add state for memory processing interval
+  // --- 修改：初始化时从本地读取 interval 设置 ---
   const [memoryProcessingInterval, setMemoryProcessingInterval] = useState<number>(10);
+  useEffect(() => {
+    (async () => {
+      try {
+        const saved = typeof localStorage !== 'undefined'
+          ? localStorage.getItem(SETTINGS_STORAGE_KEY)
+          : (typeof require !== 'undefined'
+              ? await require('@react-native-async-storage/async-storage').default.getItem(SETTINGS_STORAGE_KEY)
+              : null);
+        if (saved) {
+          const parsed = JSON.parse(saved);
+          if (typeof parsed.currentInterval === 'number') {
+            setMemoryProcessingInterval(parsed.currentInterval);
+            console.log(`[MemoryProvider] Loaded memoryProcessingInterval from storage: ${parsed.currentInterval}`);
+          }
+        }
+      } catch (e) {
+        console.warn('[MemoryProvider] Failed to load memoryProcessingInterval from storage', e);
+      }
+    })();
+  }, []);
+  // --- end ---
 
   // Compare configuration and only update the ref if there are significant changes
   useEffect(() => {
