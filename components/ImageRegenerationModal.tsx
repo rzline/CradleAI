@@ -14,6 +14,7 @@ import {
   TextInput,
   StatusBar,
   AppState,
+  Linking,
 } from 'react-native';
 import { Ionicons, MaterialIcons } from '@expo/vector-icons';
 import { CradleCharacter, CharacterImage } from '@/shared/types';
@@ -1152,24 +1153,6 @@ const ImageRegenerationModal: React.FC<ImageRegenerationModalProps> = ({
     poll();
   };
 
-  const handleSuccess = (completedImage: CharacterImage) => {
-    if (typeof onSuccess === 'function') {
-      onSuccess(completedImage);
-    }
-  };
-
-  const handleRefreshPreview = async () => {
-    setIsLoading(true);
-    setError(null);
-    setProgressMessage('正在重新生成...');
-    setPreviewImageUrl(null);
-    setGeneratedImageUrl(null);
-    try {
-      await submitImageGeneration();
-    } catch (e) {
-    }
-  };
-
   const renderCharacterTags = () => {
     if (characterTags.length === 0) {
       return (
@@ -1670,11 +1653,22 @@ const ImageRegenerationModal: React.FC<ImageRegenerationModalProps> = ({
       <View style={styles.previewImageContainer}>
         {imageUrl ? (
           <View style={styles.previewImageWrapper}>
-            <Image 
-              source={{ uri: imageUrl }}
-              style={styles.previewImage}
-              resizeMode="contain"
-            />
+            {/* 2. 点击图片可查看原图 */}
+            <TouchableOpacity
+              activeOpacity={0.9}
+              onPress={() => {
+                if (imageUrl) {
+                  Linking.openURL(imageUrl);
+                }
+              }}
+              style={{ flex: 1 }}
+            >
+              <Image 
+                source={{ uri: imageUrl }}
+                style={styles.previewImage}
+                resizeMode="contain"
+              />
+            </TouchableOpacity>
             <View style={styles.overlayButtonsContainer}>
               <View style={styles.overlayOptionRow}>
                 <TouchableOpacity 
@@ -1688,16 +1682,6 @@ const ImageRegenerationModal: React.FC<ImageRegenerationModalProps> = ({
                   onPress={() => setReplaceAvatar(!replaceAvatar)}
                 >
                   <Ionicons name="person" size={18} color="#fff" />
-                </TouchableOpacity>
-                <TouchableOpacity 
-                  style={styles.overlayButton}
-                  onPress={() => {
-                    setPreviewImageUrl(null);
-                    setGeneratedImageUrl(null);
-                    setIsLoading(false);
-                  }}
-                >
-                  <Ionicons name="refresh" size={18} color="#fff" />
                 </TouchableOpacity>
                 <TouchableOpacity 
                   style={styles.confirmOverlayButton}
@@ -1734,6 +1718,7 @@ const ImageRegenerationModal: React.FC<ImageRegenerationModalProps> = ({
                       if (replaceBackground && setCharacterBackgroundImage) {
                         await setCharacterBackgroundImage(character.id, completedImage.localUri || completedImage.url);
                       }
+                      // 1. 不关闭组件，仅回调onSuccess
                       onSuccess(
                         completedImage,
                         {
@@ -1753,7 +1738,7 @@ const ImageRegenerationModal: React.FC<ImageRegenerationModalProps> = ({
             </View>
             {generatedSeed && (
               <View style={styles.seedOverlay}>
-                <Text style={styles.seedOverlayText}>Seed: {generatedSeed}</Text>
+                <Text style={styles.seedOverlayText}>Seed:{generatedSeed}</Text>
               </View>
             )}
           </View>
@@ -1807,26 +1792,33 @@ const ImageRegenerationModal: React.FC<ImageRegenerationModalProps> = ({
       </ScrollView>
 
       <View style={styles.buttonContainer}>
-        {!isLoading ? (
-          <TouchableOpacity 
-              style={[
-                styles.generateButton
-              ]}
-              onPress={submitImageGeneration}
-            >
+        {/* 3. 优化生成按钮加载状态 */}
+        <TouchableOpacity 
+          style={[
+            styles.generateButton,
+            imageProvider === 'novelai' && styles.generateButtonNovelAI,
+            isLoading && { opacity: 0.7 }
+          ]}
+          onPress={submitImageGeneration}
+          disabled={isLoading}
+          activeOpacity={isLoading ? 1 : 0.7}
+        >
+          {isLoading ? (
+            <>
+              <ActivityIndicator size="small" color="#fff" style={{ marginRight: 8 }} />
+              <Text style={styles.generateButtonText}>生成中...</Text>
+            </>
+          ) : (
+            <>
               <Ionicons 
                 name="image" 
                 size={20} 
                 color="#fff" 
               />
               <Text style={styles.generateButtonText}>生成</Text>
-            </TouchableOpacity>
-        ) : (
-          <View style={styles.loadingButton}>
-            <ActivityIndicator size="small" color="#fff" />
-            <Text style={styles.loadingButtonText}>生成中...</Text>
-          </View>
-        )}
+            </>
+          )}
+        </TouchableOpacity>
       </View>
       {error && (
         <View style={styles.errorContainer}>
