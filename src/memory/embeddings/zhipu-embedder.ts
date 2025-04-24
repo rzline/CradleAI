@@ -153,95 +153,62 @@ export class ZhipuEmbedder implements Embedder {
         this.initialized = true;
         console.log('[ZhipuEmbedder] 使用从存储获取的API密钥');
       } else {
-        console.error('[ZhipuEmbedder] 智谱嵌入API密钥未设置');
-        this.createFallbackVector();
-        return this.fallbackVector!;
+        throw new Error('[ZhipuEmbedder] 智谱嵌入API密钥未设置');
       }
     }
 
     // 确保文本不为空
     if (!text || text.trim() === '') {
-      console.warn('[ZhipuEmbedder] 嵌入文本为空，返回备用向量');
-      this.createFallbackVector();
-      return this.fallbackVector!;
+      throw new Error('[ZhipuEmbedder] 嵌入文本为空');
     }
-    
-    // 执行重试逻辑
-    for (let attempt = 1; attempt <= this.retryCount; attempt++) {
-      try {
-        const textPreview = text.length > 50 ? `${text.substring(0, 50)}...` : text;
-        console.log(`[ZhipuEmbedder] 尝试嵌入文本 (${attempt}/${this.retryCount}): "${textPreview}"`);
-        
-        // 准备请求体
-        const requestBody = {
-          model: this.model,
-          input: text,
-          dimensions: this.dimensions  // 指定维度
-        };
 
-        // 执行请求
-        const response = await fetch(this.endpoint, {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-            'Authorization': `Bearer ${this.apiKey}`
-          },
-          body: JSON.stringify(requestBody)
-        });
+    try {
+      const textPreview = text.length > 50 ? `${text.substring(0, 50)}...` : text;
+      console.log(`[ZhipuEmbedder] 尝试嵌入文本: "${textPreview}"`);
 
-        if (!response.ok) {
-          const errorText = await response.text();
-          let errorInfo = "";
-          try {
-            errorInfo = JSON.stringify(JSON.parse(errorText));
-          } catch {
-            errorInfo = errorText;
-          }
-          throw new Error(`智谱API错误: ${response.status} ${errorInfo.substring(0, 100)}`);
+      // 准备请求体
+      const requestBody = {
+        model: this.model,
+        input: text,
+        dimensions: this.dimensions
+      };
+
+      // 执行请求
+      const response = await fetch(this.endpoint, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${this.apiKey}`
+        },
+        body: JSON.stringify(requestBody)
+      });
+
+      if (!response.ok) {
+        const errorText = await response.text();
+        let errorInfo = "";
+        try {
+          errorInfo = JSON.stringify(JSON.parse(errorText));
+        } catch {
+          errorInfo = errorText;
         }
-
-        const data = await response.json();
-
-        // 验证响应格式
-        if (!data.data || !data.data[0] || !data.data[0].embedding) {
-          throw new Error('智谱API返回了无效的嵌入格式');
-        }
-
-        const embedding = data.data[0].embedding;
-        console.log(`[ZhipuEmbedder] 成功获取嵌入向量，维度: ${embedding.length}`);
-        return embedding;
-        
-      } catch (error) {
-        const errorMessage = error instanceof Error ? error.message : String(error);
-        console.error(`[ZhipuEmbedder] 嵌入失败 (尝试 ${attempt}/${this.retryCount}): ${errorMessage}`);
-        
-        // 如果是授权错误，重新尝试获取API密钥
-        if (errorMessage.includes('401') || errorMessage.includes('auth') || errorMessage.includes('认证')) {
-          console.log('[ZhipuEmbedder] 检测到授权错误，尝试刷新API密钥');
-          const newKey = await this.tryGetApiKeyFromStorage();
-          if (newKey && newKey !== this.apiKey) {
-            this.apiKey = newKey;
-            console.log('[ZhipuEmbedder] 已刷新API密钥，将在下次尝试中使用');
-          }
-        }
-        
-        // 如果是最后一次尝试，返回备用向量
-        if (attempt === this.retryCount) {
-          console.error('[ZhipuEmbedder] 所有重试都失败，返回备用向量');
-          this.createFallbackVector();
-          return this.fallbackVector!;
-        }
-        
-        // 否则，等待一段时间后重试
-        const delay = Math.pow(2, attempt) * 1000; // 指数退避策略
-        console.log(`[ZhipuEmbedder] 等待 ${delay}ms 后重试...`);
-        await new Promise(resolve => setTimeout(resolve, delay));
+        throw new Error(`智谱API错误: ${response.status} ${errorInfo.substring(0, 100)}`);
       }
-    }
 
-    // 不应该到达这里，但为了类型安全返回备用向量
-    this.createFallbackVector();
-    return this.fallbackVector!;
+      const data = await response.json();
+
+      // 验证响应格式
+      if (!data.data || !data.data[0] || !data.data[0].embedding) {
+        throw new Error('智谱API返回了无效的嵌入格式');
+      }
+
+      const embedding = data.data[0].embedding;
+      console.log(`[ZhipuEmbedder] 成功获取嵌入向量，维度: ${embedding.length}`);
+      return embedding;
+    } catch (error) {
+      const errorMessage = error instanceof Error ? error.message : String(error);
+      console.error(`[ZhipuEmbedder] 嵌入失败: ${errorMessage}`);
+      throw error;
+    }
   }
 
   /**
@@ -269,9 +236,7 @@ export class ZhipuEmbedder implements Embedder {
           return embedding;
         } catch (error) {
           console.error(`[ZhipuEmbedder] 文本 #${index + 1} 嵌入失败:`, error);
-          // 返回备用向量而非抛出错误，确保整个批处理不会失败
-          this.createFallbackVector();
-          return this.fallbackVector!;
+          throw error;
         }
       })
     );

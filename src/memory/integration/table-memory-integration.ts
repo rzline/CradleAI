@@ -84,7 +84,32 @@ export function enhancePromptsWithTableMemory(
   if (Array.isArray(tableData)) {
     // 如果是表格数组，拼接每个表格的文本表示
     tableText = tableData.map(sheet => {
-      return `表格名称: ${sheet.name}\n${sheet.tableText || '空表格'}`;
+      // 优化：如果表格内容为空，则插入标题行而不是"空表格"
+      if (
+        Array.isArray(sheet.headers) &&
+        sheet.headers.length > 0 &&
+        Array.isArray(sheet.rows) &&
+        sheet.rows.length === 0
+      ) {
+        // 只显示标题行
+        return `表格名称: ${sheet.name}\n${sheet.headers.join(' | ')}`;
+      }
+      // 如果有内容，正常显示
+      if (sheet.tableText && typeof sheet.tableText === 'string' && sheet.tableText.trim() !== '') {
+        return `表格名称: ${sheet.name}\n${sheet.tableText}`;
+      }
+      // 如果没有tableText但有行数据
+      if (Array.isArray(sheet.headers) && Array.isArray(sheet.rows) && sheet.rows.length > 0) {
+        const headerLine = sheet.headers.join(' | ');
+        const rowLines = sheet.rows.map((row: string[]) => row.join(' | ')).join('\n');
+        return `表格名称: ${sheet.name}\n${headerLine}\n${rowLines}`;
+      }
+      // 兜底：只显示表名和标题
+      if (Array.isArray(sheet.headers) && sheet.headers.length > 0) {
+        return `表格名称: ${sheet.name}\n${sheet.headers.join(' | ')}`;
+      }
+      // 其它情况
+      return `表格名称: ${sheet.name}`;
     }).join('\n\n');
   } else if (typeof tableData === 'string') {
     tableText = tableData;

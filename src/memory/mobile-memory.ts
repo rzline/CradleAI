@@ -335,6 +335,72 @@ export class MobileMemory {
       };
     }
 
+    // ----------- 新增: 智谱API密钥未设置时允许表格记忆兜底 -----------
+    // 检查嵌入器可用性
+    let embedderAvailable = true;
+    try {
+      // 尝试生成一个空向量以检测嵌入器可用性
+      if (!this.embedder || typeof this.embedder.embed !== 'function') {
+        embedderAvailable = false;
+      } else {
+        // 仅在embedder.embed抛出"智谱嵌入API密钥未设置"时判定为不可用
+        try {
+          await this.embedder.embed('mem0_test_check');
+        } catch (err: any) {
+          if (typeof err?.message === 'string' && err.message.includes('智谱嵌入API密钥未设置')) {
+            embedderAvailable = false;
+          }
+        }
+      }
+    } catch {
+      embedderAvailable = false;
+    }
+
+    // 如果嵌入器不可用，且表格记忆启用且角色有表格，则只处理表格记忆
+    if (!embedderAvailable && this.isTableMemoryEnabled() && filters.agentId) {
+      try {
+        const tableMemoryIntegration = require('./integration/table-memory-integration');
+        // 检查角色是否有表格
+        const characterId = filters.agentId;
+        const conversationId = filters.runId;
+        const tables = await tableMemoryIntegration.getTableDataForPrompt(characterId, conversationId);
+        if (tables && Array.isArray(tables) && tables.length > 0) {
+          // 构造原始对话内容
+          const userName = metadata.userName || '用户';
+          const aiName = metadata.aiName || 'AI';
+          let chatContent: string;
+          if (typeof messages === 'string') {
+            chatContent = messages;
+          } else {
+            chatContent = messages.map(m => {
+              const role = m.role === 'assistant' ? aiName : (m.role === 'user' ? userName : m.role);
+              const content = typeof m.content === 'string' ? m.content : JSON.stringify(m.content);
+              return `${role}: ${content}`;
+            }).join('\n\n');
+          }
+          // 直接调用表格记忆处理
+          await tableMemoryIntegration.processChat(
+            messages,
+            characterId,
+            conversationId,
+            {
+              userName,
+              aiName,
+              isMultiRound,
+              chatContent
+            }
+          );
+          // 返回空向量记忆结果，仅表格记忆已处理
+          return { results: [] };
+        }
+      } catch (error) {
+        console.error('[MobileMemory] 表格记忆兜底处理失败:', error);
+        // 继续抛出错误或返回空
+        return { results: [] };
+      }
+    }
+    // ----------- 兜底逻辑结束 -----------
+
     const parsedMessages = Array.isArray(messages)
       ? messages
       : [{ role: "user" as const, content: messages }];
@@ -594,6 +660,30 @@ export class MobileMemory {
       console.error("[MobileMemory] 解析 LLM 响应失败:", e);
       return [];
     }
+
+    // ----------- 新增：无论后续嵌入是否失败，先异步处理表格操作指令 -----------
+    if (useTableMemory && tableActions && Array.isArray(tableActions) && tableActions.length > 0) {
+      try {
+        const characterId = filters.agentId;
+        const conversationId = filters.runId;
+        if (characterId && conversationId) {
+          // 这里立即异步处理表格操作，不等待后续嵌入
+          const tableMemoryIntegration = require('./integration/table-memory-integration');
+          // 日志应能输出
+          console.log(`[MobileMemory] 处理${tableActions.length}条表格操作指令`);
+          tableMemoryIntegration.processLLMResponseForTableMemory(
+            cleanResponse,
+            characterId,
+            conversationId
+          ).catch((error: Error) => {
+            console.error("[MobileMemory] 处理表格记忆时出错:", error);
+          });
+        }
+      } catch (error) {
+        console.error("[MobileMemory] 处理表格操作指令时出错:", error);
+      }
+    }
+    // ----------- 新增逻辑结束 -----------
 
     // 如果没有提取到事实，提前返回
     if (facts.length === 0) {

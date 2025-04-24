@@ -276,9 +276,29 @@ class Mem0Service {
     try {
       this.checkInitialized();
       
-      // 如果嵌入服务不可用或记忆功能被禁用，记录消息但不尝试添加
+      // 如果嵌入服务不可用且表格插件也不可用，记录消息但不尝试添加
       if (!this.isEmbeddingAvailable || !this.memoryEnabled) {
-        console.log(`[Mem0Service] ${!this.isEmbeddingAvailable ? '嵌入服务不可用' : '记忆功能已禁用'}，记录消息但不添加到向量存储`);
+        // 新增：嵌入不可用时，主动调用表格插件兜底
+        if (this.memoryEnabled && characterId) {
+          try {
+            const tableMemoryIntegration = require('../integration/table-memory-integration');
+            if (tableMemoryIntegration.isTableMemoryEnabled()) {
+              // 检查角色是否有表格
+              const tables = await tableMemoryIntegration.getTableDataForPrompt(characterId, conversationId);
+              if (tables && tables.length > 0) {
+                console.log('[Mem0Service] 用表格记忆处理消息:');
+                await tableMemoryIntegration.processChat(
+                  message,
+                  characterId,
+                  conversationId,
+                  { userName: this.getUserName(characterId), aiName: this.getAIName(characterId) }
+                );
+              }
+            }
+          } catch (e) {
+            console.warn('[Mem0Service] 嵌入不可用时表格插件兜底失败:', e);
+          }
+        }
         return;
       }
       
@@ -463,7 +483,34 @@ class Mem0Service {
       
     } catch (error) {
       console.error('[Mem0Service] 处理消息缓存失败:', error);
-      
+
+      // 新增：兜底处理表格操作指令
+      try {
+        const tableMemoryIntegration = require('../integration/table-memory-integration');
+        if (tableMemoryIntegration.isTableMemoryEnabled()) {
+          // 直接用缓存的消息内容调用表格插件
+          const cache = this.messageCache[characterId]?.[conversationId];
+          if (cache && cache.messages && cache.messages.length > 0) {
+            const userName = this.getUserName(characterId);
+            const aiName = this.getAIName(characterId);
+            // 拼接多轮对话内容
+            const chatContent = cache.messages.map(msg => {
+              const speaker = msg.role === 'user' ? (msg.userName || userName) : (msg.aiName || aiName);
+              return `${speaker}: ${msg.message}`;
+            }).join('\n\n');
+            await tableMemoryIntegration.processChat(
+              chatContent,
+              characterId,
+              conversationId,
+              { userName, aiName, isMultiRound: true, chatContent }
+            );
+            console.log('[Mem0Service] 嵌入失败时已兜底调用表格插件处理多轮对话内容');
+          }
+        }
+      } catch (tableError) {
+        console.error('[Mem0Service] 嵌入失败时表格插件兜底处理也失败:', tableError);
+      }
+
       // 改进：即使处理失败也重置计数，避免因错误导致频繁尝试处理
       if (this.messageCache[characterId]?.[conversationId]) {
         const pendingUserMessage = this.messageCache[characterId][conversationId].pendingUserMessage;
