@@ -25,6 +25,7 @@ import Mem0Service from '@/src/memory/services/Mem0Service';
 import { useDialogMode, DialogMode } from '@/constants/DialogModeContext';
 import * as Font from 'expo-font';
 import * as DocumentPicker from 'expo-document-picker';
+import { NodeSTManager } from '@/utils/NodeSTManager'; // 新增导入
 
 const SIDEBAR_WIDTH_EXPANDED = 280;
 const SWIPE_THRESHOLD = 50; // 向下滑动超过这个距离时关闭侧边栏
@@ -369,7 +370,7 @@ export default function SettingsSidebar({
   // Replace isPermanentMemoryEnabled with isMemorySummaryEnabled
   const [isMemorySummaryEnabled, setIsMemorySummaryEnabled] = useState(false);
   const [summaryThreshold, setSummaryThreshold] = useState(12000); // Default: 6000 characters
-  const [summaryLength, setSummaryLength] = useState(6000); // Default: 1000 characters
+  const [summaryLength, setSummaryLength] = useState(1000); // Default: 1000 characters
   
   // IMPORTANT: Initialize notification state from character
   const [isAutoMessageEnabled, setIsAutoMessageEnabled] = useState(selectedCharacter?.autoMessage === true);
@@ -785,6 +786,37 @@ export default function SettingsSidebar({
     }
   };
 
+  // 新增：立即总结记忆按钮的loading状态
+  const [isSummarizing, setIsSummarizing] = useState(false);
+
+  // 新增：立即总结记忆的处理函数
+  const handleSummarizeMemoryNow = async () => {
+    if (!selectedCharacter) return;
+    setIsSummarizing(true);
+    try {
+      // 这里假设apiKey和apiSettings可以从NodeSTManager获取或你可以自行传递
+      const apiKey = NodeSTManager.apiKey || '';
+      const apiSettings = NodeSTManager.apiSettings || { apiProvider: 'gemini' };
+      const conversationId = selectedCharacter.id;
+      // 调用NodeSTManager暴露的新方法
+      const result = await NodeSTManager.summarizeMemoryNow({
+        conversationId,
+        characterId: selectedCharacter.id,
+        apiKey,
+        apiSettings,
+      });
+      if (result && result.success) {
+        Alert.alert('成功', '记忆总结已完成');
+      } else {
+        Alert.alert('失败', result?.error || '记忆总结失败');
+      }
+    } catch (e) {
+      Alert.alert('错误', e instanceof Error ? e.message : '记忆总结失败');
+    } finally {
+      setIsSummarizing(false);
+    }
+  };
+
   // Calculate the translateX value based on the provided animation value or fallback
   const sidebarTranslateX = animationValue
     ? animationValue.interpolate({
@@ -979,6 +1011,19 @@ export default function SettingsSidebar({
                 trackColor={{ false: '#767577', true: 'rgba(255, 224, 195, 0.7)' }}
                 thumbColor={isMemorySummaryEnabled ? 'rgb(255, 224, 195)' : '#f4f3f4'}
               />
+              {/* 新增：立即总结按钮 */}
+              <TouchableOpacity
+                style={[
+                  styles.applyButton,
+                  { marginLeft: 10, opacity: isSummarizing ? 0.6 : 1 }
+                ]}
+                onPress={handleSummarizeMemoryNow}
+                disabled={isSummarizing}
+              >
+                <Text style={styles.applyButtonText}>
+                  {isSummarizing ? '总结中...' : '立即总结'}
+                </Text>
+              </TouchableOpacity>
             </View>
           </View>
 

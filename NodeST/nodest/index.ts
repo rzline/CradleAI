@@ -850,4 +850,26 @@ export class NodeST {
             return null;
         }
     }
+
+    // 新增：立即总结记忆方法
+    async processMemorySummaryNow(params: {
+        conversationId: string;
+        characterId: string;
+        apiKey: string;
+        apiSettings?: Pick<GlobalSettings['chat'], 'apiProvider' | 'openrouter' | 'useGeminiModelLoadBalancing' | 'useGeminiKeyRotation' | 'additionalGeminiKeys'>;
+    }): Promise<{ success: boolean; error?: string }> {
+        try {
+            // 获取核心实例
+            const core = this.getCoreInstance(params.apiKey, params.apiSettings);
+            const ok = await core.summarizeMemoryNow(
+                params.conversationId,
+                params.characterId,
+                params.apiKey,
+                params.apiSettings
+            );
+            return ok ? { success: true } : { success: false, error: '记忆总结失败' };
+        } catch (error) {
+            return { success: false, error: error instanceof Error ? error.message : '未知错误' };
+        }
+    }
 }

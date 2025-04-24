@@ -37,7 +37,6 @@ interface CharacterImageGallerySidebarProps {
   images: CharacterImage[];
   onToggleFavorite: (imageId: string) => void;
   onDelete: (imageId: string) => void;
-  // 修正类型，允许传递 config
   onSetAsBackground: (imageId: string, uri: string, config?: any) => void;
   onSetAsAvatar?: (imageId: string, uri: string) => void;
   isLoading?: boolean;
@@ -83,7 +82,6 @@ const CharacterImageGallerySidebar: React.FC<CharacterImageGallerySidebarProps> 
   const [persistedImages, setPersistedImages] = useState<CharacterImage[]>([]);
   const { setCharacterAvatar, setCharacterBackgroundImage } = useCharacters();
 
-  // 新增：记录上一次生成图片的设置和seed
   const [lastImageGenSettings, setLastImageGenSettings] = useState<any>(null);
   const [lastImageGenSeed, setLastImageGenSeed] = useState<string | number | undefined>(undefined);
 
@@ -111,6 +109,20 @@ const CharacterImageGallerySidebar: React.FC<CharacterImageGallerySidebarProps> 
     } catch (e) {
       console.warn('[图库侧栏] 保存本地图片失败', e);
     }
+  };
+
+  const addImageAndPersist = async (newImage: CharacterImage) => {
+    setPersistedImages(prev => {
+      const exists = prev.some(
+        img =>
+          (img.url && img.url === newImage.url) ||
+          (img.localUri && img.localUri === newImage.localUri)
+      );
+      if (exists) return prev;
+      const updated = [newImage, ...prev];
+      savePersistedImages(updated);
+      return updated;
+    });
   };
 
   const allImages = useMemo(() => {
@@ -167,18 +179,28 @@ const CharacterImageGallerySidebar: React.FC<CharacterImageGallerySidebarProps> 
     return combinedImages;
   }, [persistedImages, images, character.avatar, character.backgroundImage, lastUpdateTimestamp]);
 
-  const addImageAndPersist = async (newImage: CharacterImage) => {
-    setPersistedImages(prev => {
-      const exists = prev.some(
-        img =>
-          (img.url && img.url === newImage.url) ||
-          (img.localUri && img.localUri === newImage.localUri)
+  const handleSetAsAvatar = async (imageId: string) => {
+    const image = allImages.find(img => img.id === imageId);
+    if (image && setCharacterAvatar) {
+      await addImageAndPersist(image);
+      await setCharacterAvatar(character.id, image.localUri || image.url);
+      setShowOptionsMenu(false);
+      setUpdateCounter(prev => prev + 1);
+    }
+  };
+
+  const handleSetAsBackground = async (imageId: string) => {
+    const image = allImages.find(img => img.id === imageId);
+    if (image && setCharacterBackgroundImage) {
+      await addImageAndPersist(image);
+      await setCharacterBackgroundImage(
+        character.id,
+        image.localUri || image.url,
+        image.generationConfig
       );
-      if (exists) return prev;
-      const updated = [newImage, ...prev];
-      savePersistedImages(updated);
-      return updated;
-    });
+      setShowOptionsMenu(false);
+      setUpdateCounter(prev => prev + 1);
+    }
   };
 
   const handleAddNewImage = (newImage: CharacterImage) => {
@@ -210,7 +232,6 @@ const CharacterImageGallerySidebar: React.FC<CharacterImageGallerySidebarProps> 
   const ensureLocalImages = async () => {
     if (!images || images.length === 0) return;
     const processedUrls = new Set();
-    // 只处理那些本地没有的图片
     const imagesNeedingLocalStorage = images.filter(
       img =>
         img.url &&
@@ -327,58 +348,30 @@ const CharacterImageGallerySidebar: React.FC<CharacterImageGallerySidebarProps> 
     setActiveImage(image);
     setShowOptionsMenu(true);
   };
-
-  const handleSetAsAvatar = async (imageId: string) => {
-    const image = allImages.find(img => img.id === imageId);
-    if (image && setCharacterAvatar) {
-      // 修正：确保头像图片被持久化
-      await addImageAndPersist(image);
-      await setCharacterAvatar(character.id, image.localUri || image.url);
-      setShowOptionsMenu(false);
-      setUpdateCounter(prev => prev + 1);
-    }
-  };
-
-  const handleSetAsBackground = async (imageId: string) => {
-    const image = allImages.find(img => img.id === imageId);
-    if (image && setCharacterBackgroundImage) {
-      // 修正：确保背景图片被持久化
-      await addImageAndPersist(image);
-      await setCharacterBackgroundImage(
-        character.id,
-        image.localUri || image.url,
-        image.generationConfig // 传递 config
-      );
-      setShowOptionsMenu(false);
-      setUpdateCounter(prev => prev + 1);
-    }
-  };
-
-  // 重新生成图片时，带入上次设置和seed
-  const handleRegenerateImage = (image: CharacterImage) => {
-    if (image.generationConfig || (image.tags && (image.tags.positive || image.tags.negative))) {
-      const config = {
-        positiveTags: image.generationConfig?.positiveTags || image.tags?.positive || [],
-        negativeTags: image.generationConfig?.negativeTags || image.tags?.negative || [],
-        artistPrompt: image.generationConfig?.artistPrompt || null,
-        customPrompt: image.generationConfig?.customPrompt || '',
-        useCustomPrompt: image.generationConfig?.useCustomPrompt || false,
-        characterTags: image.generationConfig?.characterTags || [],
-        seed: image.generationConfig?.seed || image.seed || lastImageGenSeed || '', // 优先用图片的seed，否则用上次seed
-        novelaiSettings: image.generationConfig?.novelaiSettings || lastImageGenSettings?.novelaiSettings,
-        animagine4Settings: image.generationConfig?.animagine4Settings || lastImageGenSettings?.animagine4Settings
-      };
-      setRegenerationImageConfig(config);
-      setShowRegenerationModal(true);
-    } else {
-      Alert.alert(
-        "无法重新生成",
-        "该图像没有关联的生成配置，无法继续重新生成。请使用创建新图像功能。",
-        [{ text: "了解", style: "default" }]
-      );
-    }
-  };
-
+    // 重新生成图片时，带入上次设置和seed
+    const handleRegenerateImage = (image: CharacterImage) => {
+      if (image.generationConfig || (image.tags && (image.tags.positive || image.tags.negative))) {
+        const config = {
+          positiveTags: image.generationConfig?.positiveTags || image.tags?.positive || [],
+          negativeTags: image.generationConfig?.negativeTags || image.tags?.negative || [],
+          artistPrompt: image.generationConfig?.artistPrompt || null,
+          customPrompt: image.generationConfig?.customPrompt || '',
+          useCustomPrompt: image.generationConfig?.useCustomPrompt || false,
+          characterTags: image.generationConfig?.characterTags || [],
+          seed: image.generationConfig?.seed || image.seed || lastImageGenSeed || '', // 优先用图片的seed，否则用上次seed
+          novelaiSettings: image.generationConfig?.novelaiSettings || lastImageGenSettings?.novelaiSettings,
+          animagine4Settings: image.generationConfig?.animagine4Settings || lastImageGenSettings?.animagine4Settings
+        };
+        setRegenerationImageConfig(config);
+        setShowRegenerationModal(true);
+      } else {
+        Alert.alert(
+          "无法重新生成",
+          "该图像没有关联的生成配置，无法继续重新生成。请使用创建新图像功能。",
+          [{ text: "了解", style: "default" }]
+        );
+      }
+    };
   const handleSaveImageToDevice = async (image: CharacterImage) => {
     try {
       const { status } = await MediaLibrary.requestPermissionsAsync();
@@ -536,13 +529,11 @@ const CharacterImageGallerySidebar: React.FC<CharacterImageGallerySidebarProps> 
   };
 
   const handleDeleteImage = (imageId: string) => {
-    // 删除本地 persistedImages
     setPersistedImages(prev => {
       const updated = prev.filter(img => img.id !== imageId);
       savePersistedImages(updated);
       return updated;
     });
-    // 调用外部 onDelete
     onDelete(imageId);
     setShowOptionsMenu(false);
     setUpdateCounter(prev => prev + 1);
@@ -885,13 +876,11 @@ const CharacterImageGallerySidebar: React.FC<CharacterImageGallerySidebarProps> 
             visible={showRegenerationModal}
             character={character}
             onClose={() => setShowRegenerationModal(false)}
-            // 优化：传入上次设置和seed
             initialSettingsState={lastImageGenSettings}
             initialSeed={lastImageGenSeed}
             onSuccess={(newImage, settingsState, usedSeed) => {
               addImageAndPersist(newImage);
               setShowRegenerationModal(false);
-              // 记录本次设置和seed
               if (settingsState) setLastImageGenSettings(settingsState);
               if (usedSeed) setLastImageGenSeed(usedSeed);
             }}

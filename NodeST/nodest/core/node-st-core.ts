@@ -23,7 +23,37 @@ export class NodeSTCore {
     private apiSettings: Pick<GlobalSettings['chat'], 'apiProvider' | 'openrouter' | 'useGeminiModelLoadBalancing' | 'useGeminiKeyRotation' | 'additionalGeminiKeys'> = {
         apiProvider: 'gemini'
     };
-
+        // 新增：立即总结记忆方法
+        async summarizeMemoryNow(
+            conversationId: string,
+            characterId: string,
+            apiKey: string,
+            apiSettings?: Pick<GlobalSettings['chat'], 'apiProvider' | 'openrouter' | 'useGeminiModelLoadBalancing' | 'useGeminiKeyRotation' | 'additionalGeminiKeys'>
+        ): Promise<boolean> {
+            try {
+                // 加载当前聊天历史
+                const chatHistory = await this.loadJson<ChatHistoryEntity>(
+                    this.getStorageKey(conversationId, '_history')
+                );
+                if (!chatHistory) throw new Error('未找到聊天历史');
+                // 强制调用memoryService的generateSummary（无视阈值）
+                const settings = await memoryService.loadSettings(characterId);
+                // 直接调用generateSummary
+                const summarized = await (memoryService as any).generateSummary(
+                    conversationId,
+                    chatHistory,
+                    settings,
+                    apiKey,
+                    apiSettings
+                );
+                // 保存新历史
+                await this.saveJson(this.getStorageKey(conversationId, '_history'), summarized);
+                return true;
+            } catch (e) {
+                console.error('[NodeSTCore] summarizeMemoryNow error:', e);
+                return false;
+            }
+        }
     constructor(apiKey: string, apiSettings?: Pick<GlobalSettings['chat'], 'apiProvider' | 'openrouter' | 'useGeminiModelLoadBalancing' | 'useGeminiKeyRotation' | 'additionalGeminiKeys'>) {       
         this.apiKey = apiKey;
         this.apiSettings = apiSettings || { apiProvider: 'gemini' };

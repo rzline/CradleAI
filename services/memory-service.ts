@@ -153,7 +153,7 @@ export class MemoryService {
   }
   
   // Generate summary of chat history middle section
-  private async generateSummary(
+  public async generateSummary(
     conversationId: string,
     chatHistory: ChatHistoryEntity, 
     settings: MemorySummarySettings,

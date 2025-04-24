@@ -864,6 +864,29 @@ console.log(`[NodeSTManager] Setting search enabled to: ${enabled}`); // Add log
     }
     return Promise.resolve();
   }
+
+  // 新增：立即总结记忆方法
+  async summarizeMemoryNow(params: {
+    conversationId: string;
+    characterId: string;
+    apiKey: string;
+    apiSettings?: Pick<GlobalSettings['chat'], 'apiProvider' | 'openrouter' | 'useGeminiModelLoadBalancing' | 'useGeminiKeyRotation' | 'additionalGeminiKeys'>;
+  }): Promise<{ success: boolean; error?: string }> {
+    try {
+      // 确保API设置已更新
+      this.updateApiSettings(params.apiKey, params.apiSettings);
+      // 调用NodeST的processMemorySummaryNow
+      const result = await this.nodeST.processMemorySummaryNow({
+        conversationId: params.conversationId,
+        characterId: params.characterId,
+        apiKey: params.apiKey,
+        apiSettings: params.apiSettings,
+      });
+      return result;
+    } catch (error) {
+      return { success: false, error: error instanceof Error ? error.message : '未知错误' };
+    }
+  }
 }
 
 // Create and export a singleton instance
@@ -905,5 +928,16 @@ NodeSTManager.generateText = async function(
 ): Promise<string> {
   const instance = new NodeSTManagerClass();
   return await instance.generateText(messages, apiKey, apiSettings);
+};
+
+// 静态方法也暴露
+NodeSTManager.summarizeMemoryNow = async function(params: {
+  conversationId: string;
+  characterId: string;
+  apiKey: string;
+  apiSettings?: Pick<GlobalSettings['chat'], 'apiProvider' | 'openrouter' | 'useGeminiModelLoadBalancing' | 'useGeminiKeyRotation' | 'additionalGeminiKeys'>;
+}): Promise<{ success: boolean; error?: string }> {
+  const instance = new NodeSTManagerClass();
+  return await instance.summarizeMemoryNow(params);
 };
 
