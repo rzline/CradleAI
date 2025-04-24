@@ -184,11 +184,32 @@ export interface UserCustomSetting {
   global: boolean;      // Whether this setting is global (applies to all characters)
 }
 
+// 新增：角色背景图片配置类型（用于后处理）
+export interface CharacterBackgroundImageConfig {
+  positiveTags: string[];
+  negativeTags: string[];
+  artistPrompt: string | null;
+  customPrompt: string;
+  useCustomPrompt: boolean;
+  characterTags: string[];
+  seed: number | string | null;
+  novelaiSettings?: any;
+  animagine4Settings?: any;
+  fixedTags?: string[];
+  genderTags?: string[];
+  qualityTags?: string[];
+  sizePreset?: { width: number; height: number };
+  isNovelAI?: boolean; // 标记是否为NovelAI生成
+}
+
 export interface Character {
   id: string;
   name: string;
   avatar: string | null;
-  backgroundImage: string | null;
+  // 修改：backgroundImage 可为 string 或 CharacterImage
+  backgroundImage: string | CharacterImage | null;
+  // 新增：背景图片配置（用于后处理）
+  backgroundImageConfig?: CharacterBackgroundImageConfig;
   description: string;
   personality: string;
   interests: string[];
@@ -288,6 +309,11 @@ export interface Character {
   // Add custom user settings related properties
   hasCustomUserSetting?: boolean;  // Whether this character uses custom user setting
   customUserSetting?: UserCustomSetting; // Custom user setting for this character
+
+  // 新增：AI后处理生成的额外背景图片
+  extrabackgroundimage?: string | null;
+  // 新增：自动后处理开关
+  enableAutoExtraBackground?: boolean;
 }
 
 export interface Message {
@@ -411,6 +437,8 @@ export interface ImageGenerationConfig {
   seed: number | string | null; // 支持number|string|null
   novelaiSettings?: any; // 改为any或具体对象类型
   animagine4Settings?: any; // 改为any或具体对象类型
+  // 新增：锁定提示词
+  fixedTags?: string[];
 }
 
 export interface CharacterImage {
@@ -446,7 +474,10 @@ export interface CharacterImage {
     height: number;
   };
   // Add this property to store generation configuration for future regeneration
-  generationConfig?: ImageGenerationConfig;
+  generationConfig?: ImageGenerationConfig & {
+    isNovelAI?: boolean; // 标记是否为NovelAI生成
+  };
+  isNovelAI?: boolean; // 顶层也可加，便于兼容
   seed?: number; // Optional seed for image generation
 }
 

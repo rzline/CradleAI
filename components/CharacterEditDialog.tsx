@@ -1898,7 +1898,7 @@ ${JSON.stringify(characterJsonData, null, 2)}
               <View style={styles.chatAreaContainer}>
                 {getBackgroundImage() && (
                   <Image
-                    source={{ uri: getBackgroundImage() || undefined }}
+                    source={getBackgroundImage() ? { uri: String(getBackgroundImage()) } : undefined}
                     style={styles.chatBackgroundImage}
                     blurRadius={5}
                   />

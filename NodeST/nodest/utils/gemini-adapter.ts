@@ -2343,4 +2343,61 @@ private async executeGenerateContent(contents: ChatMessage[], modelId: string, c
     });
     
     return needsSearching;
-}}
+}
+
+    // 静态方法：允许外部直接生成内容（简化调用）
+    static async executeDirectGenerateContent(
+        promptOrMessages: string | ChatMessage[] | { role: string; content: string }[],
+        options?: {
+            apiKey?: string;
+            characterId?: string;
+            modelId?: string;
+        }
+    ): Promise<string> {
+        // 1. 获取API key（优先参数，其次全局设置）
+        const apiKey = options?.apiKey || (typeof global !== 'undefined' && (global as any).GEMINI_API_KEY) || '';
+        if (!apiKey) {
+            throw new Error('GeminiAdapter.executeDirectGenerateContent: API key is required');
+        }
+
+        // 2. 创建适配器实例
+        const adapter = new GeminiAdapter(apiKey);
+
+        // 3. 组装消息格式
+        let messages: ChatMessage[];
+        if (typeof promptOrMessages === 'string') {
+            messages = [
+                { role: 'user', parts: [{ text: promptOrMessages }] }
+            ];
+        } else if (Array.isArray(promptOrMessages)) {
+            // 支持传入标准格式或Gemini格式
+            if (promptOrMessages.length > 0 && (promptOrMessages[0] as any).parts) {
+                messages = promptOrMessages as ChatMessage[];
+            } else {
+                // 标准OpenAI格式转Gemini格式
+                messages = (promptOrMessages as any[]).map(msg => ({
+                    role: msg.role,
+                    parts: [{ text: msg.content }]
+                }));
+            }
+        } else {
+            throw new Error('GeminiAdapter.executeDirectGenerateContent: Invalid prompt/messages');
+        }
+
+        // 4. 调用实例方法生成内容
+        return await adapter.generateContent(messages, options?.characterId);
+    }
+
+
+
+
+
+
+
+
+
+
+
+
+
+}

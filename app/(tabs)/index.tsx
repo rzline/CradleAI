@@ -31,7 +31,7 @@ import GroupInput from '@/components/GroupInput';
 import GroupManagementModal from '@/components/GroupManagementModal';
 import { Group, GroupMessage, getUserGroups, getGroupMessages, sendGroupMessage } from '@/src/group';
 import { Message, Character, ChatSave } from '@/shared/types';
-import { useCharacters } from '@/constants/CharactersContext';
+import { useCharacters, } from '@/constants/CharactersContext';
 import { useUser } from '@/constants/UserContext'; // 添加 useUser 导入
 import { useRouter, useLocalSearchParams } from 'expo-router';
 import AsyncStorage from '@react-native-async-storage/async-storage';
@@ -45,6 +45,12 @@ import Mem0Service from '@/src/memory/services/Mem0Service'; // 新增导入
 import { ttsService } from '@/services/ttsService';
 import { useDialogMode } from '@/constants/DialogModeContext';
 import { CharacterLoader } from '@/src/utils/character-loader'; // Import CharacterLoader
+import { StorageAdapter } from '@/NodeST/nodest/utils/storage-adapter'; // 新增
+import { GeminiAdapter } from '@/NodeST/nodest/utils/gemini-adapter'; // 新增
+import { DEFAULT_NEGATIVE_PROMPTS, DEFAULT_POSITIVE_PROMPTS } from '@/constants/defaultPrompts'; // 新增
+import NovelAIService from '@/components/NovelAIService'; // 新增
+import { CloudServiceProvider } from '@/services/cloud-service-provider';
+import type  CloudServiceProviderClass  from '@/services/cloud-service-provider';
 
 // Create a stable memory configuration outside the component
 type MemoryConfig = {
@@ -148,6 +154,7 @@ const App = () => {
     getMessages,
     addMessage,
     clearMessages,
+    updateCharacterExtraBackgroundImage
   } = useCharacters();
   
   const [selectedConversationId, setSelectedConversationId] = useState<string | null>(null);
@@ -220,6 +227,48 @@ const App = () => {
 
   // Add transient error state for temporary error messages
   const [transientError, setTransientError] = useState<string | null>(null);
+
+  // 新增：后处理相关状态
+  const [isExtraBgGenerating, setIsExtraBgGenerating] = useState(false);
+  const [extraBgTaskId, setExtraBgTaskId] = useState<string | null>(null);
+  const [extraBgError, setExtraBgError] = useState<string | null>(null);
+  const [extraBgImage, setExtraBgImage] = useState<string | null>(null);
+  const extraBgGenAbortRef = useRef<{ aborted: boolean }>({ aborted: false });
+  const extraBgGenCounter = useRef<number>(0); // 用于覆盖生成
+
+  // 新增：用于记录已生成图片的AI消息ID集合
+  const processedExtraBgMessageIds = useRef<Set<string>>(new Set());
+
+  // 新增：持久化已处理AI消息ID集合
+  const EXTRA_BG_IDS_KEY_PREFIX = 'extraBgProcessedIds-';
+
+  // 加载已处理集合
+  const loadProcessedExtraBgMessageIds = useCallback(async (characterId: string) => {
+    try {
+      const key = `${EXTRA_BG_IDS_KEY_PREFIX}${characterId}`;
+      const stored = await AsyncStorage.getItem(key);
+      if (stored) {
+        const arr = JSON.parse(stored);
+        if (Array.isArray(arr)) {
+          processedExtraBgMessageIds.current = new Set(arr);
+          return;
+        }
+      }
+      processedExtraBgMessageIds.current = new Set();
+    } catch (e) {
+      processedExtraBgMessageIds.current = new Set();
+    }
+  }, []);
+
+  // 保存已处理集合
+  const saveProcessedExtraBgMessageIds = useCallback(async (characterId: string) => {
+    try {
+      const key = `${EXTRA_BG_IDS_KEY_PREFIX}${characterId}`;
+      await AsyncStorage.setItem(key, JSON.stringify(Array.from(processedExtraBgMessageIds.current)));
+    } catch (e) {
+      // ignore
+    }
+  }, []);
 
   // Toggle brave search function
   const toggleBraveSearch = () => {
@@ -1152,10 +1201,19 @@ useEffect(() => {
 
   // 获取角色的背景图片
   const getBackgroundImage = () => {
+    // 优先显示extraBgImage（本地后处理生成的临时图片）
+    if (extraBgImage) {
+      return { uri: extraBgImage };
+    }
+    // 只在角色开启自动生成背景且有extrabackgroundimage时显示
+    if (
+      selectedCharacter?.enableAutoExtraBackground &&
+      selectedCharacter?.extrabackgroundimage
+    ) {
+      return { uri: selectedCharacter.extrabackgroundimage };
+    }
+    // 否则回退到原始backgroundImage
     if (selectedCharacter?.backgroundImage) {
-      return { uri: selectedCharacter.backgroundImage };
-    } else if (selectedCharacter?.backgroundImage) {
-      // 如果没有专门的聊天背景图，则使用普通背景图
       return { uri: selectedCharacter.backgroundImage };
     }
     return require('@/assets/images/default-background.jpg');
@@ -1580,6 +1638,386 @@ useEffect(() => {
   const characterIdForMemo = selectedConversationId || '';
   const conversationIdForMemo = selectedConversationId ? `conversation-${selectedConversationId}` : '';
 
+  // 新增：后处理触发函数
+  const triggerExtraBackgroundGeneration = useCallback(async (character: Character, lastBotMessage: string) => {
+    // 1. 检查开关和条件
+    if (!character || !character.backgroundImage) {
+      console.log('[后处理] 不触发：character/backgroundImage 不存在');
+      return;
+    }
+    if (!character.enableAutoExtraBackground) {
+      console.log('[后处理] 不触发：enableAutoExtraBackground 为 false');
+      return;
+    }
+    // 只判断 backgroundImageConfig.isNovelAI
+    if (!character.backgroundImageConfig?.isNovelAI) {
+      console.log('[后处理] 不触发：backgroundImageConfig.isNovelAI 为 false');
+      return;
+    }
+
+    // 2. 获取NovelAI参数（seed等）和提示词
+    let novelaiConfig = character.backgroundImageConfig?.novelaiSettings || {};
+    // --- 修正 seed 取值逻辑 ---
+    let seed: number | undefined;
+    if (
+      character.backgroundImageConfig?.seed !== undefined &&
+      character.backgroundImageConfig?.seed !== null &&
+      character.backgroundImageConfig?.seed !== ''
+    ) {
+      seed = Number(character.backgroundImageConfig.seed);
+    } else if (
+      novelaiConfig.seed !== undefined &&
+      novelaiConfig.seed !== null &&
+      novelaiConfig.seed !== ''
+    ) {
+      seed = Number(novelaiConfig.seed);
+    } else {
+      seed = Math.floor(Math.random() * 2 ** 32);
+    }
+
+    // --- 合并默认正负面提示词 ---
+    let positiveTags: string[] = [
+      ...DEFAULT_POSITIVE_PROMPTS,
+      ...(character.backgroundImageConfig?.positiveTags || [])
+    ];
+    let negativeTags: string[] = [
+      ...DEFAULT_NEGATIVE_PROMPTS,
+      ...(character.backgroundImageConfig?.negativeTags || [])
+    ];
+
+    let fixedTags: string[] = character.backgroundImageConfig?.fixedTags || [];
+    let allPositiveTags = [
+      ...(character.backgroundImageConfig?.genderTags || []),
+      ...(character.backgroundImageConfig?.characterTags || []),
+      ...(character.backgroundImageConfig?.qualityTags || []),
+      ...(positiveTags || [])
+    ];
+    let artistTag = character.backgroundImageConfig?.artistPrompt || '';
+    console.log('[后处理] 参数准备:', {
+      seed, positiveTags, negativeTags, fixedTags, allPositiveTags, artistTag, novelaiConfig
+    });
+
+    // 3. 获取上下文（10条）
+    let contextMessages: {role: string, content: string}[] = [];
+    try {
+      contextMessages = await StorageAdapter.exportConversation(character.id);
+      contextMessages = contextMessages.slice(-10);
+      console.log('[后处理] 获取到上下文:', contextMessages);
+    } catch (e) {
+      contextMessages = [];
+      console.warn('[后处理] 获取上下文失败:', e);
+    }
+
+    // 4. AI生成场景描述
+    let aiSceneDesc = '';
+    try {
+      const prompt = `请根据以下对话内容，用一句不超过15个英文单词的连贯语句，描述角色当前的表情、动作、场景（时间、地点、画面），不要描述外观、服饰。输出英文短句。对话内容：\n${contextMessages.map(m=>`${m.role}: ${m.content}`).join('\n')}`;
+      console.log('[后处理] 发送GeminiAdapter prompt:', prompt);
+      aiSceneDesc = await GeminiAdapter.executeDirectGenerateContent(prompt);
+      aiSceneDesc = (aiSceneDesc || '').replace(/[\r\n]+/g, ' ').trim();
+      console.log('[后处理] Gemini生成场景描述:', aiSceneDesc);
+    } catch (e) {
+      aiSceneDesc = '';
+      console.warn('[后处理] Gemini生成场景描述失败:', e);
+      // 新增：兜底，尝试用CloudServiceProvider
+      try {
+        const cloudResp = await (CloudServiceProvider.constructor as typeof CloudServiceProviderClass).generateChatCompletionStatic(
+          [
+            { role: 'user', content: `请根据以下对话内容，使用不超过15个英文单词，生成角色当前的表情、动作、场景（时间、地点、画面），不要描述外观、服饰。输出英文短句。对话内容：\n${contextMessages.map(m=>`${m.role}: ${m.content}`).join('\n')}` }
+          ],
+          { max_tokens: 32, temperature: 0.7 }
+        );
+        if (cloudResp && cloudResp.ok) {
+          const data = await cloudResp.json();
+          if (data && data.choices && data.choices[0]?.message?.content) {
+            aiSceneDesc = data.choices[0].message.content.replace(/[\r\n]+/g, ' ').trim();
+            console.log('[后处理] CloudServiceProvider生成场景描述:', aiSceneDesc);
+          }
+        }
+      } catch (cloudErr) {
+        aiSceneDesc = '';
+        console.warn('[后处理] CloudServiceProvider生成场景描述失败:', cloudErr);
+      }
+    }
+
+    // 5. 替换normalTags
+    let newNormalTags: string[] = [];
+    if (fixedTags && fixedTags.length > 0) {
+      newNormalTags = [...fixedTags];
+      if (aiSceneDesc) newNormalTags.push(aiSceneDesc);
+    } else if (aiSceneDesc) {
+      newNormalTags = [aiSceneDesc];
+    }
+    console.log('[后处理] 处理后normalTags:', newNormalTags);
+
+    // 6. 组装最终positiveTags
+    let finalPositiveTags = [
+      ...(character.backgroundImageConfig?.genderTags || []),
+      ...(character.backgroundImageConfig?.characterTags || []),
+      ...(character.backgroundImageConfig?.qualityTags || []),
+      ...(artistTag ? [artistTag] : []),
+      ...DEFAULT_POSITIVE_PROMPTS,
+      ...newNormalTags
+    ].filter(Boolean);
+
+    // --- 负面提示词确保不为空 ---
+    let finalNegativePrompt = [
+      ...DEFAULT_NEGATIVE_PROMPTS,
+      ...(character.backgroundImageConfig?.negativeTags || [])
+    ].filter(Boolean).join(', ');
+
+    // 7. NovelAI参数
+    const novelaiToken = user?.settings?.chat?.novelai?.token || '';
+    const sizePreset = character.backgroundImageConfig?.sizePreset || { width: 832, height: 1216 };
+    const model = novelaiConfig.model || 'NAI Diffusion V4 Curated';
+    const steps = novelaiConfig.steps || 28;
+    const scale = novelaiConfig.scale || 5;
+    const sampler = novelaiConfig.sampler || 'k_euler_ancestral';
+    const noiseSchedule = novelaiConfig.noiseSchedule || 'karras';
+
+    // 新增：构造 characterPrompts 参数（与 ImageRegenerationModal.tsx 保持一致）
+    let characterPrompts: { prompt: string; positions: { x: number; y: number }[] }[] = [];
+    if (character.backgroundImageConfig?.characterTags && character.backgroundImageConfig.characterTags.length > 0) {
+      characterPrompts = [
+        {
+          prompt: character.backgroundImageConfig.characterTags.join(', '),
+          positions: [{ x: 0, y: 0 }]
+        }
+      ];
+    }
+
+    // 新增：useCoords/useOrder 参数（与 ImageRegenerationModal.tsx 保持一致）
+    const useCoords = typeof novelaiConfig.useCoords === 'boolean' ? novelaiConfig.useCoords : false;
+    const useOrder = typeof novelaiConfig.useOrder === 'boolean' ? novelaiConfig.useOrder : true;
+
+    console.log('[后处理] NovelAI请求参数:', {
+      token: novelaiToken,
+      prompt: finalPositiveTags.join(', '),
+      negativePrompt: finalNegativePrompt,
+      model, width: sizePreset.width, height: sizePreset.height,
+      steps, scale, sampler, seed, noiseSchedule, characterPrompts, useCoords, useOrder
+    });
+
+    setIsExtraBgGenerating(true);
+    setExtraBgError(null);
+    setExtraBgImage(null);
+    const myGenId = ++extraBgGenCounter.current;
+    extraBgGenAbortRef.current.aborted = false;
+
+    // 封装生成图片的逻辑，支持重试
+    const generateNovelAIImage = async (): Promise<{ url?: string; error?: any }> => {
+      try {
+        const result = await NovelAIService.generateImage({
+          token: novelaiToken,
+          prompt: finalPositiveTags.join(', '),
+          characterPrompts: characterPrompts.length > 0 ? characterPrompts : undefined,
+          negativePrompt: finalNegativePrompt,
+          model,
+          width: sizePreset.width,
+          height: sizePreset.height,
+          steps,
+          scale,
+          sampler,
+          seed,
+          noiseSchedule,
+          useCoords,
+          useOrder
+        });
+        const url = result?.imageUrls?.[0];
+        return { url };
+      } catch (e: any) {
+        return { error: e };
+      }
+    };
+
+    // 支持429重试一次
+    let retryCount = 0;
+    let maxRetry = 1;
+    let retryDelayMs = 8000;
+    let lastError: any = null;
+    let url: string | undefined = undefined;
+
+    while (retryCount <= maxRetry) {
+      const { url: genUrl, error } = await generateNovelAIImage();
+      if (extraBgGenAbortRef.current.aborted || myGenId !== extraBgGenCounter.current) {
+        console.log('[后处理] 生成被覆盖或中断，终止流程');
+        return;
+      }
+      if (genUrl) {
+        url = genUrl;
+        break;
+      }
+      // 检查是否429错误
+      if (error && error.message && typeof error.message === 'string' && error.message.includes('429')) {
+        lastError = error;
+        if (retryCount < maxRetry) {
+          console.warn(`[后处理] NovelAI 429错误，${retryDelayMs / 1000}秒后自动重试...`);
+          await new Promise(res => setTimeout(res, retryDelayMs));
+          retryCount++;
+          continue;
+        } else {
+          // 已重试一次，仍然失败
+          break;
+        }
+      } else {
+        // 其他错误，立即中止
+        lastError = error;
+        break;
+      }
+    }
+
+    if (url) {
+      setExtraBgImage(url);
+      console.log('[后处理] setExtraBgImage:', url);
+      // 更新角色的extrabackgroundimage属性
+      await updateCharacterExtraBackgroundImage(character.id, url);
+      console.log('[后处理] updateCharacterExtraBackgroundImage已调用:', character.id, url);
+      // 自动切换背景
+      if (selectedCharacter?.id === character.id) {
+        setExtraBgImage(url);
+        console.log('[后处理] 当前角色，触发setExtraBgImage:', url);
+      }
+      // 新增：将本次AI消息ID加入已处理集合，防止重复生成（持久化）
+      if (messages && messages.length > 0) {
+        const lastMsg = messages[messages.length - 1];
+        if (lastMsg && lastMsg.sender === 'bot') {
+          processedExtraBgMessageIds.current.add(lastMsg.id);
+          // 持久化
+          saveProcessedExtraBgMessageIds(character.id);
+        }
+      }
+      setIsExtraBgGenerating(false);
+      console.log('[后处理] 图片生成流程结束');
+    } else {
+      // 失败，显示错误
+      setExtraBgError(lastError?.message || '生成失败');
+      setIsExtraBgGenerating(false);
+      console.error('[后处理] 图片生成异常:', lastError);
+    }
+  }, [user, selectedCharacter, updateCharacterExtraBackgroundImage, messages, saveProcessedExtraBgMessageIds]);
+  
+  // 聊天后处理主入口：监听messages变化
+  useEffect(() => {
+    console.log('messages updated:', messages.map(m => ({sender: m.sender, isLoading: m.isLoading, text: m.text})));
+    if (!selectedCharacter) {
+      console.log('[后处理] 不触发：selectedCharacter 不存在');
+      return;
+    }
+    if (!selectedCharacter.enableAutoExtraBackground) {
+      console.log('[后处理] 不触发：enableAutoExtraBackground 为 false');
+      return;
+    }
+    // 新增：判断backgroundImageConfig?.isNovelAI 或 backgroundImage对象的isNovelAI
+    const isNovelAI =
+      selectedCharacter.backgroundImageConfig?.isNovelAI === true ||
+      (typeof selectedCharacter.backgroundImage === 'object' &&
+        selectedCharacter.backgroundImage !== null &&
+        (selectedCharacter.backgroundImage as any).isNovelAI === true);
+    if (!isNovelAI) {
+      console.log('[后处理] 不触发：backgroundImageConfig.isNovelAI 为 false');
+      return;
+    }
+    if (!selectedCharacter.backgroundImage) {
+      console.log('[后处理] 不触发：backgroundImage 为空');
+      return;
+    }
+    if (!messages || messages.length === 0) {
+      console.log('[后处理] 不触发：messages 为空');
+      return;
+    }
+    const lastMsg = messages[messages.length - 1];
+    if (!lastMsg) {
+      console.log('[后处理] 不触发：lastMsg 不存在');
+      return;
+    }
+    if (lastMsg.sender !== 'bot') {
+      console.log('[后处理] 不触发：最后一条消息 sender 不是 bot');
+      return;
+    }
+    if (lastMsg.isLoading) {
+      console.log('[后处理] 不触发：最后一条消息 isLoading 为 true');
+      return;
+    }
+    if (lastMsg.metadata && lastMsg.metadata.isErrorMessage) {
+      console.log('[后处理] 不触发：最后一条消息为 error message');
+      return;
+    }
+
+    // 新增：检测该AI消息是否已生成过图片（持久化），若已生成则不再触发
+    if (processedExtraBgMessageIds.current.has(lastMsg.id)) {
+      // 已为该AI消息生成过图片，停止后处理
+      return;
+    }
+
+    {
+      console.log('触发后处理，最后一条AI消息:', lastMsg.text);
+      triggerExtraBackgroundGeneration(selectedCharacter, lastMsg.text);
+      // 覆盖生成
+      extraBgGenAbortRef.current.aborted = true;
+    }
+  }, [messages, selectedCharacter, selectedCharacter?.enableAutoExtraBackground, triggerExtraBackgroundGeneration]);
+
+  // --- 清理机制：当对话被重置或消息被清空时，清空已处理集合 ---
+  useEffect(() => {
+    if ((!messages || messages.length === 0) && selectedCharacter?.id) {
+      processedExtraBgMessageIds.current.clear();
+      saveProcessedExtraBgMessageIds(selectedCharacter.id);
+    }
+  }, [messages, selectedCharacter?.id, saveProcessedExtraBgMessageIds]);
+
+  // 切换角色时加载集合
+  useEffect(() => {
+    if (selectedCharacter?.id) {
+      loadProcessedExtraBgMessageIds(selectedCharacter.id);
+    }
+  }, [selectedCharacter?.id, loadProcessedExtraBgMessageIds]);
+
+  // 4. 取消自动生成背景后，背景还原为backgroundImage，并清理extraBgImage缓存
+  useEffect(() => {
+    if (selectedCharacter && !selectedCharacter.enableAutoExtraBackground) {
+      setExtraBgImage(null);
+    }
+  }, [selectedCharacter?.enableAutoExtraBackground]);
+
+  // 5. 检查extraBgImage的缓存是否及时清理
+  useEffect(() => {
+    // 当切换角色、关闭自动生成、或extraBgImage对应的角色ID变化时清理
+    if (
+      !selectedCharacter ||
+      !selectedCharacter.enableAutoExtraBackground ||
+      (extraBgImage && selectedCharacter?.extrabackgroundimage !== extraBgImage)
+    ) {
+      setExtraBgImage(null);
+    }
+  }, [selectedCharacter, selectedCharacter?.enableAutoExtraBackground, selectedCharacter?.extrabackgroundimage]);
+
+  // 新增：开启自动生成背景时自动触发后处理
+  useEffect(() => {
+    if (
+      selectedCharacter &&
+      selectedCharacter.enableAutoExtraBackground &&
+      // 没有本地extraBgImage（防止重复生成）
+      !extraBgImage
+    ) {
+      // 只在没有extrabackgroundimage或本地extraBgImage时触发
+      // 但如果extrabackgroundimage为空，也应触发
+      // 只要AI消息存在，触发一次
+      if (messages && messages.length > 0) {
+        const lastMsg = messages[messages.length - 1];
+        if (
+          lastMsg &&
+          lastMsg.sender === 'bot' &&
+          !lastMsg.isLoading &&
+          !(lastMsg.metadata && lastMsg.metadata.isErrorMessage)
+        ) {
+          // 触发后处理
+          triggerExtraBackgroundGeneration(selectedCharacter, lastMsg.text);
+        }
+      }
+    }
+    // eslint-disable-next-line
+  }, [selectedCharacter?.enableAutoExtraBackground]);
+
   return (
     <View style={styles.outerContainer}>
       <StatusBar translucent backgroundColor="transparent" />
@@ -1648,6 +2086,29 @@ useEffect(() => {
             </ImageBackground>
           )}
         </View>
+
+        {/* 新增：右上角图片生成中indicator */}
+        {isExtraBgGenerating && (
+          <View style={{
+            position: 'absolute',
+            top: 90, // 与TopBarWithBackground下沿对齐（原top: 40）
+            right: 30,
+            zIndex: 999999,
+            backgroundColor: 'rgba(40,40,40,0.85)',
+            borderRadius: 20,
+            paddingVertical: 8,
+            paddingHorizontal: 18,
+            flexDirection: 'row',
+            alignItems: 'center',
+            shadowColor: '#000',
+            shadowOffset: { width: 0, height: 2 },
+            shadowOpacity: 0.15,
+            shadowRadius: 4,
+            elevation: 8,
+          }}>
+            <ActivityIndicator size="small" color="rgb(255, 224, 195)" />
+          </View>
+        )}
         
         {/* Sidebar is positioned absolutely at the root level */}
         {user && (

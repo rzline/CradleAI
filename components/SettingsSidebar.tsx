@@ -396,6 +396,25 @@ export default function SettingsSidebar({
     selectedCharacter?.customUserName || ''
   );
 
+  // Add new state for auto extra background
+  const [isAutoExtraBgEnabled, setIsAutoExtraBgEnabled] = useState(selectedCharacter?.enableAutoExtraBackground === true);
+
+  useEffect(() => {
+    setIsAutoExtraBgEnabled(selectedCharacter?.enableAutoExtraBackground === true);
+  }, [selectedCharacter]);
+
+  // Handler for auto extra background toggle
+  const handleAutoExtraBgToggle = async () => {
+    if (selectedCharacter) {
+      const updatedCharacter = {
+        ...selectedCharacter,
+        enableAutoExtraBackground: !isAutoExtraBgEnabled
+      };
+      await updateCharacter(updatedCharacter);
+      setIsAutoExtraBgEnabled(!isAutoExtraBgEnabled);
+    }
+  };
+
   // 新增：Modal显示状态
   const [showVisualNovelModal, setShowVisualNovelModal] = useState(false);
   const [showMemorySummaryModal, setShowMemorySummaryModal] = useState(false);
@@ -925,6 +944,17 @@ export default function SettingsSidebar({
                 thumbColor={isDynamicPortraitEnabled ? 'rgb(255, 224, 195)' : '#f4f3f4'}
               />
             </View>
+
+            {/* 新增：自动生成背景开关 */}
+            <View style={styles.settingItem}>
+              <Text style={styles.settingLabel}>自动生成背景</Text>
+              <Switch
+                value={isAutoExtraBgEnabled}
+                onValueChange={handleAutoExtraBgToggle}
+                trackColor={{ false: '#767577', true: 'rgba(255, 224, 195, 0.7)' }}
+                thumbColor={isAutoExtraBgEnabled ? 'rgb(255, 224, 195)' : '#f4f3f4'}
+              />
+            </View>
             
             {isDynamicPortraitEnabled && (
               <TouchableOpacity
@@ -937,8 +967,6 @@ export default function SettingsSidebar({
                 </Text>
               </TouchableOpacity>
             )}
-            
-            
           </View>
 
           {/* Replace Permanent Memory with Memory Summary */}

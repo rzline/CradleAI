@@ -46,11 +46,11 @@ export interface CharactersContextType {
   setCharacters: (characters: Character[]) => void;
   setIsLoading : (isLoading: boolean) => void;
   setCharacterAvatar: (characterId: string, avatar: string) => Promise<void>;
-  setCharacterBackgroundImage: (characterId: string, background: string) => Promise<void>;
+  setCharacterBackgroundImage: (characterId: string, background: string, config?: any) => Promise<void>;
   // 摇篮系统相关方法
   updateCradleSettings: (settings: CradleSettings) => Promise<void>;
   getCradleSettings: () => CradleSettings;
-
+  
   // 摇篮系统检查图片更新
   checkCradleGeneration: () => {
     readyCharactersCount: number;
@@ -68,7 +68,8 @@ export interface CharactersContextType {
   addFeed: (characterId: string, content: string, type?: 'text' | 'voice' | 'image' | 'aboutMe' | 'material' | 'knowledge') => Promise<void>;
   markFeedAsProcessed: (characterId: string, feedId: string) => Promise<void>;
   
-  // 生成角色
+  // 更新角色的额外背景图片
+  updateCharacterExtraBackgroundImage: (characterId: string, extrabackgroundimage: string) => Promise<void>;
   // 更新 generateCharacterFromCradle 函数签名，接受字符串或角色对象
   generateCharacterFromCradle: (cradleIdOrCharacter: string | CradleCharacter) => Promise<Character>;
 

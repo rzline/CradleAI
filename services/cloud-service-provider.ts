@@ -667,6 +667,23 @@ class CloudServiceProviderClass {
     }
   }
 
+  // 静态方法：外部可直接调用
+  static async generateChatCompletionStatic(
+    messages: Array<{role: string, content: string | Array<{type?: string, text?: string, image_url?: string}>}>,
+    options: {
+      model?: string,
+      temperature?: number,
+      max_tokens?: number,
+      top_p?: number,
+      frequency_penalty?: number,
+      presence_penalty?: number,
+      [key: string]: any
+    } = {}
+  ): Promise<Response> {
+    // 单例实例
+    return CloudServiceProvider.generateChatCompletion(messages, options);
+  }
+
   /**
    * Generate search result using cloud service (for tool call search).
    * @param query The search query string
@@ -949,3 +966,5 @@ class CloudServiceProviderClass {
 
 // Export a singleton instance
 export const CloudServiceProvider = new CloudServiceProviderClass();
+
+export default CloudServiceProviderClass;

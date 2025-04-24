@@ -28,7 +28,36 @@ export const CharactersProvider: React.FC<{ children: React.ReactNode }> = ({ ch
   const [messagesMap, setMessagesMap] = useState<{ [conversationId: string]: Message[] }>({});
   const [memos, setMemos] = useState<Memo[]>([]);
   const [favorites, setFavorites] = useState<CirclePost[]>([]);
+  const updateCharacterExtraBackgroundImage = async (characterId: string, extrabackgroundimage: string) => {
+    try {
+      // 读取最新角色列表
+      const existingDataStr = await FileSystem.readAsStringAsync(
+        FileSystem.documentDirectory + 'characters.json'
+      ).catch(() => '[]');
+      const existingCharacters = JSON.parse(existingDataStr);
   
+      // 查找并更新目标角色
+      const updatedCharacters = existingCharacters.map((char: any) =>
+        char.id === characterId
+          ? { ...char, extrabackgroundimage, updatedAt: Date.now() }
+          : char
+      );
+  
+      // 保存到文件系统
+      await FileSystem.writeAsStringAsync(
+        FileSystem.documentDirectory + 'characters.json',
+        JSON.stringify(updatedCharacters),
+        { encoding: FileSystem.EncodingType.UTF8 }
+      );
+  
+      // 更新内存中的角色数组
+      setCharacters(updatedCharacters);
+      console.log(`[CharactersContext] extrabackgroundimage updated for character: ${characterId}`);
+    } catch (error) {
+      console.error('[CharactersContext] Failed to update extrabackgroundimage:', error);
+      throw error;
+    }
+  };
   // 添加摇篮系统相关状态
   const [cradleSettings, setCradleSettings] = useState<CradleSettings>({
     enabled: false,
@@ -731,11 +760,18 @@ character.circlePosts = character.circlePosts.map(p =>
     }
   };
 
-  // 新增：设置角色背景图
-  const setCharacterBackgroundImage = async (characterId: string, backgroundUri: string) => {
+  const setCharacterBackgroundImage = async (characterId: string, backgroundUri: string, config?: any) => {
     try {
       const updatedCharacters = characters.map(char =>
-        char.id === characterId ? { ...char, backgroundImage: backgroundUri, updatedAt: Date.now() } : char
+        char.id === characterId
+          ? {
+              ...char,
+              backgroundImage: backgroundUri,
+              // 新增：同步 config 到 backgroundImageConfig
+              ...(config ? { backgroundImageConfig: config } : {}),
+              updatedAt: Date.now()
+            }
+          : char
       );
       setCharacters(updatedCharacters);
       await FileSystem.writeAsStringAsync(
@@ -1540,7 +1576,13 @@ const generateCharacterFromCradle = async (cradleIdOrCharacter: string | CradleC
       
       // 下载背景图片
       if (character.backgroundImage) {
-        localBackgroundUri = await downloadAndSaveImage(character.backgroundImage, uniqueCradleId, 'background');
+        localBackgroundUri = await downloadAndSaveImage(
+          typeof character.backgroundImage === 'string' 
+            ? character.backgroundImage 
+            : character.backgroundImage.url,
+          uniqueCradleId, 
+          'background'
+        );
         console.log('[摇篮系统] 背景图片已保存到本地:', localBackgroundUri);
       }
     } catch (error) {
@@ -1644,9 +1686,9 @@ const generateCharacterFromCradle = async (cradleIdOrCharacter: string | CradleC
   const getCradleApiSettings = () => {
     return cradleApiSettings;
   };
-
+  
   // Add this function before the return statement in CharactersProvider
-const checkCradleGeneration = (): {
+   const checkCradleGeneration = (): {
   readyCharactersCount: number;
   readyCharacters: CradleCharacter[];
 } => {
@@ -1727,6 +1769,7 @@ const checkCradleGeneration = (): {
         updateCradleApiSettings,
         setCharacterAvatar, // 新增
         setCharacterBackgroundImage, // 新增
+        updateCharacterExtraBackgroundImage, // 新增
       }}
     >
       {children}

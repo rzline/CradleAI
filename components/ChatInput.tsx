@@ -222,6 +222,9 @@ const ChatInput: React.FC<ChatInputProps> = ({
         characterId: selectedCharacter?.id,
       });
       
+            // === AI回复流程结束，立即允许输入 ===
+            setIsLoading(false);
+
       if (result.success) {
         const processedResponse = applyRegexTools(result.text || '抱歉，未收到有效回复。', 'ai');
         onSendMessage(processedResponse, 'bot');

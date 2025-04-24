@@ -269,9 +269,27 @@ export class NovelAIService {
       } else {
         throw new Error(`API request failed with status ${response.status}`);
       }
-    } catch (error) {
-      console.error('[NovelAI] Image generation failed:', error);
-      throw error;
+    } catch (error: any) {
+      // --- 新增详细Axios错误打印 ---
+      if (error?.response) {
+        // Axios error with response
+        console.error('[NovelAI] Image generation failed:', error.message, 'Status:', error.response.status, 'Data:', error.response.data);
+        if (error.response.data && typeof error.response.data === 'object') {
+          // 尝试打印服务器返回的详细错误信息
+          const msg = error.response.data.error || error.response.data.message || JSON.stringify(error.response.data);
+          throw new Error(`NovelAI API Error ${error.response.status}: ${msg}`);
+        } else if (typeof error.response.data === 'string') {
+          throw new Error(`NovelAI API Error ${error.response.status}: ${error.response.data}`);
+        } else {
+          throw new Error(`NovelAI API Error ${error.response.status}`);
+        }
+      } else if (error?.message) {
+        console.error('[NovelAI] Image generation failed:', error.message);
+        throw new Error(error.message);
+      } else {
+        console.error('[NovelAI] Image generation failed:', error);
+        throw error;
+      }
     }
   }
 

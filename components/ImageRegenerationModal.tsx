@@ -102,6 +102,7 @@ interface ImageRegenerationModalProps {
     seed?: number | string;
     novelaiSettings?: Partial<typeof DEFAULT_NOVELAI_SETTINGS>;
     animagine4Settings?: Partial<typeof DEFAULT_ANIMAGINE4_SETTINGS>;
+    fixedTags?:string[];
   };
   onSavePreviewImage?: (imageUrl: string) => void;
   initialSettingsState?: {
@@ -195,7 +196,7 @@ const ImageRegenerationModal: React.FC<ImageRegenerationModalProps> = ({
   const [generationSettingsVisible, setGenerationSettingsVisible] = useState(false);
   const [generationSettings, setGenerationSettings] = useState({ ...DEFAULT_GENERATION_SETTINGS });
   const [settingsLoaded, setSettingsLoaded] = useState(false);
-  
+  const [fixedTags, setFixedTags] = useState<string[]>([]);
   const [imageProvider, setImageProvider] = useState<'animagine4' | 'novelai'>('animagine4');
   const [sizePresetId, setSizePresetId] = useState<string>('portrait');
   const [novelaiSettings, setNovelaiSettings] = useState({ ...DEFAULT_NOVELAI_SETTINGS });
@@ -274,6 +275,9 @@ const ImageRegenerationModal: React.FC<ImageRegenerationModalProps> = ({
   // 管理模式
   const [manageMode, setManageMode] = useState(false);
 
+  // 仅保留锁定/解锁两种状态
+  const [lockMode, setLockMode] = useState<'none' | 'lock'>('none');
+
   // 多层加权/降权
   const addWeight = (tag: string, type: 'increase' | 'decrease') => {
     if (type === 'increase') {
@@ -295,9 +299,16 @@ const ImageRegenerationModal: React.FC<ImageRegenerationModalProps> = ({
     return tag;
   };
 
-  // 标签点击：加/降权或删除
+  // 标签点击：加/降权或删除或锁定/解锁
   const handlePositiveTagPress = (tag: string) => {
-    if (manageMode) {
+    if (lockMode === 'lock') {
+      // 锁定状态：点击高亮
+      if (!fixedTags.includes(tag)) setFixedTags(prev => [...prev, tag]);
+      return;
+    }
+    // 解锁状态：点击取消高亮
+    if (fixedTags.includes(tag)) setFixedTags(prev => prev.filter(t => t !== tag));
+    else if (manageMode) {
       setPositiveTags(tags => tags.filter(t => t !== tag));
     } else if (tagWeightMode === 'increase' || tagWeightMode === 'decrease') {
       setPositiveTags(tags =>
@@ -314,9 +325,23 @@ const ImageRegenerationModal: React.FC<ImageRegenerationModalProps> = ({
       );
     }
   };
-
+    // 新增：锁定/解锁按钮
+  const handleToggleFixedTag = (tag: string) => {
+    setFixedTags(prev =>
+      prev.includes(tag)
+        ? prev.filter(t => t !== tag)
+        : [...prev, tag]
+    );
+  };
   // 标签管理模式下的样式
   const tagManageStyle = manageMode ? { borderWidth: 1, borderColor: '#ff9f1c', opacity: 0.7 } : {};
+  // 标签锁定/解锁状态颜色
+  const tagLockStyle = (tag: string) => {
+    if (fixedTags.includes(tag)) {
+      return { backgroundColor: '#ffe0c3', borderColor: '#ff9f1c', borderWidth: 1 };
+    }
+    return {};
+  };
 
   useEffect(() => {
     if (visible) {
@@ -453,6 +478,11 @@ const ImageRegenerationModal: React.FC<ImageRegenerationModalProps> = ({
 
   useEffect(() => {
     if (visible) {
+      if (existingImageConfig && existingImageConfig.fixedTags) {
+        setFixedTags(existingImageConfig.fixedTags);
+      } else {
+        setFixedTags([]);
+      }
       if (existingImageConfig) {
         setPositiveTags(existingImageConfig.positiveTags || []);
         setNegativeTags(existingImageConfig.negativeTags || []);
@@ -460,6 +490,7 @@ const ImageRegenerationModal: React.FC<ImageRegenerationModalProps> = ({
         setUseExistingArtistPrompt(!!existingImageConfig.artistPrompt);
         setCustomPrompt(existingImageConfig.customPrompt || '');
         setCharacterTags(existingImageConfig.characterTags || []);
+
         if (existingImageConfig.seed !== undefined && existingImageConfig.seed !== null) {
           setNovelaiSettings(prev => ({ ...prev, seed: String(existingImageConfig.seed) }));
           setGeneratedSeed(Number(existingImageConfig.seed));
@@ -493,20 +524,22 @@ const ImageRegenerationModal: React.FC<ImageRegenerationModalProps> = ({
         setNovelaiSettings(prev => ({ ...prev, seed: '' }));
         setGeneratedSeed(null);
       }
-      setGeneratedImageUrl(null);
-      setError(null);
-      setIsLoading(false);
-      setProgressMessage(null);
-      setReplaceBackground(false);
-      setReplaceAvatar(false);
-      if (!existingImageConfig) {
-        setCustomPrompt('');
+        setGeneratedImageUrl(null);
+        setError(null);
+        setIsLoading(false);
+        setProgressMessage(null);
+        setReplaceBackground(false);
+        setReplaceAvatar(false);
+        if (!existingImageConfig) {
+          setCustomPrompt('');
+        }
+        setGenerationSettings({ ...DEFAULT_GENERATION_SETTINGS });
+        setAnimagine4Settings({ ...DEFAULT_ANIMAGINE4_SETTINGS });
       }
-      setGenerationSettings({ ...DEFAULT_GENERATION_SETTINGS });
-      setAnimagine4Settings({ ...DEFAULT_ANIMAGINE4_SETTINGS });
-    }
   }, [visible, character?.id, existingImageConfig]);
-
+  useEffect(() => {
+    setFixedTags(prev => prev.filter(tag => positiveTags.includes(tag)));
+  }, [positiveTags]);
   useEffect(() => {
     const handleAppStateChange = (nextAppState: string) => {
       if (
@@ -524,6 +557,17 @@ const ImageRegenerationModal: React.FC<ImageRegenerationModalProps> = ({
       subscription.remove();
     };
   }, [visible, isLoading]);
+
+  useEffect(() => {
+    if (visible && imageProvider === 'novelai' && settingsLoaded) {
+      if (!novelaiSettings.seed || novelaiSettings.seed === '') {
+        const randomSeed = Math.floor(Math.random() * 2 ** 32).toString();
+        setNovelaiSettings(prev => ({ ...prev, seed: randomSeed }));
+        setGeneratedSeed(Number(randomSeed));
+      }
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [visible, imageProvider, settingsLoaded]);
 
   const handleAddCharacterPrompt = () => {
     setCharacterPrompts(prev => [
@@ -815,6 +859,7 @@ const ImageRegenerationModal: React.FC<ImageRegenerationModalProps> = ({
           setAsBackground: replaceBackground,
           isAvatar: replaceAvatar,
           seed: result.seed, 
+          isNovelAI: true, // 新增
           generationConfig: {
             positiveTags: positiveTags,
             negativeTags: negativeTags,
@@ -824,7 +869,8 @@ const ImageRegenerationModal: React.FC<ImageRegenerationModalProps> = ({
             characterTags: characterTags,
             seed: result.seed, 
             novelaiSettings, 
-            animagine4Settings 
+            animagine4Settings,
+            isNovelAI: true, // 新增
           }
         };
         
@@ -852,7 +898,7 @@ const ImageRegenerationModal: React.FC<ImageRegenerationModalProps> = ({
       
       const sizePreset = IMAGE_SIZE_PRESETS.find(preset => preset.id === sizePresetId) || IMAGE_SIZE_PRESETS[0];
       const actualSettings = {
-        width: sizePreset.width,
+width: sizePreset.width,
         height: sizePreset.height,
         steps: animagine4Settings.steps,
         batch_size: animagine4Settings.batch_size
@@ -1192,11 +1238,20 @@ const ImageRegenerationModal: React.FC<ImageRegenerationModalProps> = ({
         {positiveTags.map((tag, index) => (
           <TouchableOpacity
             key={`pos-tag-${index}`}
-            style={[styles.selectedPositiveTag, tagManageStyle]}
+            style={[
+              styles.selectedPositiveTag,
+              tagManageStyle,
+              tagLockStyle(tag)
+            ]}
             onPress={() => handlePositiveTagPress(tag)}
           >
-            <Text style={styles.tagText}>{tag}</Text>
-            {manageMode && (
+            <Text style={[
+              styles.tagText,
+              fixedTags.includes(tag) && lockMode === 'none' && styles.fixedTagText
+            ]}>
+              {tag}
+            </Text>
+            {manageMode && !fixedTags.includes(tag) && (
               <Ionicons name="close-circle" size={14} color="rgba(0,0,0,0.5)" />
             )}
           </TouchableOpacity>
@@ -1584,8 +1639,22 @@ const ImageRegenerationModal: React.FC<ImageRegenerationModalProps> = ({
 
   const renderTagHeaderButtons = () => (
     <View style={styles.tagHeaderButtons}>
-            {/* 新增Roll按钮 */}
-            <TouchableOpacity
+      {/* 只保留锁定/解锁切换按钮 */}
+      <TouchableOpacity
+        style={[
+          styles.tagHeaderButton,
+          lockMode === 'lock' && { backgroundColor: '#ff9f1c' }
+        ]}
+        onPress={() => setLockMode(mode => (mode === 'none' ? 'lock' : 'none'))}
+      >
+        <Ionicons
+          name={lockMode === 'lock' ? 'lock-closed' : 'lock-open'}
+          size={16}
+          color={lockMode === 'none' ? '#ff9f1c' : '#fff'}
+        />
+      </TouchableOpacity>
+      {/* 其它按钮... */}
+      <TouchableOpacity
         style={styles.tagHeaderButton}
         onPress={handleRollTags}
       >
@@ -1700,6 +1769,7 @@ const ImageRegenerationModal: React.FC<ImageRegenerationModalProps> = ({
                         localUri: imageUrl.includes('#localNovelAI') ? imageUrl.split('#localNovelAI')[0] : undefined,
                         setAsBackground: replaceBackground,
                         isAvatar: replaceAvatar,
+                        isNovelAI: imageProvider === 'novelai',
                         seed: generatedSeed || undefined,
                         generationConfig: {
                           positiveTags: positiveTags,
@@ -1708,14 +1778,29 @@ const ImageRegenerationModal: React.FC<ImageRegenerationModalProps> = ({
                           customPrompt: '',
                           useCustomPrompt: false,
                           characterTags: characterTags,
-                          seed: generatedSeed 
+                          seed: generatedSeed, 
+                          isNovelAI: imageProvider === 'novelai',
                         }
                       };
+                      console.log (`[图片重生成] 确认使用图像: ${completedImage.isNovelAI,completedImage.generationConfig?.isNovelAI}`);
                       if (replaceAvatar && setCharacterAvatar) {
                         await setCharacterAvatar(character.id, completedImage.localUri || completedImage.url);
                       }
                       if (replaceBackground && setCharacterBackgroundImage) {
-                        await setCharacterBackgroundImage(character.id, completedImage.localUri || completedImage.url);
+                        // --- 新增：同步写入 backgroundImageConfig ---
+                        await setCharacterBackgroundImage(
+                          character.id,
+                          completedImage.localUri || completedImage.url,
+                          {
+                            ...completedImage.generationConfig,
+                            isNovelAI: completedImage.isNovelAI, // 强制同步
+                            // 兼容其它参数
+                            fixedTags: fixedTags,
+                            novelaiSettings: novelaiSettings,
+                            animagine4Settings: animagine4Settings,
+                            sizePreset: IMAGE_SIZE_PRESETS.find(p => p.id === sizePresetId) || undefined,
+                          }
+                        );
                       }
                       // 1. 不关闭组件，仅回调onSuccess
                       onSuccess(
@@ -1779,6 +1864,41 @@ const ImageRegenerationModal: React.FC<ImageRegenerationModalProps> = ({
               <Ionicons name="pencil-outline" size={16} color="#ddd" />
               <Text style={styles.tagActionButtonText}>自定义提示词</Text>
             </TouchableOpacity>
+            {/* 新增：seed输入和随机按钮，样式与自定义提示词按钮一致 */}
+            {imageProvider === 'novelai' && (
+              <View style={[styles.tagActionButton, { flexDirection: 'row', alignItems: 'center', marginLeft: 8 }]}>
+                <Ionicons name="key-outline" size={16} color="#ddd" />
+                <TextInput
+                  style={{
+                    color: '#fff',
+                    fontSize: 13,
+                    marginLeft: 6,
+                    minWidth: 60,
+                    paddingVertical: 0,
+                    paddingHorizontal: 4,
+                    backgroundColor: 'transparent',
+                    borderBottomWidth: 1,
+                    borderBottomColor: '#ff9f1c',
+                    marginRight: 4,
+                  }}
+                  value={novelaiSettings.seed}
+                  onChangeText={handleSeedChange}
+                  keyboardType="numeric"
+                  placeholder="Seed"
+                  placeholderTextColor="#888"
+                  maxLength={16}
+                />
+                <TouchableOpacity
+                  style={{ marginLeft: 2, padding: 2 }}
+                  onPress={() => {
+                    const randomSeed = Math.floor(Math.random() * 2 ** 32).toString();
+                    setNovelaiSettings(prev => ({ ...prev, seed: randomSeed }));
+                  }}
+                >
+                  <Ionicons name="refresh" size={16} color="#ff9f1c" />
+                </TouchableOpacity>
+              </View>
+            )}
           </View>
         </View>
         {characterTags.length > 0 && (
@@ -2419,6 +2539,8 @@ const styles = StyleSheet.create({
     paddingHorizontal: 8,
     marginRight: 8,
     marginBottom: 8,
+    borderWidth: 0,
+    borderColor: 'transparent',
   },
   selectedNegativeTag: {
     flexDirection: 'row',
@@ -3116,6 +3238,19 @@ const styles = StyleSheet.create({
   },
   generationScrollContent: {
     paddingBottom: 8,
+  },
+  fixedTagStyle: {
+    borderWidth: 1,
+    borderColor: '#ff9f1c',
+    backgroundColor: 'rgba(255, 159, 28, 0.18)',
+  },
+  fixedTagText: {
+    fontWeight: 'bold',
+    color: '#ff9f1c',
+  },
+  lockButton: {
+    marginLeft: 4,
+    padding: 2,
   },
 });
 

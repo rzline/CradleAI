@@ -31,7 +31,7 @@ import RichTextRenderer from '@/components/RichTextRenderer';
 import ImageManager from '@/utils/ImageManager';
 import { ttsService, AudioState } from '@/services/ttsService'; // Import the TTS service
 import { useDialogMode } from '@/constants/DialogModeContext';
-
+import { GestureResponderEvent } from 'react-native';
 // Update ChatDialogProps interface in the file or in shared/types.ts to include messageMemoryState
 interface ExtendedChatDialogProps extends ChatDialogProps {
   messageMemoryState?: Record<string, string>;
@@ -43,10 +43,6 @@ const { width } = Dimensions.get('window');
 // Adjust the maximum width to ensure proper margins
 const MAX_WIDTH = width * 0.88; // Decreased from 0.9 to 0.88 to add more margin
 const MAX_IMAGE_HEIGHT = 300; // Maximum height for images in chat
-
-// Constants for virtualization
-const INITIAL_LOAD_COUNT = 50; // Initial messages to show
-const BATCH_SIZE = 5; // How many messages to load per batch when scrolling up
 
 const ChatDialog: React.FC<ExtendedChatDialogProps> = ({
   messages,
@@ -60,7 +56,6 @@ const ChatDialog: React.FC<ExtendedChatDialogProps> = ({
   regeneratingMessageId = null, // Default to null
   user = null, // Add user prop with default
 }) => {
-  // Replace ScrollView ref with FlatList ref for virtualization
   const flatListRef = useRef<FlatList<Message>>(null);
   const fadeAnim = useSharedValue(0);
   const translateAnim = useSharedValue(0);
@@ -86,21 +81,18 @@ const ChatDialog: React.FC<ExtendedChatDialogProps> = ({
   // Get dialog mode from context
   const { mode, visualNovelSettings, isHistoryModalVisible, setHistoryModalVisible } = useDialogMode();
   
-  // Add states for virtualized list
-  const [virtualizedMessages, setVirtualizedMessages] = useState<Message[]>([]);
-  const [isLoadingMore, setIsLoadingMore] = useState(false);
-  const [hasMoreMessagesToLoad, setHasMoreMessagesToLoad] = useState(false);
-  const [visibleStartIndex, setVisibleStartIndex] = useState(0);
-  const [visibleEndIndex, setVisibleEndIndex] = useState(0);
-  const [initialScrollDone, setInitialScrollDone] = useState(false);
-  
-  // Add state to track user scroll behavior
-  const [userHasScrolled, setUserHasScrolled] = useState(false);
-  const [isNearBottom, setIsNearBottom] = useState(true);
-
   // Add a ref to track if we're programmatically scrolling
   const isAutoScrollingRef = useRef(false);
-  
+    // 新增：长按空白区域自动滑到底部
+    const handleLongPressOutside = () => {
+      if (flatListRef.current) {
+        try {
+          flatListRef.current.scrollToEnd({ animated: true });
+        } catch (e) {
+          // ignore
+        }
+      }
+    };
   // Check TTS enhancer status when component mounts
   useEffect(() => {
     const checkTtsEnhancerStatus = () => {
@@ -121,263 +113,28 @@ const ChatDialog: React.FC<ExtendedChatDialogProps> = ({
     if (selectedCharacter?.id && selectedCharacter.id !== currentConversationId) {
       setCurrentConversationId(selectedCharacter.id);
       isInitialScrollRestored.current = false;
-      setInitialScrollDone(false); // Reset initial scroll when conversation changes
     }
   }, [selectedCharacter?.id, currentConversationId]);
 
-  // Optimize Messages dependency listening to ensure real-time updates
-  useEffect(() => {
-    if (messages.length === 0) {
-      setVirtualizedMessages([]);
-      setHasMoreMessagesToLoad(false);
-      return;
-    }
-
-    // Ensure all messages have unique IDs before processing
-    const processedMessages = messages.map(msg => {
-      // If the message already has an ID, preserve it
-      if (msg.id) return msg;
-      
-      // Generate a unique, stable ID for messages without one
-      // Use content hash if possible to maintain stability across renders
-      const contentHash = msg.text ? 
-        msg.text.substring(0, 20).replace(/[^a-z0-9]/gi, '') : 
-        'empty';
-        
-      return {
-        ...msg,
-        id: `gen-${msg.sender}-${msg.timestamp || Date.now()}-${contentHash}-${Math.random().toString(36).substring(2, 7)}`
-      };
-    });
-
-    // Check if we're adding new messages or just getting an updated message array
-    // This helps distinguish between actual new messages vs. settings changes
-    const existingMessageIds = new Set(virtualizedMessages.map(m => m.id));
-    const hasNewMessages = processedMessages.some(msg => !existingMessageIds.has(msg.id));
-    const messageCountChanged = processedMessages.length !== virtualizedMessages.length;
-
-    // Key fix: Only treat as "adding" if we have new messages that aren't in our current list
-    const isAddingNewMessages = hasNewMessages && messageCountChanged && 
-      processedMessages.length > virtualizedMessages.length;
-
-    // Small message set - show all
-    if (processedMessages.length <= INITIAL_LOAD_COUNT) {
-      console.log(`[ChatDialog] Small message set (${processedMessages.length}), showing all messages`);
-      setVirtualizedMessages(processedMessages);
-      setHasMoreMessagesToLoad(false);
-      return;
-    }
-
-    // Truly adding new messages - keep existing and append new ones
-    if (isAddingNewMessages) {
-      console.log(`[ChatDialog] New messages detected (${processedMessages.length - virtualizedMessages.length}), appending`);
-      
-      // Find messages that aren't in our current virtualized list
-      const newMessages = processedMessages.filter(msg => !existingMessageIds.has(msg.id));
-      
-      // Append only the new messages to avoid duplicates
-      setVirtualizedMessages(prev => [...prev, ...newMessages]);
-      return;
-    }
-    
-    // User has scrolled and viewed history - preserve their position and context
-    if (userHasScrolled && virtualizedMessages.length > INITIAL_LOAD_COUNT) {
-      // For non-additive changes (like settings change), verify we don't duplicate messages
-      // by comparing the entire arrays instead of just length
-      
-      // Create ID sets for quick comparison
-      const currentIds = new Set(virtualizedMessages.map(msg => msg.id));
-      const processedIds = new Set(processedMessages.map(msg => msg.id));
-      
-      // If we have the same IDs in both arrays (regardless of order), keep the current view
-      const hasSameMessages = 
-        currentIds.size === processedIds.size && 
-        [...currentIds].every(id => processedIds.has(id));
-        
-      if (hasSameMessages) {
-        console.log(`[ChatDialog] Settings changed but messages are the same, preserving state`);
-        return; // Don't update state if the messages are the same
-      }
-      
-      console.log(`[ChatDialog] Messages changed significantly, updating view`);
-    }
-
-    // Standard initialization for large conversations
-    const totalCount = processedMessages.length;
-    const endIdx = totalCount;
-    const startIdx = Math.max(0, totalCount - INITIAL_LOAD_COUNT);
-    
-    console.log(`[ChatDialog] Standard initialization with ${endIdx - startIdx} messages`);
-    
-    setVirtualizedMessages(processedMessages.slice(startIdx, endIdx));
-    setHasMoreMessagesToLoad(startIdx > 0);
-    
-    // Reset scroll position when messages change significantly
-    setInitialScrollDone(false);
-  }, [messages, userHasScrolled]);
-
-  // Improved logic for loading more messages
-  const loadMoreMessages = useCallback(() => {
-    if (isLoadingMore || !hasMoreMessagesToLoad || messages.length === 0) return;
-    
-    setIsLoadingMore(true);
-    console.log(`[ChatDialog] Starting to load more messages. Current count: ${virtualizedMessages.length}`);
-    
-    // Get the first message ID from current virtualized list to find its position in the full list
-    const firstVisibleMessageId = virtualizedMessages.length > 0 ? virtualizedMessages[0].id : null;
-    
-    if (!firstVisibleMessageId) {
-      setIsLoadingMore(false);
-      return;
-    }
-    
-    // Find the index of the first visible message in the full message array
-    const firstVisibleIndex = messages.findIndex(msg => msg.id === firstVisibleMessageId);
-    
-    if (firstVisibleIndex <= 0) {
-      console.log(`[ChatDialog] Could not find first visible message in full list, or it's already at position 0`);
-      setIsLoadingMore(false);
-      setHasMoreMessagesToLoad(false);
-      return;
-    }
-    
-    // Calculate the range of additional messages to load
-    const newStartIndex = Math.max(0, firstVisibleIndex - BATCH_SIZE);
-    const additionalMessages = messages.slice(newStartIndex, firstVisibleIndex);
-    
-    console.log(`[ChatDialog] Loading ${additionalMessages.length} more messages (${newStartIndex}-${firstVisibleIndex} of ${messages.length})`);
-    
-    // If no additional messages to load, exit early
-    if (additionalMessages.length === 0) {
-      setIsLoadingMore(false);
-      setHasMoreMessagesToLoad(false);
-      return;
-    }
-    
-    // Remember the current first message for maintaining scroll position later
-    const firstItem = virtualizedMessages[0];
-    
-    // Ensure each message has a unique ID to prevent key duplication errors
-    const processedAdditionalMessages = additionalMessages.map(msg => {
-      // If the message already has an ID, use it directly
-      if (msg.id) return msg;
-      
-      // Otherwise, generate a new unique ID
-      return {
-        ...msg,
-        id: `msg-${Date.now()}-${Math.random().toString(36).substring(2, 9)}`
-      };
-    });
-    
-    // Add the additional messages to the beginning of the virtualized list
-    setTimeout(() => {
-      setVirtualizedMessages(prev => {
-        // Create a Set to store existing message IDs for duplicate checking
-        const existingIds = new Set(prev.map(msg => msg.id));
-        
-        // Filter out messages with duplicate IDs
-        const uniqueNewMessages = processedAdditionalMessages.filter(msg => !existingIds.has(msg.id));
-        
-        // Merge new messages and existing messages
-        return [...uniqueNewMessages, ...prev];
-      });
-      
-      setHasMoreMessagesToLoad(newStartIndex > 0);
-      
-      // Stop loading state and maintain position after a short delay
-      setTimeout(() => {
-        setIsLoadingMore(false);
-        
-        // If there were previous messages, scroll to maintain relative position
-        if (firstItem && flatListRef.current && processedAdditionalMessages.length > 0) {
-          // Find the index of the previous first message in the new list
-          const maintainIndex = processedAdditionalMessages.length;
-          
-          console.log(`[ChatDialog] Scrolling to maintain position at index ${maintainIndex}`);
-          
-          try {
-            flatListRef.current.scrollToIndex({
-              index: maintainIndex,
-              animated: false,
-              viewPosition: 0, // 0 is top, 0.5 is middle, 1 is bottom
-            });
-          } catch (error) {
-            console.error('[ChatDialog] Error scrolling to index:', error);
-            
-            // Fallback solution: use scrollToItem
-            try {
-              if (firstItem) {
-                flatListRef.current.scrollToItem({
-                  item: firstItem,
-                  animated: false,
-                  viewPosition: 0
-                });
-              }
-            } catch (fallbackError) {
-              console.error('[ChatDialog] Fallback scroll also failed:', fallbackError);
-            }
-          }
-        }
-      }, 100);
-    }, 300);
-  }, [isLoadingMore, hasMoreMessagesToLoad, messages, virtualizedMessages]);
-
-  // Handle visible items change for FlatList
-  const handleViewableItemsChanged = useCallback(({viewableItems}: {viewableItems: any[]}) => {
-    if (viewableItems.length > 0) {
-      setVisibleStartIndex(viewableItems[0].index);
-      setVisibleEndIndex(viewableItems[viewableItems.length - 1].index);
-    }
-  }, []);
-
-  // 添加新的滚动至顶部检测，更可靠地触发加载更多
-  const handleUserScroll = (event: any) => {
+  // Handle scroll
+  const handleScroll = (event: any) => {
     const yOffset = event.nativeEvent.contentOffset.y;
-    
-    // Only register as user scroll if it's not from our programmatic scrolling
-    if (!isAutoScrollingRef.current) {
-      setUserHasScrolled(true);
-    }
-    
-    // 检测是否滚动到了顶部附近
-    if (yOffset < 50 && !isLoadingMore && hasMoreMessagesToLoad) {
-      console.log('[ChatDialog] Near top, loading more messages');
-      loadMoreMessages();
-    }
-    
-    // Improved bottom detection - consider more area as "bottom"
-    const contentHeight = event.nativeEvent.contentSize.height;
-    const scrollViewHeight = event.nativeEvent.layoutMeasurement.height;
-    
-    // Consider user at bottom if they're within 150px of the bottom
-    const isCloseToBottom = contentHeight - yOffset - scrollViewHeight < 150;
-    
-    if (isNearBottom !== isCloseToBottom) {
-      setIsNearBottom(isCloseToBottom);
-      console.log(`[ChatDialog] Near bottom status changed to: ${isCloseToBottom}`);
-    }
-    
-    // 原有的滚动位置跟踪逻辑
     if (currentConversationId) {
       setScrollPositions(prev => ({
         ...prev,
         [currentConversationId]: yOffset
       }));
-      
-      // Report scroll position to parent if callback provided
       if (onScrollPositionChange) {
         onScrollPositionChange(currentConversationId, yOffset);
       }
     }
   };
 
-  const handleScroll = handleUserScroll;
-
   // Animate new messages
   useEffect(() => {
     fadeAnim.value = withTiming(1, { duration: 300 });
     translateAnim.value = withTiming(0, { duration: 300 });
-  }, [virtualizedMessages, fadeAnim, translateAnim]);
+  }, [messages, fadeAnim, translateAnim]);
 
   const messagesAnimatedStyle = useAnimatedStyle(() => {
     return {
@@ -429,26 +186,14 @@ const ChatDialog: React.FC<ExtendedChatDialogProps> = ({
 
   // Completely replace the auto-scroll logic with a much simpler version
   useEffect(() => {
-    // Only scroll to bottom on initial load or when a new message arrives
-    // and the user hasn't scrolled up yet
-    if (virtualizedMessages.length > 0 && !isLoadingMore && !userHasScrolled) {
-      console.log('[ChatDialog] Initial load or new message while at bottom - scrolling to bottom');
-      
-      // Set the auto-scrolling flag to avoid interference with user scrolling
-      isAutoScrollingRef.current = true;
-      
+    if (messages.length > 0) {
       setTimeout(() => {
         if (flatListRef.current) {
           flatListRef.current.scrollToEnd({ animated: false });
         }
-        
-        // Reset the flag after scrolling
-        setTimeout(() => {
-          isAutoScrollingRef.current = false;
-        }, 100);
       }, 50);
     }
-  }, [virtualizedMessages.length, isLoadingMore, userHasScrolled]);
+  }, [messages.length]);
 
   // Update audio states when they change in the service
   const updateAudioState = (messageId: string) => {
@@ -462,12 +207,10 @@ const ChatDialog: React.FC<ExtendedChatDialogProps> = ({
   // Handle TTS button press
   const handleTTSButtonPress = async (messageId: string, text: string) => {
     try {
-      // Get the template ID from the selected character, falling back to a default if not set
       const templateId = selectedCharacter?.voiceType || 'template1';
       
       console.log(`[ChatDialog] Using voice template: ${templateId} for character: ${selectedCharacter?.name}`);
       
-      // Update UI immediately to show loading state
       setAudioStates(prev => ({
         ...prev,
         [messageId]: {
@@ -477,24 +220,19 @@ const ChatDialog: React.FC<ExtendedChatDialogProps> = ({
         }
       }));
       
-      // Generate TTS for this message with the character's voice template
       const result = await ttsService.generateTTS(messageId, text, templateId);
       
-      // Update the audio state based on the result
       updateAudioState(messageId);
       
-      // Auto-play the audio if generation was successful
       if (result.hasAudio && !result.error) {
         await handlePlayAudio(messageId);
       } else if (result.error) {
-        // Only show an error alert if there was a definite error (not just still processing)
         if (result.error !== 'Audio generation timed out after 30 seconds') {
           Alert.alert('语音生成失败', '无法生成语音，请稍后再试。');
         }
       }
     } catch (error) {
       console.error('Failed to generate TTS:', error);
-      // Update local state to show error
       setAudioStates(prev => ({
         ...prev,
         [messageId]: {
@@ -512,14 +250,11 @@ const ChatDialog: React.FC<ExtendedChatDialogProps> = ({
       const state = ttsService.getAudioState(messageId);
       
       if (state.isPlaying) {
-        // If already playing, stop it
         await ttsService.stopAudio(messageId);
       } else {
-        // Otherwise start playback
         await ttsService.playAudio(messageId);
       }
       
-      // Update state after action
       updateAudioState(messageId);
     } catch (error) {
       console.error('Failed to play audio:', error);
@@ -571,14 +306,11 @@ const ChatDialog: React.FC<ExtendedChatDialogProps> = ({
     );
   };
 
-  // Add function to detect custom tags in messages
   const containsCustomTags = (text: string): boolean => {
       return /(<\s*(thinking|think|status|mem|websearch|char-think|StatusBlock|statusblock|font)[^>]*>[\s\S]*?<\/\s*(thinking|think|status|mem|websearch|char-think|StatusBlock|statusblock|font)\s*>)/i.test(text);
    };
 
-  // 检测并处理消息中的图片链接
   const processMessageContent = (text: string, isUser: boolean) => {
-    // If text is empty, return a placeholder
     if (!text || text.trim() === '') {
       return (
         <Text style={isUser ? styles.userMessageText : styles.botMessageText}>
@@ -587,7 +319,6 @@ const ChatDialog: React.FC<ExtendedChatDialogProps> = ({
       );
     }
 
-    // Check if text contains custom tags like <mem>, <websearch>, etc.
     if (containsCustomTags(text)) {
       return (
         <RichTextRenderer
@@ -599,12 +330,10 @@ const ChatDialog: React.FC<ExtendedChatDialogProps> = ({
       );
     }
 
-    // Check if text is raw markdown for an image with our special image:id format
     const rawImageMarkdownRegex = /^!\[(.*?)\]\(image:([a-f0-9]+)\)$/;
     const rawImageMatch = text.trim().match(rawImageMarkdownRegex);
     
     if (rawImageMatch) {
-      // This is a raw image markdown string, extract the parts and render directly
       const alt = rawImageMatch[1] || "图片";
       const imageId = rawImageMatch[2];
       
@@ -637,7 +366,6 @@ const ChatDialog: React.FC<ExtendedChatDialogProps> = ({
       }
     }
 
-    // More comprehensive check for custom tags with various formats and spaces
     const hasCustomTags = (
       /<\s*(thinking|think|status|mem|websearch)[^>]*>([\s\S]*?)<\/\s*(thinking|think|status|mem|websearch)\s*>/i.test(text) || 
       /<\s*char\s+think\s*>([\s\S]*?)<\/\s*char\s+think\s*>/i.test(text)
@@ -648,12 +376,8 @@ const ChatDialog: React.FC<ExtendedChatDialogProps> = ({
                        /\*\*([\s\S]*?)\*\*/.test(text) ||
                        /\*([\s\S]*?)\*/.test(text);
 
-    // Check for HTML content or interactive elements
     const hasHtml = /<\/?[a-z][^>]*>/i.test(text);
-    
 
-
-    // First, check for image markdown with our special format
     const imageIdRegex = /!\[(.*?)\]\(image:([^\s)]+)\)/g;
     let match: RegExpExecArray | null;
     const matches: { alt: string, id: string }[] = [];
@@ -665,17 +389,11 @@ const ChatDialog: React.FC<ExtendedChatDialogProps> = ({
       });
     }
     
-    // If we found image:id format, render them directly
     if (matches.length > 0) {
-      // Debug image paths
-      console.log(`Found ${matches.length} images with IDs in message`);
-
       return (
         <View>
           {matches.map((img, idx) => {
             const imageInfo = ImageManager.getImageInfo(img.id);
-            console.log(`Image ${idx} ID: ${img.id}, info:`, imageInfo);
-
             if (imageInfo) {
               return (
                 <TouchableOpacity 
@@ -693,7 +411,6 @@ const ChatDialog: React.FC<ExtendedChatDialogProps> = ({
                 </TouchableOpacity>
               );
             } else {
-              console.error(`No image info found for ID: ${img.id}`);
               return (
                 <View key={idx} style={styles.imageError}>
                   <Ionicons name="alert-circle" size={36} color="#e74c3c" />
@@ -706,11 +423,9 @@ const ChatDialog: React.FC<ExtendedChatDialogProps> = ({
       );
     }
 
-    // Handle image markdown with our custom image:id syntax
     const imageMarkdownRegex = /!\[(.*?)\]\((https?:\/\/[^\s)]+|data:image\/[^\s)]+)\)/g;
     let urlMatches: { alt: string, url: string }[] = [];
     
-    // Reset lastIndex for regex since we're reusing it
     imageMarkdownRegex.lastIndex = 0;
     
     while ((match = imageMarkdownRegex.exec(text)) !== null) {
@@ -720,20 +435,13 @@ const ChatDialog: React.FC<ExtendedChatDialogProps> = ({
       });
     }
     
-    // 如果找到图片链接
     if (urlMatches.length > 0) {
-      console.log(`Found ${urlMatches.length} images with URLs in message`);
-      
       return (
         <View>
           {urlMatches.map((img, idx) => {
-            // 检查是否为数据 URL 或 HTTP URL
             const isDataUrl = img.url.startsWith('data:');
             const isLargeDataUrl = isDataUrl && img.url.length > 100000;
             
-            console.log(`Image ${idx} URL type: ${isDataUrl ? 'data URL' : 'HTTP URL'}, large: ${isLargeDataUrl}`);
-            
-            // 处理大型数据 URL
             if (isLargeDataUrl) {
               return (
                 <View key={idx} style={styles.imageWrapper}>
@@ -750,7 +458,6 @@ const ChatDialog: React.FC<ExtendedChatDialogProps> = ({
               );
             }
             
-            // 正常显示图片，包括 HTTP URL 和小型数据 URL
             return (
               <TouchableOpacity 
                 key={idx}
@@ -771,7 +478,6 @@ const ChatDialog: React.FC<ExtendedChatDialogProps> = ({
       );
     }
     
-    // 检查是否是普通的链接说明
     const linkRegex = /\[(.*?)\]\((https?:\/\/[^\s)]+|data:image\/[^\s)]+)\)/g;
     let linkMatches: { text: string, url: string }[] = [];
     
@@ -782,7 +488,6 @@ const ChatDialog: React.FC<ExtendedChatDialogProps> = ({
       });
     }
     
-    // 如果找到链接
     if (linkMatches.length > 0) {
       return (
         <View>
@@ -806,7 +511,6 @@ const ChatDialog: React.FC<ExtendedChatDialogProps> = ({
       );
     }
     
-    // 处理普通文本
     return renderMessageText(text, isUser);
   };
 
@@ -823,29 +527,20 @@ const ChatDialog: React.FC<ExtendedChatDialogProps> = ({
     );
   };
 
-  // Count the number of AI messages up to a specific index and assign proper aiIndex values
   const getAiMessageIndex = (index: number): number => {
-    // First check if the message at this index has a stored aiIndex in metadata
-    const message = virtualizedMessages[index];
+    const message = messages[index];
     if (message?.metadata?.aiIndex !== undefined) {
-      console.log(`[ChatDialog] Using stored aiIndex: ${message.metadata.aiIndex}`);
       return message.metadata.aiIndex;
     }
-    
-    // If no stored index, calculate it by counting previous AI messages
     let aiMessageCount = 0;
     for (let i = 0; i <= index; i++) {
-      if (virtualizedMessages[i].sender === 'bot' && !virtualizedMessages[i].isLoading) {
+      if (messages[i].sender === 'bot' && !messages[i].isLoading) {
         aiMessageCount++;
       }
     }
-    
-    const calculatedIndex = aiMessageCount - 1; // 0-based index
-    console.log(`[ChatDialog] Calculated aiIndex: ${calculatedIndex}`);
-    return calculatedIndex;
+    return aiMessageCount - 1;
   };
 
-  // Check if a message has been rated
   const getMessageRating = (messageId: string): boolean | null => {
     if (messageId in ratedMessages) {
       return ratedMessages[messageId];
@@ -853,15 +548,12 @@ const ChatDialog: React.FC<ExtendedChatDialogProps> = ({
     return null; // Not rated
   };
 
-  // Render TTS buttons for a message
   const renderTTSButtons = (message: Message) => {
-    // Only show TTS buttons for bot messages
     if (message.sender !== 'bot' || message.isLoading) return null;
 
     const audioState = audioStates[message.id] || ttsService.getAudioState(message.id);
     const isVisualNovel = mode === 'visual-novel';
 
-    // Use 米黄色 for TTS button background
     const ttsButtonBg = { backgroundColor: '#FFE0C3' };
     const ttsButtonEnhancedBg = { backgroundColor: '#FFD580' };
 
@@ -930,7 +622,6 @@ const ChatDialog: React.FC<ExtendedChatDialogProps> = ({
     );
   };
 
-  // Add state for memory tooltips
   const [activeTooltipId, setActiveTooltipId] = useState<string | null>(null);
 
   const renderMessageContent = (message: Message, isUser: boolean, index: number) => {
@@ -940,7 +631,6 @@ const ChatDialog: React.FC<ExtendedChatDialogProps> = ({
         isUser ? styles.userMessageContent : styles.botMessageContent,
         message.isLoading && styles.loadingMessage
       ]}>
-        {/* AI avatar on left */}
         {!isUser && (
           <Image
             source={
@@ -953,7 +643,6 @@ const ChatDialog: React.FC<ExtendedChatDialogProps> = ({
         )}
         {isUser ? (
           <View style={styles.userMessageWrapper}>
-            {/* User message bubble */}
             <LinearGradient
               colors={['rgba(255, 224, 195, 0.95)', 'rgba(255, 200, 170, 0.95)']}
               style={styles.userGradient}
@@ -961,7 +650,6 @@ const ChatDialog: React.FC<ExtendedChatDialogProps> = ({
               {processMessageContent(message.text, true)}
 
             </LinearGradient>
-            {/* User avatar on right-top */}
             {user?.avatar && (
               <Image
                 source={{ uri: String(user.avatar) }}
@@ -988,11 +676,9 @@ const ChatDialog: React.FC<ExtendedChatDialogProps> = ({
     );
   };
 
-  // Render message actions (rating buttons and regenerate button)
   const renderMessageActions = (message: Message, index: number) => {
     if (message.isLoading) return null;
     
-    // Check if this is the most recent AI message
     const isLastAIMessage = isMessageLastAIMessage(message, index);
     
     const messageRating = getMessageRating(message.id);
@@ -1000,146 +686,65 @@ const ChatDialog: React.FC<ExtendedChatDialogProps> = ({
     
     return (
       <View style={styles.messageActions}>
-        {/* Add TTS buttons */}
         {message.sender === 'bot' && renderTTSButtons(message)}
-        
-        {/* Only show regenerate button for the last AI message
-        {onRegenerateMessage && isLastAIMessage && (
-          <TouchableOpacity
-            style={[
-              styles.actionButton,
-              isRegenerating && styles.regeneratingButton // Add special style for regenerating state
-            ]}
-            onPress={() => {
-              if (!isRegenerating) { // Only allow clicking if not already regenerating
-                // Get the stored or calculated AI message index
-                const aiIndex = getAiMessageIndex(index);
-                onRegenerateMessage(message.id, aiIndex);
-              }
-            }}
-            disabled={isRegenerating} // Disable the button when regenerating
-          >
-            {isRegenerating ? (
-              // Show activity indicator when regenerating
-              <ActivityIndicator size="small" color="#fff" />
-            ) : (
-              <Ionicons name="refresh-circle-outline" size={22} color="#ddd" />
-            )}
-          </TouchableOpacity>
-        )} */}
-        
-        {/* Rating buttons */}
-        {onRateMessage && (
-          <>
-            <TouchableOpacity
-              style={[
-                styles.rateButton, 
-                messageRating === true && styles.rateButtonActive
-              ]}
-              onPress={() => onRateMessage(message.id, true)}
-              activeOpacity={0.7}
-            >
-              <Ionicons 
-                name={messageRating === true ? "thumbs-up" : "thumbs-up-outline"} 
-                size={20} 
-                color={messageRating === true ? theme.colors.primary : "#ddd"} 
-              />
-            </TouchableOpacity>
-            
-            <TouchableOpacity
-              style={[
-                styles.rateButton, 
-                messageRating === false && styles.rateButtonActive
-              ]}
-              onPress={() => onRateMessage(message.id, false)}
-              activeOpacity={0.7}
-            >
-              <Ionicons 
-                name={messageRating === false ? "thumbs-down" : "thumbs-down-outline"}
-                size={20} 
-                color={messageRating === false ? "#e74c3c" : "#ddd"} 
-              />
-            </TouchableOpacity>
-          </>
-        )}
       </View>
     );
   };
 
-  // Add a new helper function to check if a message is the last AI message
   const isMessageLastAIMessage = (message: Message, index: number): boolean => {
-    // Only AI messages can be regenerated
     if (message.sender !== 'bot' || message.isLoading) return false;
     
-    // Check if there are any non-loading AI messages after this one
-    for (let i = index + 1; i < virtualizedMessages.length; i++) {
-      const laterMessage = virtualizedMessages[i];
+    for (let i = index + 1; i < messages.length; i++) {
+      const laterMessage = messages[i];
       if (laterMessage.sender === 'bot' && !laterMessage.isLoading) {
-        // Found a later AI message, so current message is not the last one
         return false;
       }
     }
     
-    // No later AI messages found, this is the last one
     return true;
   };
 
-  // New function to handle opening a fullscreen image by ID
   const handleOpenFullscreenImage = (imageId: string | null) => {
     if (imageId) {
       setFullscreenImageId(imageId);
       const imageInfo = ImageManager.getImageInfo(imageId);
       
       if (imageInfo) {
-        console.log(`Opening fullscreen image: ${imageId}`);
-        console.log(`Thumbnail path: ${imageInfo.thumbnailPath}`);
-        console.log(`Original path: ${imageInfo.originalPath}`);
-        
-        // First set the thumbnail to show immediately while the full one loads
         setFullscreenImage(imageInfo.thumbnailPath);
         setImageLoading(true);
         
-        // Then after a short delay, load the high-res original image
         setTimeout(() => {
           setFullscreenImage(imageInfo.originalPath);
           setImageLoading(false);
         }, 100);
       } else {
-        console.error(`No image info found for ID: ${imageId}`);
         setFullscreenImage(null);
         Alert.alert('错误', '无法加载图片');
       }
     }
   };
 
-  // Function to save image to gallery
   const handleSaveImage = async () => {
     try {
       if (fullscreenImageId) {
-        // Save using the image ID
         const result = await ImageManager.saveToGallery(fullscreenImageId);
         Alert.alert(result.success ? '成功' : '错误', result.message);
       } else if (fullscreenImage) {
-        // Save using the direct image URI
         const result = await ImageManager.saveToGallery(fullscreenImage);
         Alert.alert(result.success ? '成功' : '错误', result.message);
       }
     } catch (error) {
-      console.error('Error saving image:', error);
       Alert.alert('错误', '保存图片失败');
     }
   };
 
-  // Function to share image
   const handleShareImage = async () => {
     try {
       let success = false;
       
       if (fullscreenImageId) {
-        // Share using image ID
         success = await ImageManager.shareImage(fullscreenImageId);
       } else if (fullscreenImage) {
-        // Share using direct URI
         success = await ImageManager.shareImage(fullscreenImage);
       }
       
@@ -1147,46 +752,37 @@ const ChatDialog: React.FC<ExtendedChatDialogProps> = ({
         Alert.alert('错误', '分享功能不可用');
       }
     } catch (error) {
-      console.error('Error sharing image:', error);
       Alert.alert('错误', '分享图片失败');
     }
   };
 
-  // Render visual novel dialog box
   const renderVisualNovelDialog = () => {
-    // 取最后一条消息
-    const lastMessage = virtualizedMessages.length > 0
-      ? virtualizedMessages[virtualizedMessages.length - 1]
+    const lastMessage = messages.length > 0
+      ? messages[messages.length - 1]
       : null;
     if (!lastMessage || !selectedCharacter) return null;
   
-    // 判断是否应展示用户消息（用户刚发消息或AI正在回复）
     const showUserMessage =
       lastMessage.sender === 'user' ||
-      (lastMessage.sender === 'bot' && lastMessage.isLoading && virtualizedMessages.length >= 2 && virtualizedMessages[virtualizedMessages.length - 2].sender === 'user');
+      (lastMessage.sender === 'bot' && lastMessage.isLoading && messages.length >= 2 && messages[messages.length - 2].sender === 'user');
   
-    // 取要展示的消息内容和头像
     let displayName, displayAvatar, displayText;
     if (showUserMessage) {
-      // 展示用户消息（如果AI正在回复，则取倒数第二条用户消息，否则取最后一条）
       const userMsg = lastMessage.sender === 'user'
         ? lastMessage
-        : virtualizedMessages[virtualizedMessages.length - 2];
-      // 优先使用 selectedCharacter?.customUserName，否则为 '你'
+        : messages[messages.length - 2];
       displayName = selectedCharacter?.customUserName;
       displayAvatar = user?.avatar ? { uri: String(user.avatar) } : require('@/assets/images/default-avatar.png');
       displayText = userMsg?.text || '';
     } else {
-      // 展示AI消息
       displayName = selectedCharacter.name;
       displayAvatar = selectedCharacter.avatar ? { uri: String(selectedCharacter.avatar) } : require('@/assets/images/default-avatar.png');
       displayText = lastMessage.text;
     }
   
-    // 计算 aiIndex
     const aiIndex = lastMessage.metadata?.aiIndex !== undefined
       ? lastMessage.metadata.aiIndex
-      : virtualizedMessages.filter(m => m.sender === 'bot' && !m.isLoading).length - 1;
+      : messages.filter(m => m.sender === 'bot' && !m.isLoading).length - 1;
   
     const isUser = showUserMessage;
     const isRegenerating = regeneratingMessageId === lastMessage.id;
@@ -1244,71 +840,16 @@ const ChatDialog: React.FC<ExtendedChatDialogProps> = ({
           </View>
         </ScrollView>
         <View style={styles.visualNovelActions}>
-          {/* 仅AI消息且非loading时显示 TTS/Regenerate/Rating 按钮 */}
           {!isUser && !lastMessage.isLoading && (
             <>
               {renderTTSButtons(lastMessage)}
-              {onRegenerateMessage && (
-                <TouchableOpacity
-                  style={[
-                    styles.visualNovelActionButton,
-                    isRegenerating && styles.visualNovelRegeneratingButton
-                  ]}
-                  onPress={() => {
-                    if (!isRegenerating) {
-                      onRegenerateMessage(lastMessage.id, aiIndex);
-                    }
-                  }}
-                  disabled={isRegenerating}
-                >
-                  {isRegenerating ? (
-                    <ActivityIndicator size="small" color="rgba(255,255,255,0.9)" />
-                  ) : (
-                    <Ionicons name="refresh-circle" size={26} color="rgba(255,255,255,0.9)" />
-                  )}
-                </TouchableOpacity>
-              )}
-              {onRateMessage && (
-                <View style={styles.visualNovelRateButtons}>
-                  <TouchableOpacity
-                    style={[
-                      styles.visualNovelRateButton, 
-                      messageRating === true && styles.visualNovelRateButtonActive
-                    ]}
-                    onPress={() => onRateMessage(lastMessage.id, true)}
-                    activeOpacity={0.7}
-                  >
-                    <Ionicons 
-                      name={messageRating === true ? "thumbs-up" : "thumbs-up-outline"} 
-                      size={22} 
-                      color={messageRating === true ? "rgb(255, 224, 195)" : "rgba(255,255,255,0.9)"} 
-                    />
-                  </TouchableOpacity>
-                  <TouchableOpacity
-                    style={[
-                      styles.visualNovelRateButton, 
-                      messageRating === false && styles.visualNovelRateButtonActive
-                    ]}
-                    onPress={() => onRateMessage(lastMessage.id, false)}
-                    activeOpacity={0.7}
-                  >
-                    <Ionicons 
-                      name={messageRating === false ? "thumbs-down" : "thumbs-down-outline"}
-                      size={22} 
-                      color={messageRating === false ? "#e74c3c" : "rgba(255,255,255,0.9)"} 
-                    />
-                  </TouchableOpacity>
-                </View>
-              )}
             </>
           )}
-          {/* 用户消息或AI loading时不显示任何操作按钮 */}
         </View>
       </View>
     );
   };
 
-  // Render history modal for visual novel mode
   const renderHistoryModal = () => {
     return (
       <Modal
@@ -1363,54 +904,11 @@ const ChatDialog: React.FC<ExtendedChatDialogProps> = ({
     );
   };
 
-  // 改进renderListHeader确保正确显示加载状态
-  const renderListHeader = () => {
-    if (!hasMoreMessagesToLoad && !isLoadingMore) return null;
-    
-    return (
-      <View style={styles.loadMoreContainer}>
-        {isLoadingMore ? (
-          <View style={styles.loadingMoreRow}>
-            <ActivityIndicator size="small" color="#aaa" />
-            <Text style={styles.loadMoreText}>加载更早的消息...</Text>
-          </View>
-        ) : (
-          <TouchableOpacity 
-            onPress={loadMoreMessages}
-            style={styles.loadMoreButton}
-          >
-            <Ionicons name="arrow-up-circle-outline" size={18} color="#ddd" />
-            <Text style={styles.loadMoreText}>加载更早的消息</Text>
-          </TouchableOpacity>
-        )}
-      </View>
-    );
-  };
-
-  // Handle scroll to index failures (for FlatList)
-  const handleScrollToIndexFailed = (info: {
-    index: number;
-    highestMeasuredFrameIndex: number;
-    averageItemLength: number;
-  }) => {
-    console.warn('[ChatDialog] Failed to scroll to index:', info);
-    
-    // Fallback solution - scroll to offset based on average item height
-    const offset = info.averageItemLength * info.index;
-    setTimeout(() => {
-      flatListRef.current?.scrollToOffset({ 
-        offset,
-        animated: false
-      });
-    }, 100);
-  };
-
-  // Render message item for FlatList
   const renderItem = useCallback(({ item, index }: { item: Message, index: number }) => {
     const isUser = item.sender === 'user';
     const showTime = index === 0 || index % 5 === 0 || 
                     (index > 0 && new Date(item.timestamp || 0).getHours() !== 
-                      new Date(virtualizedMessages[index-1].timestamp || 0).getHours());
+                      new Date(messages[index-1].timestamp || 0).getHours());
 
     return (
       <View key={item.id} style={styles.messageWrapper}>
@@ -1425,52 +923,42 @@ const ChatDialog: React.FC<ExtendedChatDialogProps> = ({
         </View>
       </View>
     );
-  }, [virtualizedMessages, selectedCharacter, ratedMessages, audioStates, user]);
+  }, [messages, selectedCharacter, ratedMessages, audioStates, user]);
 
-  // Improve the keyExtractor function to guarantee uniqueness
   const keyExtractor = useCallback((item: Message) => {
-    // First check if the message already has an ID
     if (!item.id) {
-      console.warn('[ChatDialog] Message missing ID, generating stable one');
-      // Create a stable ID based on content and timestamp
       return `missing-id-${item.sender}-${item.timestamp || Date.now()}-${Math.random().toString(36).substring(2, 9)}`;
     }
-    
-    // For auto messages, ensure we use the uniquely generated ID without any modification
     if (item.metadata?.isAutoMessageResponse) {
-      return item.id; // Use the original ID which should already be unique
+      return item.id;
     }
-    
-    // For normal messages with IDs, create a compound key that guarantees uniqueness
-    // This avoids the "two children with the same key" warning
     return `${item.id}-${item.sender}${item.metadata?.regenerated ? '-regen' : ''}`;
   }, []);
 
   return (
     <>
-      {/* If in visual novel mode, render novel dialog */}
       {mode === 'visual-novel' ? (
         <>
-          {/* Empty space for background display */}
           <View style={[styles.container, style, styles.backgroundFocusContainer]} />
-          {/* Fixed position dialog at bottom */}
           {renderVisualNovelDialog()}
-          {/* History modal */}
           {renderHistoryModal()}
         </>
       ) : (
         <>
+                <TouchableOpacity
+          activeOpacity={1}
+          style={{ flex: 1 }}
+          onLongPress={handleLongPressOutside}
+        >
           {messages.length === 0 ? (
             <ScrollView
               style={[
                 styles.container, 
                 style,
-                // Apply position settings for background focus mode instead of height limit
                 mode === 'background-focus' && styles.backgroundFocusContainer
               ]}
               contentContainerStyle={[
                 styles.emptyContent,
-                // Add padding to content when in background focus mode
                 mode === 'background-focus' && styles.backgroundFocusPadding
               ]}
             >
@@ -1479,42 +967,34 @@ const ChatDialog: React.FC<ExtendedChatDialogProps> = ({
           ) : (
             <FlatList
               ref={flatListRef}
-              data={virtualizedMessages}
+              data={messages}
               renderItem={renderItem}
               keyExtractor={keyExtractor}
               style={[
                 styles.container, 
                 style,
-                // Apply position settings for background focus mode
                 mode === 'background-focus' && styles.backgroundFocusContainer
               ]}
               contentContainerStyle={[
                 styles.content,
-                // Add padding when in background focus mode
                 mode === 'background-focus' && styles.backgroundFocusPadding
               ]}
               onScroll={handleScroll}
               scrollEventThrottle={16}
               showsVerticalScrollIndicator={true}
-              ListHeaderComponent={renderListHeader}
               ListFooterComponent={() => <View style={styles.endSpacer} />}
-              onEndReachedThreshold={0.1}
               initialNumToRender={20}
               maxToRenderPerBatch={10}
-              windowSize={21} // Buffer size (visible + rendered ahead/behind)
-              onScrollToIndexFailed={handleScrollToIndexFailed}
-              onViewableItemsChanged={handleViewableItemsChanged}
-              onStartReached={hasMoreMessagesToLoad ? loadMoreMessages : undefined}
-              onStartReachedThreshold={0.1}
-              removeClippedSubviews={Platform.OS !== 'web'} // Disable on web to fix issues
+              windowSize={21}
+              removeClippedSubviews={Platform.OS !== 'web'}
               automaticallyAdjustContentInsets={false}
               keyboardShouldPersistTaps="handled"
             />
           )}
+          </TouchableOpacity>
         </>
       )}
       
-      {/* Fullscreen image modal and other modals remain unchanged */}
       <Modal
         visible={!!fullscreenImage}
         transparent={true}
@@ -1633,7 +1113,6 @@ const styles = StyleSheet.create({
     alignSelf: 'flex-start',
     flexDirection: 'row',
   },
-  // User message wrapper for bubble + avatar
   userMessageWrapper: {
     flexDirection: 'row',
     alignItems: 'flex-start',
@@ -1642,7 +1121,6 @@ const styles = StyleSheet.create({
     position: 'relative',
     minHeight: 40,
   },
-  // User message bubble
   userGradient: {
     borderRadius: 18,
     borderTopRightRadius: 4,
@@ -1810,14 +1288,12 @@ const styles = StyleSheet.create({
     backgroundColor: 'rgba(255, 255, 255, 0.15)',
     borderRadius: 18,
   },
-  // Add a new style for rich content
   richContentWrapper: {
     width: '100%',
     overflow: 'hidden',
     borderRadius: 4,
     marginBottom: 5, // Add some margin at the bottom
   },
-  // Add new styles for memory indicators
   memoryIndicatorContainer: {
     position: 'absolute',
     top: 4,
@@ -1895,7 +1371,6 @@ const styles = StyleSheet.create({
     marginLeft: 8,
     fontSize: 16,
   },
-  // Add styles for TTS buttons
   ttsButtonContainer: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -1938,7 +1413,6 @@ const styles = StyleSheet.create({
     fontSize: 12,
     marginLeft: 4,
   },
-  // Add new styles for TTS enhancer
   ttsEnhancerIndicator: {
     position: 'absolute',
     top: -5,
@@ -1950,7 +1424,6 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     alignItems: 'center',
   },
-  // Update background focus mode styles to show top half of image
   backgroundFocusContainer: {
     position: 'absolute',
     top: '50%', // Position the scroll view halfway down the screen
@@ -1962,8 +1435,6 @@ const styles = StyleSheet.create({
   backgroundFocusPadding: {
     paddingTop: 20, // Add some padding to the top for better appearance
   },
-  
-  // Add styles for visual novel mode
   visualNovelContainer: {
     position: 'absolute',
     bottom: 10,
@@ -2005,8 +1476,6 @@ const styles = StyleSheet.create({
     fontSize: 16,
     lineHeight: 22,
   },
-  
-  // Add styles for visual novel action buttons
   visualNovelActions: {
     flexDirection: 'row',
     justifyContent: 'flex-end',
@@ -2041,8 +1510,6 @@ const styles = StyleSheet.create({
   visualNovelRateButtonActive: {
     backgroundColor: 'rgba(0, 0, 0, 0.6)',
   },
-  
-  // Visual novel TTS button styles
   visualNovelTTSContainer: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -2077,8 +1544,6 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     alignItems: 'center',
   },
-  
-  // History modal styles
   historyModalContainer: {
     flex: 1,
     backgroundColor: 'rgba(0, 0, 0, 0.85)',
@@ -2135,8 +1600,6 @@ const styles = StyleSheet.create({
   historyBotMessageText: {
     color: '#fff',
   },
-  
-  // Add the missing styles for history button
   historyButton: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -2152,34 +1615,6 @@ const styles = StyleSheet.create({
   },
   imageContainer: {
     width: '100%',
-  },
-  
-  // Add new styles for virtual scrolling
-  loadMoreContainer: {
-    paddingVertical: 12,
-    paddingHorizontal: 16,
-    alignItems: 'center',
-    justifyContent: 'center',
-    marginVertical: 8,
-    backgroundColor: 'rgba(0, 0, 0, 0.2)',
-    borderRadius: 10,
-  },
-  loadingMoreRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    padding: 4,
-  },
-  loadMoreButton: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    paddingVertical: 8,
-    paddingHorizontal: 16,
-  },
-  loadMoreText: {
-    color: '#ddd',
-    fontSize: 14,
-    marginLeft: 8,
   },
   // Add new styles for regeneration state
   regeneratingButton: {

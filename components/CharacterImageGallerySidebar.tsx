@@ -37,7 +37,8 @@ interface CharacterImageGallerySidebarProps {
   images: CharacterImage[];
   onToggleFavorite: (imageId: string) => void;
   onDelete: (imageId: string) => void;
-  onSetAsBackground: (imageId: string, uri: string) => void;
+  // 修正类型，允许传递 config
+  onSetAsBackground: (imageId: string, uri: string, config?: any) => void;
   onSetAsAvatar?: (imageId: string, uri: string) => void;
   isLoading?: boolean;
   character: CradleCharacter;
@@ -140,8 +141,8 @@ const CharacterImageGallerySidebar: React.FC<CharacterImageGallerySidebarProps> 
     ) {
       const bgImage: CharacterImage = {
         id: `bg_${character.id}_${lastUpdateTimestamp}`,
-        url: character.backgroundImage,
-        localUri: character.backgroundImage,
+        url: typeof character.backgroundImage === 'string' ? character.backgroundImage : character.backgroundImage.url,
+        localUri: typeof character.backgroundImage === 'string' ? character.backgroundImage : character.backgroundImage.url,
         characterId: character.id,
         createdAt: character.createdAt || Date.now(),
         isFavorite: false,
@@ -330,6 +331,8 @@ const CharacterImageGallerySidebar: React.FC<CharacterImageGallerySidebarProps> 
   const handleSetAsAvatar = async (imageId: string) => {
     const image = allImages.find(img => img.id === imageId);
     if (image && setCharacterAvatar) {
+      // 修正：确保头像图片被持久化
+      await addImageAndPersist(image);
       await setCharacterAvatar(character.id, image.localUri || image.url);
       setShowOptionsMenu(false);
       setUpdateCounter(prev => prev + 1);
@@ -339,7 +342,13 @@ const CharacterImageGallerySidebar: React.FC<CharacterImageGallerySidebarProps> 
   const handleSetAsBackground = async (imageId: string) => {
     const image = allImages.find(img => img.id === imageId);
     if (image && setCharacterBackgroundImage) {
-      await setCharacterBackgroundImage(character.id, image.localUri || image.url);
+      // 修正：确保背景图片被持久化
+      await addImageAndPersist(image);
+      await setCharacterBackgroundImage(
+        character.id,
+        image.localUri || image.url,
+        image.generationConfig // 传递 config
+      );
       setShowOptionsMenu(false);
       setUpdateCounter(prev => prev + 1);
     }

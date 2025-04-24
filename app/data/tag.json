@@ -4,14 +4,10 @@
             "name": "性别",
             "sub_categories": {
                 "女性": [
-                    "1girl",
-                    "2girls",
-                    "3girls"
+                    "1girl"
                 ],
                 "男性": [
-                    "boy",
-                    "2boys",
-                    "3boys"
+                    "1boy"
                 ]
             }
         },
