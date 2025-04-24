@@ -532,6 +532,7 @@ const CharacterImageGallerySidebar: React.FC<CharacterImageGallerySidebarProps> 
   const handleDeleteImage = (imageId: string) => {
     setPersistedImages(prev => {
       const updated = prev.filter(img => img.id !== imageId);
+      // 文件删除逻辑移到这里，确保异步执行
       const imgToDelete = prev.find(img => img.id === imageId);
       if (imgToDelete && imgToDelete.localUri) {
         FileSystem.deleteAsync(imgToDelete.localUri, { idempotent: true }).catch(() => {});

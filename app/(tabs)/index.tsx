@@ -1723,7 +1723,7 @@ useEffect(() => {
       try {
         const cloudResp = await (CloudServiceProvider.constructor as typeof CloudServiceProviderClass).generateChatCompletionStatic(
           [
-            { role: 'user', content: `请根据以下对话内容，使用不超过15个英文单词，生成角色当前的表情、动作、场景（时间、地点、画面），不要描述外观、服饰。输出英文短句。对话内容：\n${contextMessages.map(m=>`${m.role}: ${m.content}`).join('\n')}` }
+            { role: 'user', content: `Based on the dialogue, describe the character's current expression, action, and setting (time, place, visuals) in one coherent sentence of no more than 20 words. Exclude appearance, clothing, and names. Use "he/she" to refer to the character. Output the sentence enclosed in curly braces: { }. Dialogue:\n${contextMessages.map(m=>`${m.role}: ${m.content}`).join('\n')}` }
           ],
           { max_tokens: 32, temperature: 0.7 }
         );
