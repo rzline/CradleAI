@@ -26,6 +26,7 @@ import { useDialogMode, DialogMode } from '@/constants/DialogModeContext';
 import * as Font from 'expo-font';
 import * as DocumentPicker from 'expo-document-picker';
 import { NodeSTManager } from '@/utils/NodeSTManager'; // 新增导入
+import { getApiSettings } from '@/utils/settings-helper'; // 新增导入
 
 const SIDEBAR_WIDTH_EXPANDED = 280;
 const SWIPE_THRESHOLD = 50; // 向下滑动超过这个距离时关闭侧边栏
@@ -794,9 +795,14 @@ export default function SettingsSidebar({
     if (!selectedCharacter) return;
     setIsSummarizing(true);
     try {
-      // 这里假设apiKey和apiSettings可以从NodeSTManager获取或你可以自行传递
-      const apiKey = NodeSTManager.apiKey || '';
-      const apiSettings = NodeSTManager.apiSettings || { apiProvider: 'gemini' };
+      // 优化：从settings-helper获取apiKey和apiSettings
+      const apiSettingsObj = getApiSettings();
+      const apiKey = apiSettingsObj.apiKey || '';
+      // 构造apiSettings参数，仅传递NodeSTManager需要的部分
+      const apiSettings = {
+        apiProvider: apiSettingsObj.apiProvider as 'gemini' | 'openrouter',
+        ...(apiSettingsObj.openrouter ? { openrouter: apiSettingsObj.openrouter } : {})
+      };
       const conversationId = selectedCharacter.id;
       // 调用NodeSTManager暴露的新方法
       const result = await NodeSTManager.summarizeMemoryNow({
