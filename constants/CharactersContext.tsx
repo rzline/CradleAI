@@ -747,7 +747,10 @@ character.circlePosts = character.circlePosts.map(p =>
   const setCharacterAvatar = async (characterId: string, avatarUri: string) => {
     try {
       const updatedCharacters = characters.map(char =>
-        char.id === characterId ? { ...char, avatar: avatarUri, updatedAt: Date.now() } : char
+        char.id === characterId
+          // 保留所有原有字段，安全更新
+          ? { ...char, avatar: avatarUri, updatedAt: Date.now() }
+          : char
       );
       setCharacters(updatedCharacters);
       await FileSystem.writeAsStringAsync(
@@ -764,6 +767,7 @@ character.circlePosts = character.circlePosts.map(p =>
     try {
       const updatedCharacters = characters.map(char =>
         char.id === characterId
+          // 保留所有原有字段，安全更新
           ? {
               ...char,
               backgroundImage: backgroundUri,

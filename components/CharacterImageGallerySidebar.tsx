@@ -24,12 +24,12 @@ import * as ImagePicker from 'expo-image-picker';
 import ImageRegenerationModal from './ImageRegenerationModal';
 import { downloadAndSaveImage } from '@/utils/imageUtils';
 import { BlurView } from 'expo-blur';
-import AsyncStorage from '@react-native-async-storage/async-storage';
 import { useCharacters } from '@/constants/CharactersContext';
 
 const { width, height } = Dimensions.get('window');
 
-const getStorageKey = (characterId: string) => `characterImages_${characterId}`;
+const getCharacterImageDir = (characterId: string) =>
+  `${FileSystem.documentDirectory}character_${characterId}/`;
 
 interface CharacterImageGallerySidebarProps {
   visible: boolean;
@@ -85,56 +85,61 @@ const CharacterImageGallerySidebar: React.FC<CharacterImageGallerySidebarProps> 
   const [lastImageGenSettings, setLastImageGenSettings] = useState<any>(null);
   const [lastImageGenSeed, setLastImageGenSeed] = useState<string | number | undefined>(undefined);
 
-  useEffect(() => {
-    const loadPersistedImages = async () => {
-      try {
-        const key = getStorageKey(character.id);
-        const json = await AsyncStorage.getItem(key);
-        if (json) {
-          const imgs = JSON.parse(json);
-          setPersistedImages(imgs);
-        }
-      } catch (e) {
-        console.warn('[图库侧栏] 加载本地图片失败', e);
-      }
-    };
-    if (visible) loadPersistedImages();
-  }, [character.id, visible]);
-
-  const savePersistedImages = async (imgs: CharacterImage[]) => {
+  const loadPersistedImagesFromFS = async () => {
     try {
-      const key = getStorageKey(character.id);
-      await AsyncStorage.setItem(key, JSON.stringify(imgs));
-      setPersistedImages(imgs);
+      const dir = getCharacterImageDir(character.id);
+      const dirInfo = await FileSystem.getInfoAsync(dir);
+      if (!dirInfo.exists) {
+        setPersistedImages([]);
+        return;
+      }
+      const files = await FileSystem.readDirectoryAsync(dir);
+      const images: CharacterImage[] = files
+        .filter(f => /\.(jpg|jpeg|png|webp)$/i.test(f))
+        .map(f => {
+          const uri = dir + f;
+          return {
+            id: f,
+            url: uri,
+            localUri: uri,
+            characterId: character.id,
+            createdAt: Date.now(),
+            isFavorite: false,
+            isUserUploaded: true,
+            generationStatus: 'success',
+          };
+        });
+      setPersistedImages(images);
     } catch (e) {
-      console.warn('[图库侧栏] 保存本地图片失败', e);
+      console.warn('[图库侧栏] 加载文件系统图片失败', e);
+      setPersistedImages([]);
     }
   };
 
+  useEffect(() => {
+    if (visible) loadPersistedImagesFromFS();
+  }, [character.id, visible]);
+
   const addImageAndPersist = async (newImage: CharacterImage) => {
-    setPersistedImages(prev => {
-      const exists = prev.some(
-        img =>
-          (img.url && img.url === newImage.url) ||
-          (img.localUri && img.localUri === newImage.localUri)
-      );
-      if (exists) return prev;
-      const updated = [newImage, ...prev];
-      savePersistedImages(updated);
-      return updated;
-    });
+    const dir = getCharacterImageDir(character.id);
+    const filename = newImage.localUri?.split('/').pop() || newImage.url?.split('/').pop();
+    if (!filename) return;
+    const fileUri = dir + filename;
+    try {
+      const fileInfo = await FileSystem.getInfoAsync(fileUri);
+      if (!fileInfo.exists && newImage.localUri && newImage.localUri !== fileUri) {
+        await FileSystem.copyAsync({ from: newImage.localUri, to: fileUri });
+      }
+      await loadPersistedImagesFromFS();
+    } catch (e) {
+      console.warn('[图库侧栏] 保存图片到文件系统失败', e);
+    }
   };
 
   const allImages = useMemo(() => {
-    let combinedImages = [...persistedImages];
-    images.forEach(img => {
-      if (!combinedImages.some(
-        i => (i.url && i.url === img.url) || (i.localUri && i.localUri === img.localUri)
-      )) {
-        combinedImages.push(img);
-      }
-    });
-    if (character.avatar && !combinedImages.some(img => img.url === character.avatar || img.localUri === character.avatar)) {
+    let combinedImages: CharacterImage[] = [];
+    combinedImages = [...persistedImages, ...images];
+    if (character.avatar) {
       const avatarImage: CharacterImage = {
         id: `avatar_${character.id}_${lastUpdateTimestamp}`,
         url: character.avatar,
@@ -146,11 +151,7 @@ const CharacterImageGallerySidebar: React.FC<CharacterImageGallerySidebarProps> 
       };
       combinedImages.unshift(avatarImage);
     }
-    if (
-      character.backgroundImage &&
-      !combinedImages.some(img => img.url === character.backgroundImage || img.localUri === character.backgroundImage) &&
-      character.backgroundImage !== character.avatar
-    ) {
+    if (character.backgroundImage && character.backgroundImage !== character.avatar) {
       const bgImage: CharacterImage = {
         id: `bg_${character.id}_${lastUpdateTimestamp}`,
         url: typeof character.backgroundImage === 'string' ? character.backgroundImage : character.backgroundImage.url,
@@ -531,7 +532,10 @@ const CharacterImageGallerySidebar: React.FC<CharacterImageGallerySidebarProps> 
   const handleDeleteImage = (imageId: string) => {
     setPersistedImages(prev => {
       const updated = prev.filter(img => img.id !== imageId);
-      savePersistedImages(updated);
+      const imgToDelete = prev.find(img => img.id === imageId);
+      if (imgToDelete && imgToDelete.localUri) {
+        FileSystem.deleteAsync(imgToDelete.localUri, { idempotent: true }).catch(() => {});
+      }
       return updated;
     });
     onDelete(imageId);
