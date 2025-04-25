@@ -1035,7 +1035,7 @@ const CharacterDetail: React.FC = () => {
   );
 
   const renderVoiceSection = () => (
-    <View style={styles.tabContent}>
+    <View style={[styles.tabContent, { flex: 1 }]}>
       <VoiceSelector
         selectedGender={voiceGender}
         selectedTemplate={voiceTemplateId || null}

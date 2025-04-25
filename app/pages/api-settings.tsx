@@ -1460,7 +1460,7 @@ const styles = StyleSheet.create({
     marginRight: 8,
   },
   buttonText: {
-    color: '#fff',
+    color: 'black',
     fontWeight: 'bold',
     fontSize: 16,
   },

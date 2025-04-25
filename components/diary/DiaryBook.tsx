@@ -391,7 +391,7 @@ const DiaryBook: React.FC<DiaryBookProps> = ({ character, onClose }) => {
               <ActivityIndicator size="small" color="#fff" />
             ) : (
               <>
-                <Ionicons name="add-circle-outline" size={20} color="#fff" />
+                <Ionicons name="add-circle-outline" size={20} color="black" />
                 <Text style={styles.generateButtonText}>创建新日记</Text>
               </>
             )}
@@ -434,9 +434,6 @@ const DiaryBook: React.FC<DiaryBookProps> = ({ character, onClose }) => {
               thumbColor={settings.enabled ? theme.colors.primary : '#f4f3f4'}
             />
           </View>
-          <Text style={styles.settingDescription}>
-            启用后，系统将按照设定的时间间隔自动生成日记条目
-          </Text>
         </View>
 
         <View style={styles.settingSection}>
@@ -929,7 +926,7 @@ const styles = StyleSheet.create({
     elevation: 2,
   },
   saveButtonText: {
-    color: '#fff',
+    color: 'black',
     fontWeight: 'bold',
     fontSize: 16,
     marginLeft: 8,
