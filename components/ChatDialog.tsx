@@ -868,13 +868,6 @@ const ChatDialog: React.FC<ExtendedChatDialogProps> = ({
         onRequestClose={() => setHistoryModalVisible && setHistoryModalVisible(false)}
       >
         <View style={styles.historyModalContainer}>
-          <View style={styles.historyModalHeader}>
-            <TouchableOpacity
-              style={styles.historyModalCloseButton}
-              onPress={() => setHistoryModalVisible && setHistoryModalVisible(false)}
-            >
-            </TouchableOpacity>
-          </View>
           <ScrollView style={styles.historyModalContent}>
             {messages.map((message, index) => {
               const isUser = message.sender === 'user';
@@ -1558,22 +1551,6 @@ const styles = StyleSheet.create({
   historyModalContainer: {
     flex: 1,
     backgroundColor: 'rgba(0, 0, 0, 0.85)',
-  },
-  historyModalHeader: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    padding: 16,
-    paddingTop: 40,
-    backgroundColor: 'rgba(30, 30, 30, 0.8)',
-  },
-  historyModalTitle: {
-    fontSize: 18,
-    fontWeight: 'bold',
-    color: '#fff',
-  },
-  historyModalCloseButton: {
-    padding: 8,
   },
   historyModalContent: {
     flex: 1,

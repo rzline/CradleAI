@@ -913,7 +913,7 @@ ${recentMessagesContext ? `最近的对话记录:\n${recentMessagesContext}\n` :
                 onPress={openImageOptions}>
                 <View style={styles.actionMenuItemInner}>
                   <Ionicons name="images" size={18} color="#3498db" />
-                  <Text style={styles.actionMenuItemText}>添加图片</Text>
+                  <Text style={styles.actionMenuItemText}>发送图片</Text>
                 </View>
               </TouchableOpacity>
 

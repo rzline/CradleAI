@@ -102,7 +102,7 @@ const SaveManager: React.FC<SaveManagerProps> = ({
         onSaveCreated(newSave);
       }
       
-      Alert.alert('Success', 'Chat state saved successfully!');
+      Alert.alert('进度已保存');
     } catch (error) {
       console.error('Error creating save:', error);
       Alert.alert('Error', 'Failed to save chat state.');
@@ -313,14 +313,14 @@ const SaveManager: React.FC<SaveManagerProps> = ({
           style={styles.saveActionButton}
           onPress={() => handleExportSave(item)}
         >
-          <Ionicons name="share-outline" size={22} color="#fff" />
+          <Ionicons name="share-outline" size={22} color="black" />
         </TouchableOpacity>
         
         <TouchableOpacity 
           style={styles.saveActionButton}
           onPress={() => handleLoadSave(item)}
         >
-          <Ionicons name="refresh-outline" size={22} color="#fff" />
+          <Ionicons name="refresh-outline" size={22} color="black" />
         </TouchableOpacity>
         
         <TouchableOpacity 
@@ -645,7 +645,7 @@ const styles = StyleSheet.create({
     justifyContent: 'center'
   },
   saveButtonText: {
-    color: '#fff',
+    color: 'black',
     fontWeight: 'bold',
     fontSize: 16
   },
@@ -697,7 +697,7 @@ const styles = StyleSheet.create({
     alignSelf: 'flex-start'
   },
   featureButtonText: {
-    color: '#fff',
+    color: 'black',
     fontWeight: 'bold'
   },
   backButton: {

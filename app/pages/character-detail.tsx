@@ -1222,101 +1222,103 @@ const CharacterDetail: React.FC = () => {
           <Text style={[styles.tabText, activeTab === 'voice' && styles.activeTabText]}>声线</Text>
         </TouchableOpacity>
       </View>
-      
-      <ScrollView style={styles.content}>
-        {activeTab === 'basic' ? (
-          <View style={styles.tabContent}>
-            <CharacterAttributeEditor
-              title="开场白"
-              value={roleCard.first_mes || ''}
-              onChangeText={(text) => handleRoleCardChange('first_mes', text)}
-              placeholder="角色与用户的第一次对话内容..."
-            />
-            
-            <CharacterAttributeEditor
-              title="角色描述"
-              value={roleCard.description || ''}
-              onChangeText={(text) => handleRoleCardChange('description', text)}
-              placeholder="描述角色的外表、背景等基本信息..."
-              style={styles.attributeSection}
-            />
-            
-            <CharacterAttributeEditor
-              title="性格特征"
-              value={roleCard.personality || ''}
-              onChangeText={(text) => handleRoleCardChange('personality', text)}
-              placeholder="描述角色的性格、习惯、喜好等..."
-              style={styles.attributeSection}
-            />
-            
-            <CharacterAttributeEditor
-              title="场景设定"
-              value={roleCard.scenario || ''}
-              onChangeText={(text) => handleRoleCardChange('scenario', text)}
-              placeholder="描述角色所在的环境、情境..."
-              style={styles.attributeSection}
-            />
-            
-            <CharacterAttributeEditor
-              title="对话示例"
-              value={roleCard.mes_example || ''}
-              onChangeText={(text) => handleRoleCardChange('mes_example', text)}
-              placeholder="提供一些角色对话的范例..."
-              style={styles.attributeSection}
-            />
-          </View>
-        ) : activeTab === 'advanced' ? (
-          <View style={styles.tabContent}>
-            <WorldBookSection 
-              entries={worldBookEntries}
-              onAdd={handleAddWorldBookEntry}
-              onUpdate={handleUpdateWorldBookEntry}
-              onReorder={handleReorderWorldBook}
-              onViewDetail={handleViewDetail}
-              onDelete={handleDeleteWorldBookEntry}
-            />
-            
-            <AuthorNoteSection
-              content={authorNote.content || ''}
-              injection_depth={authorNote.injection_depth || 0}
-              onUpdateContent={(text) => {
-                setAuthorNote(prev => ({ ...prev, content: text }));
-                setHasUnsavedChanges(true);
-              }}
-              onUpdateDepth={(depth) => {
-                setAuthorNote(prev => ({ ...prev, injection_depth: depth }));
-                setHasUnsavedChanges(true);
-              }}
-              onViewDetail={handleViewDetail}
-            />
-            
-            <View style={styles.presetSectionHeader}>
-              <Text style={styles.sectionTitle}>预设设定</Text>
-              <TouchableOpacity 
-                style={styles.importPresetButton}
-                onPress={handleImportPreset}
-              >
-                <Ionicons name="cloud-download-outline" size={16} color="#FFD700" />
-                <Text style={styles.importPresetText}>导入预设</Text>
-              </TouchableOpacity>
+
+      {activeTab === 'voice' ? (
+        renderVoiceSection()
+      ) : (
+        <ScrollView style={styles.content}>
+          {activeTab === 'basic' ? (
+            <View style={styles.tabContent}>
+              <CharacterAttributeEditor
+                title="开场白"
+                value={roleCard.first_mes || ''}
+                onChangeText={(text) => handleRoleCardChange('first_mes', text)}
+                placeholder="角色与用户的第一次对话内容..."
+              />
+              
+              <CharacterAttributeEditor
+                title="角色描述"
+                value={roleCard.description || ''}
+                onChangeText={(text) => handleRoleCardChange('description', text)}
+                placeholder="描述角色的外表、背景等基本信息..."
+                style={styles.attributeSection}
+              />
+              
+              <CharacterAttributeEditor
+                title="性格特征"
+                value={roleCard.personality || ''}
+                onChangeText={(text) => handleRoleCardChange('personality', text)}
+                placeholder="描述角色的性格、习惯、喜好等..."
+                style={styles.attributeSection}
+              />
+              
+              <CharacterAttributeEditor
+                title="场景设定"
+                value={roleCard.scenario || ''}
+                onChangeText={(text) => handleRoleCardChange('scenario', text)}
+                placeholder="描述角色所在的环境、情境..."
+                style={styles.attributeSection}
+              />
+              
+              <CharacterAttributeEditor
+                title="对话示例"
+                value={roleCard.mes_example || ''}
+                onChangeText={(text) => handleRoleCardChange('mes_example', text)}
+                placeholder="提供一些角色对话的范例..."
+                style={styles.attributeSection}
+              />
             </View>
-            
-            <PresetSection
-              entries={presetEntries}
-              onAdd={handleAddPresetEntry}
-              onUpdate={handleUpdatePresetEntry}
-              onMove={handleMoveEntry}
-              onReorder={handleReorderPresets}
-              onViewDetail={handleViewDetail}
-              onDelete={handleDeletePresetEntry}
-            />
-          </View>
-        ) : activeTab === 'appearance' ? (
-          renderAppearanceSection()
-        ) : (
-          renderVoiceSection()
-        )}
-      </ScrollView>
+          ) : activeTab === 'advanced' ? (
+            <View style={styles.tabContent}>
+              <WorldBookSection 
+                entries={worldBookEntries}
+                onAdd={handleAddWorldBookEntry}
+                onUpdate={handleUpdateWorldBookEntry}
+                onReorder={handleReorderWorldBook}
+                onViewDetail={handleViewDetail}
+                onDelete={handleDeleteWorldBookEntry}
+              />
+              
+              <AuthorNoteSection
+                content={authorNote.content || ''}
+                injection_depth={authorNote.injection_depth || 0}
+                onUpdateContent={(text) => {
+                  setAuthorNote(prev => ({ ...prev, content: text }));
+                  setHasUnsavedChanges(true);
+                }}
+                onUpdateDepth={(depth) => {
+                  setAuthorNote(prev => ({ ...prev, injection_depth: depth }));
+                  setHasUnsavedChanges(true);
+                }}
+                onViewDetail={handleViewDetail}
+              />
+              
+              <View style={styles.presetSectionHeader}>
+                <Text style={styles.sectionTitle}>预设设定</Text>
+                <TouchableOpacity 
+                  style={styles.importPresetButton}
+                  onPress={handleImportPreset}
+                >
+                  <Ionicons name="cloud-download-outline" size={16} color="#FFD700" />
+                  <Text style={styles.importPresetText}>导入预设</Text>
+                </TouchableOpacity>
+              </View>
+              
+              <PresetSection
+                entries={presetEntries}
+                onAdd={handleAddPresetEntry}
+                onUpdate={handleUpdatePresetEntry}
+                onMove={handleMoveEntry}
+                onReorder={handleReorderPresets}
+                onViewDetail={handleViewDetail}
+                onDelete={handleDeletePresetEntry}
+              />
+            </View>
+          ) : activeTab === 'appearance' ? (
+            renderAppearanceSection()
+          ) : null}
+        </ScrollView>
+      )}
       
       <BlurView intensity={30} tint="dark" style={styles.bottomBar}>
         <ActionButton
