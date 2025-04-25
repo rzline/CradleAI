@@ -31,7 +31,7 @@ const DiaryBook: React.FC<DiaryBookProps> = ({ character, onClose }) => {
   const [isLoading, setIsLoading] = useState(true);
   const [isGenerating, setIsGenerating] = useState(false);
   const [settings, setSettings] = useState<DiarySettings>({
-    enabled: false,
+    enabled: true, // 默认为开启
     reflectionGoal: "思考如何更好地与用户建立情感连接",
     wordCount: 300,
     contextWeight: 5,
@@ -559,7 +559,7 @@ const DiaryBook: React.FC<DiaryBookProps> = ({ character, onClose }) => {
         </View>
 
         <TouchableOpacity style={styles.saveButton} onPress={handleSaveSettings}>
-          <Ionicons name="save-outline" size={20} color="#fff" />
+          <Ionicons name="save-outline" size={20} color="black" />
           <Text style={styles.saveButtonText}>保存设置</Text>
         </TouchableOpacity>
       </ScrollView>
@@ -581,7 +581,7 @@ const DiaryBook: React.FC<DiaryBookProps> = ({ character, onClose }) => {
           style={[styles.tab, activeTab === 'entries' && styles.activeTab]}
           onPress={() => setActiveTab('entries')}
         >
-          <Text style={[styles.tabText, activeTab === 'entries' && styles.activeTabText]}>日记条目</Text>
+          <Text style={[styles.tabText, activeTab === 'entries' && styles.activeTabText]}>日记</Text>
         </TouchableOpacity>
         <TouchableOpacity
           style={[styles.tab, activeTab === 'settings' && styles.activeTab]}

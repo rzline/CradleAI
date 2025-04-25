@@ -136,7 +136,7 @@ const Profile: React.FC = () => {
         <ListItem
           title="关于"
           leftIcon="information-circle-outline"
-          chevron={true}
+          chevron={false}
           subtitle="版本 1.0.0"
         />
       </ScrollView>
