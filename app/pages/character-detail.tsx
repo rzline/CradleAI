@@ -1053,7 +1053,6 @@ const CharacterDetail: React.FC = () => {
 
   const renderAppearanceSection = () => (
     <View style={styles.tabContent}>
-      <Text style={styles.sectionTitle}>角色外观</Text>
       
       <View style={styles.modeSelectionContainer}>
         <TouchableOpacity 

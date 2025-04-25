@@ -8,10 +8,12 @@ import {
   FlatList,
   TextInput,
   Image,
-  Alert
+  Alert,
+  ActivityIndicator
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { chatSaveService } from '@/services/ChatSaveService';
+import { chatExportService } from '@/services/ChatExportService';
 import { ChatSave, Message } from '@/shared/types';
 import { BlurView } from 'expo-blur';
 import { theme } from '@/constants/theme';
@@ -43,11 +45,12 @@ const SaveManager: React.FC<SaveManagerProps> = ({
   onLoadSave,
   onPreviewSave
 }) => {
-  const [tab, setTab] = useState<'load' | 'save'>('load');
+  const [tab, setTab] = useState<'load' | 'save' | 'import'>('load');
   const [saveDescription, setSaveDescription] = useState('');
   const [saves, setSaves] = useState<ChatSave[]>([]);
   const [loading, setLoading] = useState(false);
   const [selectedSave, setSelectedSave] = useState<ChatSave | null>(null);
+  const [importInProgress, setImportInProgress] = useState(false);
 
   // Load saves for this conversation
   useEffect(() => {
@@ -199,10 +202,89 @@ const SaveManager: React.FC<SaveManagerProps> = ({
     }
   };
 
+  const handleExportSave = async (save: ChatSave) => {
+    try {
+      setLoading(true);
+      
+      // Show confirmation dialog
+      Alert.alert(
+        'Export Save',
+        `Export "${save.description}" to a file?`,
+        [
+          {
+            text: 'Cancel',
+            style: 'cancel',
+            onPress: () => setLoading(false)
+          },
+          {
+            text: 'Export',
+            onPress: async () => {
+              const success = await chatExportService.exportChatSave(save);
+              setLoading(false);
+              
+              if (!success) {
+                Alert.alert(
+                  'Export Failed',
+                  'Unable to export chat save. Please check app permissions.'
+                );
+              }
+            }
+          }
+        ]
+      );
+    } catch (error) {
+      console.error('Error exporting save:', error);
+      Alert.alert('Error', 'Failed to export save.');
+      setLoading(false);
+    }
+  };
+
+  const handleImportSave = async () => {
+    try {
+      setImportInProgress(true);
+      
+      const importedSave = await chatExportService.importChatSave();
+      
+      if (!importedSave) {
+        setImportInProgress(false);
+        return;
+      }
+      
+      // Check if the imported save is for this conversation
+      const isValidForThisConversation = chatSaveService.isValidSaveForConversation(
+        importedSave,
+        conversationId
+      );
+      
+      if (!isValidForThisConversation) {
+        Alert.alert(
+          'Import Warning',
+          'The imported save is for a different conversation or character. ' +
+          'It will be available in your saves, but can only be used with the correct character.'
+        );
+      } else {
+        // Refresh the saves list
+        await loadSaves();
+        
+        Alert.alert(
+          'Import Successful',
+          'Chat save imported successfully.'
+        );
+      }
+      
+      setImportInProgress(false);
+    } catch (error) {
+      console.error('Error importing save:', error);
+      Alert.alert('Error', 'Failed to import save.');
+      setImportInProgress(false);
+    }
+  };
+
   const renderSaveItem = ({ item }: { item: ChatSave }) => (
     <View style={[
       styles.saveItem,
-      selectedSave?.id === item.id && styles.selectedSaveItem
+      selectedSave?.id === item.id && styles.selectedSaveItem,
+      item.importedAt ? styles.importedSaveItem : null
     ]}>
       <TouchableOpacity 
         style={styles.savePreviewButton}
@@ -214,7 +296,12 @@ const SaveManager: React.FC<SaveManagerProps> = ({
             style={styles.saveAvatar}
           />
           <View style={styles.saveInfo}>
-            <Text style={styles.saveDescription}>{item.description}</Text>
+            <Text style={styles.saveDescription}>
+              {item.description}
+              {item.importedAt && (
+                <Text style={styles.importedBadge}> (Imported)</Text>
+              )}
+            </Text>
             <Text style={styles.saveTimestamp}>{formatDate(item.timestamp)}</Text>
             <Text style={styles.savePreviewText}>{item.previewText}</Text>
           </View>
@@ -222,6 +309,13 @@ const SaveManager: React.FC<SaveManagerProps> = ({
       </TouchableOpacity>
       
       <View style={styles.saveActions}>
+        <TouchableOpacity 
+          style={styles.saveActionButton}
+          onPress={() => handleExportSave(item)}
+        >
+          <Ionicons name="share-outline" size={22} color="#fff" />
+        </TouchableOpacity>
+        
         <TouchableOpacity 
           style={styles.saveActionButton}
           onPress={() => handleLoadSave(item)}
@@ -262,18 +356,31 @@ const SaveManager: React.FC<SaveManagerProps> = ({
             >
               <Text style={[styles.tabText, tab === 'load' && styles.activeTabText]}>读取存档</Text>
             </TouchableOpacity>
+            
             <TouchableOpacity 
               style={[styles.tab, tab === 'save' && styles.activeTab]} 
               onPress={() => setTab('save')}
             >
               <Text style={[styles.tabText, tab === 'save' && styles.activeTabText]}>新建存档</Text>
             </TouchableOpacity>
+            
+            <TouchableOpacity 
+              style={[styles.tab, tab === 'import' && styles.activeTab]} 
+              onPress={() => setTab('import')}
+            >
+              <Text style={[styles.tabText, tab === 'import' && styles.activeTabText]}>导入/导出</Text>
+            </TouchableOpacity>
           </View>
 
           {tab === 'load' ? (
             <>
               <Text style={styles.sectionTitle}>当前存档</Text>
-              {saves.length > 0 ? (
+              {loading ? (
+                <View style={styles.loadingContainer}>
+                  <ActivityIndicator size="large" color={theme.colors.primary} />
+                  <Text style={styles.loadingText}>正在加载存档...</Text>
+                </View>
+              ) : saves.length > 0 ? (
                 <FlatList
                   data={saves}
                   renderItem={renderSaveItem}
@@ -288,7 +395,7 @@ const SaveManager: React.FC<SaveManagerProps> = ({
                 </View>
               )}
             </>
-          ) : (
+          ) : tab === 'save' ? (
             <View style={styles.saveForm}>
               <Text style={styles.sectionTitle}>新存档</Text>
               <Text style={styles.label}>描述</Text>
@@ -312,9 +419,55 @@ const SaveManager: React.FC<SaveManagerProps> = ({
               
               <View style={styles.saveInfo}>
                 <Text style={styles.saveInfoText}>
-                  将保存当前对话进度，当前消息数量： {messages.length} .
+                  将保存当前对话进度，当前消息数量： {messages.length}
                 </Text>
               </View>
+            </View>
+          ) : (
+            <View style={styles.importExportContainer}>
+              <Text style={styles.sectionTitle}>导入/导出</Text>
+              
+              <View style={styles.featureCard}>
+                <View style={styles.featureHeader}>
+                  <Ionicons name="download-outline" size={24} color="#fff" />
+                  <Text style={styles.featureTitle}>导入存档</Text>
+                </View>
+                <Text style={styles.featureDescription}>
+                  从设备中导入之前导出的对话存档文件。
+                </Text>
+                <TouchableOpacity 
+                  style={styles.featureButton}
+                  onPress={handleImportSave}
+                  disabled={importInProgress}
+                >
+                  {importInProgress ? (
+                    <ActivityIndicator size="small" color="#fff" />
+                  ) : (
+                    <Text style={styles.featureButtonText}>导入存档文件</Text>
+                  )}
+                </TouchableOpacity>
+              </View>
+              
+              <View style={styles.featureCard}>
+                <View style={styles.featureHeader}>
+                  <Ionicons name="share-outline" size={24} color="#fff" />
+                  <Text style={styles.featureTitle}>导出存档</Text>
+                </View>
+                <Text style={styles.featureDescription}>
+                  将对话存档导出为文件，方便备份或在不同设备上使用。
+                </Text>
+                <Text style={styles.featureSubtext}>
+                  你可以在"读取存档"标签页中选择一个存档，然后点击分享按钮导出。
+                </Text>
+              </View>
+              
+              <TouchableOpacity 
+                style={styles.backButton}
+                onPress={() => setTab('load')}
+              >
+                <Ionicons name="arrow-back" size={20} color="#fff" />
+                <Text style={styles.backButtonText}>返回到存档列表</Text>
+              </TouchableOpacity>
             </View>
           )}
         </View>
@@ -399,6 +552,10 @@ const styles = StyleSheet.create({
     borderColor: theme.colors.primary,
     borderWidth: 1
   },
+  importedSaveItem: {
+    borderLeftColor: '#4caf50',
+    borderLeftWidth: 4
+  },
   saveHeader: {
     flexDirection: 'row',
     alignItems: 'center'
@@ -417,6 +574,11 @@ const styles = StyleSheet.create({
     fontWeight: 'bold',
     color: '#fff',
     marginBottom: 4
+  },
+  importedBadge: {
+    fontSize: 12,
+    color: '#4caf50',
+    fontWeight: 'normal'
   },
   saveTimestamp: {
     fontSize: 12,
@@ -495,6 +657,67 @@ const styles = StyleSheet.create({
     fontSize: 14,
     textAlign: 'center',
     marginTop: 16
+  },
+  importExportContainer: {
+    padding: 12
+  },
+  featureCard: {
+    backgroundColor: '#333',
+    borderRadius: 8,
+    padding: 16,
+    marginBottom: 16
+  },
+  featureHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginBottom: 12
+  },
+  featureTitle: {
+    fontSize: 18,
+    fontWeight: 'bold',
+    color: '#fff',
+    marginLeft: 10
+  },
+  featureDescription: {
+    fontSize: 14,
+    color: '#ccc',
+    marginBottom: 16
+  },
+  featureSubtext: {
+    fontSize: 12,
+    color: '#aaa',
+    marginBottom: 12,
+    fontStyle: 'italic'
+  },
+  featureButton: {
+    backgroundColor: theme.colors.primary,
+    paddingVertical: 10,
+    paddingHorizontal: 16,
+    borderRadius: 8,
+    alignSelf: 'flex-start'
+  },
+  featureButtonText: {
+    color: '#fff',
+    fontWeight: 'bold'
+  },
+  backButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginTop: 12
+  },
+  backButtonText: {
+    color: '#fff',
+    marginLeft: 8
+  },
+  loadingContainer: {
+    alignItems: 'center',
+    justifyContent: 'center',
+    padding: 30
+  },
+  loadingText: {
+    color: '#aaa',
+    marginTop: 12,
+    fontSize: 16
   }
 });
 

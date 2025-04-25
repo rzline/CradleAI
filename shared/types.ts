@@ -531,6 +531,8 @@ export interface ChatSave {
   previewText: string; // Short preview text
   thumbnail?: string; // Optional thumbnail (could be character avatar)
   nodestChatHistory?: ChatHistoryEntity; // Add NodeST chat history
+  importedAt?: number; // New field to track when a save was imported
+  exportVersion?: string; // Track export format version
 }
 
 export interface RoleCardJson {

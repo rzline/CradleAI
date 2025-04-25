@@ -204,7 +204,6 @@ const VoiceSelector: React.FC<VoiceSelectorProps> = ({
 
   return (
     <View style={styles.container}>
-      <Text style={styles.sectionTitle}>角色声线</Text>
       
       {/* Gender selection */}
       <View style={styles.genderSelector}>
@@ -317,7 +316,7 @@ const styles = StyleSheet.create({
     marginLeft: 8,
   },
   selectedGenderText: {
-    color: '#fff',
+    color: '#black',
     fontWeight: 'bold',
   },
   templateListContainer: {

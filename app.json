@@ -78,7 +78,8 @@
             "./assets/sounds/notification.wav"
           ]
         }
-      ]
+      ],
+      "expo-video"
     ],
     "experiments": {
       "typedRoutes": true

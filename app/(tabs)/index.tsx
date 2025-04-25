@@ -2432,6 +2432,7 @@ useEffect(() => {
 const styles = StyleSheet.create({
   outerContainer: {
     flex: 1,
+    backgroundColor: '#181818', // Add a dark background to prevent white flash
   },
   // New styles for fixed background
   backgroundContainer: {
@@ -2441,6 +2442,7 @@ const styles = StyleSheet.create({
     right: 0,
     bottom: 0,
     zIndex: 0,
+    backgroundColor: '#181818', // Add a dark background here as well
   },
   backgroundImage: {
     flex: 1,

@@ -170,6 +170,42 @@ class ChatSaveService {
   }
   
   /**
+   * Add an imported save to the list of saves
+   */
+  async addImportedSave(importedSave: ChatSave): Promise<ChatSave> {
+    try {
+      // Get existing saves
+      const saves = await this.getAllSaves();
+      
+      // Ensure the save has a unique ID
+      if (!importedSave.id.startsWith('imported_')) {
+        importedSave.id = `imported_${Date.now()}_${importedSave.id}`;
+      }
+      
+      // Add metadata for imports if not present
+      if (!importedSave.importedAt) {
+        importedSave.importedAt = Date.now();
+      }
+      
+      // Add to saves and store
+      const updatedSaves = [importedSave, ...saves];
+      await AsyncStorage.setItem(this.STORAGE_KEY, JSON.stringify(updatedSaves));
+      
+      return importedSave;
+    } catch (error) {
+      console.error('[ChatSaveService] Error adding imported save:', error);
+      throw error;
+    }
+  }
+  
+  /**
+   * Verify if a save belongs to a specific conversation
+   */
+  isValidSaveForConversation(save: ChatSave, conversationId: string): boolean {
+    return save.conversationId === conversationId;
+  }
+  
+  /**
    * Generate a short preview text from messages
    */
   private generatePreviewText(messages: Message[]): string {

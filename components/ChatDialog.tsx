@@ -818,7 +818,6 @@ const ChatDialog: React.FC<ExtendedChatDialogProps> = ({
             onPress={() => setHistoryModalVisible && setHistoryModalVisible(true)}
           >
             <Ionicons name="time-outline" size={20} color="#fff" />
-            <Text style={styles.historyButtonText}>查看历史</Text>
           </TouchableOpacity>
         </View>
         <ScrollView style={styles.visualNovelTextContainer}>
@@ -870,12 +869,10 @@ const ChatDialog: React.FC<ExtendedChatDialogProps> = ({
       >
         <View style={styles.historyModalContainer}>
           <View style={styles.historyModalHeader}>
-            <Text style={styles.historyModalTitle}>对话历史</Text>
             <TouchableOpacity
               style={styles.historyModalCloseButton}
               onPress={() => setHistoryModalVisible && setHistoryModalVisible(false)}
             >
-              <Ionicons name="close" size={24} color="#fff" />
             </TouchableOpacity>
           </View>
           <ScrollView style={styles.historyModalContent}>
@@ -1622,11 +1619,7 @@ const styles = StyleSheet.create({
     paddingVertical: 6,
     borderRadius: 20,
   },
-  historyButtonText: {
-    color: '#fff',
-    marginLeft: 4,
-    fontSize: 14,
-  },
+
   imageContainer: {
     width: '100%',
   },
