@@ -724,13 +724,15 @@ const CreateChar: React.FC<CreateCharProps> = ({
       
       console.log('[CreateChar] Character saved and initialized successfully, navigating...');
       
-      // Modified: Check if onClose is provided (modal mode) or use router.back()
+      // Modified: Check if onClose is provided (modal mode) or use router.replace()
       if (onClose) {
         onClose();
       } else {
-        // Use router.back() to return to the character page instead of navigating to index
         setTimeout(() => {
-          router.back();
+          router.replace({
+            pathname: './(tabs)/',
+            params: { characterId }
+          });
         }, 300);
       }
 
@@ -1266,9 +1268,7 @@ const CreateChar: React.FC<CreateCharProps> = ({
                           uri:
                             typeof character.avatar === 'string'
                               ? character.avatar
-                              : character.avatar?.localUri ||
-                                character.avatar?.url ||
-                                ''
+                              :                                 ''
                         }}
                         style={styles.avatarPreview}
                       />

@@ -660,19 +660,9 @@ ${recentMessagesContext ? `最近的对话记录:\n${recentMessagesContext}\n` :
               }
               
               const apiKey = user?.settings?.chat.characterApiKey || '';
-              if (!apiKey) {
-                Alert.alert('错误', '未设置API密钥，无法重置对话');
-                setIsLoading(false);
-                return;
-              }
-              
+
               console.log('[ChatInput] Resetting conversation:', selectedConversationId);
-              
-              NodeSTManager.updateApiSettings(apiKey, {
-                apiProvider: user?.settings?.chat.apiProvider || 'gemini',
-                openrouter: user?.settings?.chat.openrouter
-              });
-              
+
               const success = await NodeSTManager.resetChatHistory(conversationId);
               
               if (success) {

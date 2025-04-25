@@ -740,16 +740,13 @@ export class NodeST {
      */
     async resetChatHistory(conversationId: string): Promise<boolean> {
         try {
-            // If NodeSTCore is not initialized, initialize it with the current API key
+            // 允许无API key时初始化NodeSTCore
             if (!this.nodeSTCore) {
-                if (!this.apiKey) {
-                    console.error("[NodeST] Cannot reset chat history - No API key available");
-                    return false;
-                }
+                // 不再要求this.apiKey存在
                 console.log(`【NodeST】NodeSTCore未初始化，正在初始化实例: ${conversationId}`);
-                this.nodeSTCore = new NodeSTCore(this.apiKey);
+                this.nodeSTCore = new NodeSTCore(this.apiKey || "");
             }
-            
+
             console.log(`【NodeST】重置对话历史: ${conversationId}`);
             return await this.nodeSTCore.resetChatHistory(conversationId);
         } catch (error) {

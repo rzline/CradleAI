@@ -533,12 +533,15 @@ const ApiSettings = () => {
       // Filter out empty additional API keys
       const validAdditionalKeys = additionalGeminiKeys.filter(key => key && key.trim() !== '');
 
+      // 修复：如果未填写geminiKey，则设为'123'以触发回退
+      const effectiveGeminiKey = geminiKey && geminiKey.trim() !== '' ? geminiKey : '123';
+
       if (useActivationCode && licenseInfo) {
         const apiSettings: Partial<GlobalSettings> = {
           chat: {
             ...user?.settings?.chat,
             serverUrl: user?.settings?.chat?.serverUrl || '',
-            characterApiKey: geminiKey,
+            characterApiKey: effectiveGeminiKey,
             additionalGeminiKeys: validAdditionalKeys,
             useGeminiModelLoadBalancing,
             useGeminiKeyRotation,
@@ -657,7 +660,7 @@ const ApiSettings = () => {
           chat: {
             ...user?.settings?.chat,
             serverUrl: user?.settings?.chat?.serverUrl || '',
-            characterApiKey: geminiKey,
+            characterApiKey: effectiveGeminiKey,
             additionalGeminiKeys: validAdditionalKeys,
             useGeminiModelLoadBalancing,
             useGeminiKeyRotation,

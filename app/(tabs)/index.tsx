@@ -1160,27 +1160,48 @@ useEffect(() => {
       // Validate the character exists
       const characterExists = characters.some(char => char.id === characterId);
       console.log('[Index] Character exists in characters array:', characterExists);
-      
+
       if (characterExists) {
         // Set the selected conversation ID
         setSelectedConversationId(characterId);
         console.log('[Index] Selected conversation set to:', characterId);
-        
+
         // Load messages for this character
         const characterMessages = getMessages(characterId);
         console.log('[Index] Loaded messages count:', characterMessages.length);
         setMessages(characterMessages);
-        
-        // If conversation has messages, mark first message as sent
-        // This prevents duplicate first messages when switching characters
-        if (characterMessages.length > 0) {
+
+        // --- 新增：首次进入该角色会话且消息为空时，自动发送first_mes ---
+        if (
+          characterMessages.length === 0 &&
+          !firstMessageSentRef.current[characterId]
+        ) {
+          const char = characters.find(c => c.id === characterId);
+          let firstMes = '';
+          try {
+            if (char?.jsonData) {
+              const characterData = JSON.parse(char.jsonData);
+              firstMes = characterData.roleCard?.first_mes || '';
+            }
+          } catch (e) {
+            firstMes = '';
+          }
+          if (firstMes) {
+            addMessage(characterId, {
+              id: `first-create-${Date.now()}`,
+              text: firstMes,
+              sender: 'bot',
+              timestamp: Date.now()
+            });
+            firstMessageSentRef.current[characterId] = true;
+          }
+        } else if (characterMessages.length > 0) {
           firstMessageSentRef.current[characterId] = true;
-          console.log(`[Index] Marking first message as sent for conversation ${characterId} with existing messages`);
         }
       } else {
         console.warn('[Index] Character not found in characters array:', characterId);
       }
-      
+
       setIsSidebarVisible(false); // Ensure sidebar is closed
     }
   }, [characterId, characters, getMessages]);
