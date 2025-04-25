@@ -1,14 +1,18 @@
 // Define default positive prompts for image generation
 export const DEFAULT_POSITIVE_PROMPTS = [
-  "masterpiece", 
-  "high score", 
-  "great score", 
+  "masterpiece",
+  "high score",
+  "great score",
+  "best quality",
+  "amazing quality",
+  "very aesthetic",
   "absurdres"
 ];
 
 // Define default negative prompts for image generation
 export const DEFAULT_NEGATIVE_PROMPTS = [
   "blurry", 
+  "text", 
   "lowres", 
   "error", 
   "film grain", 

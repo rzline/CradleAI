@@ -1207,7 +1207,6 @@ export class MobileMemory {
       embedding = existingEmbeddings[data] || (await this.embedder.embed(data));
       
       if (!embedding || !Array.isArray(embedding) || embedding.length === 0) {
-        throw new Error('嵌入向量生成失败');
       }
     } catch (error) {
       const errorMessage = error instanceof Error ? error.message : String(error);

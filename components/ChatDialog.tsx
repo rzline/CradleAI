@@ -37,6 +37,9 @@ interface ExtendedChatDialogProps extends ChatDialogProps {
   messageMemoryState?: Record<string, string>;
   regeneratingMessageId?: string | null; // Add this new prop
   user?: User | null; // Add user prop
+  isHistoryModalVisible?: boolean; // 新增
+  setHistoryModalVisible?: (visible: boolean) => void; // 新增
+  onShowFullHistory?: () => void; // 新增
 }
 
 const { width } = Dimensions.get('window');
@@ -55,6 +58,9 @@ const ChatDialog: React.FC<ExtendedChatDialogProps> = ({
   messageMemoryState = {}, // Default to empty object
   regeneratingMessageId = null, // Default to null
   user = null, // Add user prop with default
+  isHistoryModalVisible = false, // 新增
+  setHistoryModalVisible,        // 新增
+  onShowFullHistory,             // 新增
 }) => {
   const flatListRef = useRef<FlatList<Message>>(null);
   const fadeAnim = useSharedValue(0);
@@ -79,20 +85,27 @@ const ChatDialog: React.FC<ExtendedChatDialogProps> = ({
   const [ttsEnhancerEnabled, setTtsEnhancerEnabled] = useState(false);
   
   // Get dialog mode from context
-  const { mode, visualNovelSettings, isHistoryModalVisible, setHistoryModalVisible } = useDialogMode();
+  const { mode, visualNovelSettings, isHistoryModalVisible: contextHistoryModalVisible, setHistoryModalVisible: contextSetHistoryModalVisible } = useDialogMode();
   
   // Add a ref to track if we're programmatically scrolling
   const isAutoScrollingRef = useRef(false);
-    // 新增：长按空白区域自动滑到底部
-    const handleLongPressOutside = () => {
-      if (flatListRef.current) {
-        try {
-          flatListRef.current.scrollToEnd({ animated: true });
-        } catch (e) {
-          // ignore
-        }
+
+  // --- 新增：用于视觉小说模式切换时保存/恢复滚动位置 ---
+  const [preVisualNovelScrollPos, setPreVisualNovelScrollPos] = useState<number | null>(null);
+  const [pendingRestoreScroll, setPendingRestoreScroll] = useState(false); // 新增
+  const prevModeRef = useRef<string>(mode);
+
+  // 新增：长按空白区域自动滑到底部
+  const handleLongPressOutside = () => {
+    if (flatListRef.current) {
+      try {
+        flatListRef.current.scrollToEnd({ animated: true });
+      } catch (e) {
+        // ignore
       }
-    };
+    }
+  };
+
   // Check TTS enhancer status when component mounts
   useEffect(() => {
     const checkTtsEnhancerStatus = () => {
@@ -115,6 +128,166 @@ const ChatDialog: React.FC<ExtendedChatDialogProps> = ({
       isInitialScrollRestored.current = false;
     }
   }, [selectedCharacter?.id, currentConversationId]);
+
+  const [isRestoringScroll, setIsRestoringScroll] = useState(false);
+  const [lastContentHeight, setLastContentHeight] = useState<number | null>(null);
+  const [restoreStep, setRestoreStep] = useState<'wait'|'scrollToEnd'|'restoreOffset'|null>(null);
+  const restoreStableCount = useRef(0);
+  const RESTORE_STABLE_THRESHOLD = 2; // 连续2次高度不变视为稳定
+  const restoreTimeoutRef = useRef<NodeJS.Timeout | null>(null); // Add timeout reference
+
+  // Consolidate the visual novel mode transition effects
+  useEffect(() => {
+    // Save position when switching to visual novel mode
+    if ((prevModeRef.current === 'normal' || prevModeRef.current === 'background-focus') && 
+        mode === 'visual-novel') {
+      if (currentConversationId && scrollPositions[currentConversationId] !== undefined) {
+        setPreVisualNovelScrollPos(scrollPositions[currentConversationId]);
+      } else {
+        setPreVisualNovelScrollPos(null);
+      }
+    } 
+    // Restore position when switching back from visual novel mode
+    else if (prevModeRef.current === 'visual-novel' && 
+            (mode === 'normal' || mode === 'background-focus')) {
+      if (preVisualNovelScrollPos !== null) {
+        // Clear any existing restoration timeout
+        if (restoreTimeoutRef.current) {
+          clearTimeout(restoreTimeoutRef.current);
+        }
+        
+        // Initialize restoration process
+        setPendingRestoreScroll(true);
+        setIsRestoringScroll(true);
+        setRestoreStep('wait');
+        setLastContentHeight(null);
+        restoreStableCount.current = 0;
+        
+        // Safety timeout - if restoration takes too long, scroll to end as fallback
+        restoreTimeoutRef.current = setTimeout(() => {
+          if (pendingRestoreScroll) {
+            console.log('[ChatDialog] Restoration timeout - scrolling to end');
+            try {
+              flatListRef.current?.scrollToEnd({ animated: false });
+            } catch {}
+            setPendingRestoreScroll(false);
+            setIsRestoringScroll(false);
+            setRestoreStep(null);
+            restoreStableCount.current = 0;
+          }
+        }, 5000); // 5 second safety timeout
+      }
+      setPreVisualNovelScrollPos(null);
+    }
+    
+    prevModeRef.current = mode;
+  }, [mode, currentConversationId, scrollPositions, preVisualNovelScrollPos, pendingRestoreScroll]);
+
+  // Improved content size change handler for scroll restoration
+  const handleContentSizeChange = useCallback((contentWidth: number, contentHeight: number) => {
+    // Only in restoration process
+    if (pendingRestoreScroll && 
+        flatListRef.current && 
+        preVisualNovelScrollPos !== null && 
+        preVisualNovelScrollPos > 0) {
+      
+      // Step 1: Monitor content height stability
+      if (restoreStep === 'wait' || restoreStep === null) {
+        console.log(`[ChatDialog] Content height: ${contentHeight}, last: ${lastContentHeight}`);
+        
+        if (lastContentHeight === contentHeight) {
+          restoreStableCount.current += 1;
+        } else {
+          restoreStableCount.current = 0;
+        }
+        setLastContentHeight(contentHeight);
+        
+        // More strict stability check before attempting to restore position
+        if (restoreStableCount.current >= RESTORE_STABLE_THRESHOLD) {
+          setRestoreStep('restoreOffset');
+        } else {
+          // Force load more content by scrolling to end
+          setRestoreStep('scrollToEnd');
+        }
+      }
+
+      // Step 2: Scroll to end to force all content to render
+      if (restoreStep === 'scrollToEnd') {
+        setTimeout(() => {
+          try {
+            flatListRef.current?.scrollToEnd({ animated: false });
+          } catch (e) {
+            console.log('[ChatDialog] Error scrolling to end:', e);
+          }
+          setRestoreStep('wait');
+        }, 100); // Slightly longer timeout for rendering
+      }
+
+      // Step 3: Once content is stable, restore the scroll position
+      if (restoreStep === 'restoreOffset') {
+        setTimeout(() => {
+          try {
+            console.log(`[ChatDialog] Restoring to offset: ${preVisualNovelScrollPos}`);
+            flatListRef.current?.scrollToOffset({ 
+              offset: preVisualNovelScrollPos, 
+              animated: false 
+            });
+            
+            // Clean up timeout if restoration completes
+            if (restoreTimeoutRef.current) {
+              clearTimeout(restoreTimeoutRef.current);
+              restoreTimeoutRef.current = null;
+            }
+          } catch (e) {
+            console.log('[ChatDialog] Error restoring scroll:', e);
+          }
+          
+          // Clear restoration state
+          setPendingRestoreScroll(false);
+          setIsRestoringScroll(false);
+          setRestoreStep(null);
+          restoreStableCount.current = 0;
+        }, 120); // Longer delay before final scroll
+      }
+    } else if (pendingRestoreScroll) {
+      // Handle case where we should stop restoration (zero or null position)
+      if (preVisualNovelScrollPos === 0 || preVisualNovelScrollPos === null) {
+        setPendingRestoreScroll(false);
+        setIsRestoringScroll(false);
+        setRestoreStep(null);
+        restoreStableCount.current = 0;
+        
+        // Clean up timeout
+        if (restoreTimeoutRef.current) {
+          clearTimeout(restoreTimeoutRef.current);
+          restoreTimeoutRef.current = null;
+        }
+      }
+    }
+  }, [pendingRestoreScroll, preVisualNovelScrollPos, lastContentHeight, restoreStep]);
+
+  // Clean up timeout on unmount
+  useEffect(() => {
+    return () => {
+      if (restoreTimeoutRef.current) {
+        clearTimeout(restoreTimeoutRef.current);
+      }
+    };
+  }, []);
+
+  // --- 自动滚动到底部逻辑，恢复滚动时跳过，视觉小说模式下不自动滚动 ---
+  useEffect(() => {
+    if (messages.length > 0 && !pendingRestoreScroll && !isRestoringScroll && mode !== 'visual-novel') {
+      const timer = setTimeout(() => {
+        if (flatListRef.current) {
+          try {
+            flatListRef.current.scrollToEnd({ animated: false });
+          } catch (e) { /* ignore */ }
+        }
+      }, 100);
+      return () => clearTimeout(timer);
+    }
+  }, [messages.length, pendingRestoreScroll, isRestoringScroll, mode]);
 
   // Handle scroll
   const handleScroll = (event: any) => {
@@ -183,17 +356,6 @@ const ChatDialog: React.FC<ExtendedChatDialogProps> = ({
   const dot3Style = useAnimatedStyle(() => ({
     transform: [{ scale: dot3Scale.value }]
   }));
-
-  // Completely replace the auto-scroll logic with a much simpler version
-  useEffect(() => {
-    if (messages.length > 0) {
-      setTimeout(() => {
-        if (flatListRef.current) {
-          flatListRef.current.scrollToEnd({ animated: false });
-        }
-      }, 50);
-    }
-  }, [messages.length]);
 
   // Update audio states when they change in the service
   const updateAudioState = (messageId: string) => {
@@ -806,7 +968,7 @@ const ChatDialog: React.FC<ExtendedChatDialogProps> = ({
           </Text>
           <TouchableOpacity
             style={styles.historyButton}
-            onPress={() => setHistoryModalVisible(true)}
+            onPress={() => setHistoryModalVisible && setHistoryModalVisible(true)}
           >
             <Ionicons name="time-outline" size={20} color="#fff" />
             <Text style={styles.historyButtonText}>查看历史</Text>
@@ -851,31 +1013,30 @@ const ChatDialog: React.FC<ExtendedChatDialogProps> = ({
   };
 
   const renderHistoryModal = () => {
+    if (!isHistoryModalVisible) return null;
     return (
       <Modal
         visible={isHistoryModalVisible}
         transparent={true}
         animationType="fade"
-        onRequestClose={() => setHistoryModalVisible(false)}
+        onRequestClose={() => setHistoryModalVisible && setHistoryModalVisible(false)}
       >
         <View style={styles.historyModalContainer}>
           <View style={styles.historyModalHeader}>
             <Text style={styles.historyModalTitle}>对话历史</Text>
             <TouchableOpacity
               style={styles.historyModalCloseButton}
-              onPress={() => setHistoryModalVisible(false)}
+              onPress={() => setHistoryModalVisible && setHistoryModalVisible(false)}
             >
               <Ionicons name="close" size={24} color="#fff" />
             </TouchableOpacity>
           </View>
-          
           <ScrollView style={styles.historyModalContent}>
             {messages.map((message, index) => {
               const isUser = message.sender === 'user';
-              const showTime = index === 0 || 
-                              (index > 0 && new Date(message.timestamp || 0).getMinutes() !== 
-                                new Date(messages[index-1].timestamp || 0).getMinutes());
-              
+              const showTime = index === 0 ||
+                (index > 0 && new Date(message.timestamp || 0).getMinutes() !==
+                  new Date(messages[index - 1].timestamp || 0).getMinutes());
               return (
                 <View key={message.id} style={styles.historyMessageContainer}>
                   {showTime && message.timestamp && (
@@ -883,7 +1044,6 @@ const ChatDialog: React.FC<ExtendedChatDialogProps> = ({
                       {new Date(message.timestamp).toLocaleTimeString()}
                     </Text>
                   )}
-                  
                   <View style={[
                     styles.historyMessage,
                     isUser ? styles.historyUserMessage : styles.historyBotMessage
@@ -902,6 +1062,12 @@ const ChatDialog: React.FC<ExtendedChatDialogProps> = ({
         </View>
       </Modal>
     );
+  };
+
+  const getVisibleMessages = () => {
+    if (mode === 'visual-novel') return messages;
+    if (isHistoryModalVisible) return messages;
+    return messages.slice(-30);
   };
 
   const renderItem = useCallback(({ item, index }: { item: Message, index: number }) => {
@@ -937,6 +1103,19 @@ const ChatDialog: React.FC<ExtendedChatDialogProps> = ({
 
   return (
     <>
+      {isRestoringScroll && (
+        <View style={{
+          position: 'absolute',
+          top: 0, left: 0, right: 0, bottom: 0,
+          zIndex: 9999,
+          backgroundColor: 'rgba(0,0,0,0.15)',
+          justifyContent: 'center',
+          alignItems: 'center'
+        }}>
+          <ActivityIndicator size="large" color="#FFE0C3" />
+          <Text style={{ color: '#FFE0C3', marginTop: 10 }}>正在恢复滚动位置...</Text>
+        </View>
+      )}
       {mode === 'visual-novel' ? (
         <>
           <View style={[styles.container, style, styles.backgroundFocusContainer]} />
@@ -945,53 +1124,55 @@ const ChatDialog: React.FC<ExtendedChatDialogProps> = ({
         </>
       ) : (
         <>
-                <TouchableOpacity
-          activeOpacity={1}
-          style={{ flex: 1 }}
-          onLongPress={handleLongPressOutside}
-        >
-          {messages.length === 0 ? (
-            <ScrollView
-              style={[
-                styles.container, 
-                style,
-                mode === 'background-focus' && styles.backgroundFocusContainer
-              ]}
-              contentContainerStyle={[
-                styles.emptyContent,
-                mode === 'background-focus' && styles.backgroundFocusPadding
-              ]}
-            >
-              {renderEmptyState()}
-            </ScrollView>
-          ) : (
-            <FlatList
-              ref={flatListRef}
-              data={messages}
-              renderItem={renderItem}
-              keyExtractor={keyExtractor}
-              style={[
-                styles.container, 
-                style,
-                mode === 'background-focus' && styles.backgroundFocusContainer
-              ]}
-              contentContainerStyle={[
-                styles.content,
-                mode === 'background-focus' && styles.backgroundFocusPadding
-              ]}
-              onScroll={handleScroll}
-              scrollEventThrottle={16}
-              showsVerticalScrollIndicator={true}
-              ListFooterComponent={() => <View style={styles.endSpacer} />}
-              initialNumToRender={20}
-              maxToRenderPerBatch={10}
-              windowSize={21}
-              removeClippedSubviews={Platform.OS !== 'web'}
-              automaticallyAdjustContentInsets={false}
-              keyboardShouldPersistTaps="handled"
-            />
-          )}
+          <TouchableOpacity
+            activeOpacity={1}
+            style={{ flex: 1 }}
+            onLongPress={handleLongPressOutside}
+          >
+            {getVisibleMessages().length === 0 ? (
+              <ScrollView
+                style={[
+                  styles.container, 
+                  style,
+                  mode === 'background-focus' && styles.backgroundFocusContainer
+                ]}
+                contentContainerStyle={[
+                  styles.emptyContent,
+                  mode === 'background-focus' && styles.backgroundFocusPadding
+                ]}
+              >
+                {renderEmptyState()}
+              </ScrollView>
+            ) : (
+              <FlatList
+                ref={flatListRef}
+                data={getVisibleMessages()}
+                renderItem={renderItem}
+                keyExtractor={keyExtractor}
+                style={[
+                  styles.container, 
+                  style,
+                  mode === 'background-focus' && styles.backgroundFocusContainer
+                ]}
+                contentContainerStyle={[
+                  styles.content,
+                  mode === 'background-focus' && styles.backgroundFocusPadding
+                ]}
+                onScroll={handleScroll}
+                scrollEventThrottle={16}
+                showsVerticalScrollIndicator={true}
+                ListFooterComponent={() => <View style={styles.endSpacer} />}
+                initialNumToRender={20}
+                maxToRenderPerBatch={10}
+                windowSize={21}
+                removeClippedSubviews={Platform.OS !== 'web'}
+                automaticallyAdjustContentInsets={false}
+                keyboardShouldPersistTaps="handled"
+                onContentSizeChange={handleContentSizeChange}
+              />
+            )}
           </TouchableOpacity>
+          {renderHistoryModal()}
         </>
       )}
       

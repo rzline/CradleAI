@@ -1226,7 +1226,17 @@ const CreateChar: React.FC<CreateCharProps> = ({
                     onPress={pickBackgroundImage}
                   >
                     {character.backgroundImage ? (
-                      <Image source={{ uri: character.backgroundImage }} style={styles.cardImagePreview} />
+                      <Image
+                        source={{
+                          uri:
+                            typeof character.backgroundImage === 'string'
+                              ? character.backgroundImage
+                              : character.backgroundImage?.localUri ||
+                                character.backgroundImage?.url ||
+                                ''
+                        }}
+                        style={styles.cardImagePreview}
+                      />
                     ) : (
                       <>
                         <Ionicons name="card-outline" size={40} color="#aaa" />
@@ -1251,7 +1261,17 @@ const CreateChar: React.FC<CreateCharProps> = ({
                     onPress={pickAvatar}
                   >
                     {character.avatar ? (
-                      <Image source={{ uri: character.avatar }} style={styles.avatarPreview} />
+                      <Image
+                        source={{
+                          uri:
+                            typeof character.avatar === 'string'
+                              ? character.avatar
+                              : character.avatar?.localUri ||
+                                character.avatar?.url ||
+                                ''
+                        }}
+                        style={styles.avatarPreview}
+                      />
                     ) : (
                       <>
                         <Ionicons name="person-circle-outline" size={40} color="#aaa" />

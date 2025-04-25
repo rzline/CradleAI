@@ -26,6 +26,7 @@ import { GeminiAdapter } from '@/NodeST/nodest/utils/gemini-adapter';
 import Mem0Service from '@/src/memory/services/Mem0Service';
 import ImageManager from '@/utils/ImageManager';
 import { StorageAdapter } from '@/NodeST/nodest/utils/storage-adapter';
+import { updateAuthorNoteDataForCharacter } from '@/app/pages/character-detail'; // 导入新方法
 
 interface ChatInputProps {
   onSendMessage: (text: string, sender: 'user' | 'bot', isLoading?: boolean, metadata?: Record<string, any>) => void;
@@ -40,6 +41,7 @@ interface ChatInputProps {
   onShowNovelAI?: () => void;
   onShowVNDB?: () => void;
   onShowMemoryPanel?: () => void;
+  onShowFullHistory?: () => void; // 新增
 }
 
 const ChatInput: React.FC<ChatInputProps> = ({
@@ -52,6 +54,7 @@ const ChatInput: React.FC<ChatInputProps> = ({
   toggleBraveSearch,
   isTtsEnhancerEnabled = false,
   onTtsEnhancerToggle,
+  onShowFullHistory, // 新增
 }) => {
   const [text, setText] = useState('');
   const [inputHeight, setInputHeight] = useState(40); // Initial height
@@ -59,7 +62,7 @@ const ChatInput: React.FC<ChatInputProps> = ({
   const [showActions, setShowActions] = useState(false);
   const { user } = useUser();
   const inputRef = useRef<TextInput>(null);
-  const { applyRegexTools } = useRegex();
+const { applyRegexTools } = useRegex();
   
   const [selectedImage, setSelectedImage] = useState<string | null>(null);
   const [imageUrl, setImageUrl] = useState<string>('');
@@ -75,6 +78,11 @@ const ChatInput: React.FC<ChatInputProps> = ({
   const [referenceImage, setReferenceImage] = useState<string | null>(null);
   const [referenceImageType, setReferenceImageType] = useState<string | null>(null);
   const [showImageEditGenModal, setShowImageEditGenModal] = useState(false);
+
+  const [showAuthorNoteModal, setShowAuthorNoteModal] = useState(false);
+  const [authorNoteInput, setAuthorNoteInput] = useState('');
+  const [authorNoteDepth, setAuthorNoteDepth] = useState(0); // 新增
+  const [isAuthorNoteSaving, setIsAuthorNoteSaving] = useState(false);
   
   const actionMenuHeight = useRef(new Animated.Value(0)).current;
   const actionMenuOpacity = useRef(new Animated.Value(0)).current;
@@ -126,6 +134,44 @@ const ChatInput: React.FC<ChatInputProps> = ({
     // Always set NodeSTManager's search state to match the prop
     NodeSTManager.setSearchEnabled(braveSearchEnabled);
   }, [braveSearchEnabled]);
+
+  const handleEditAuthorNote = () => {
+    // 预填当前authorNote内容
+    let authorNote = '';
+    let injectionDepth = 0;
+    try {
+      if (selectedCharacter?.jsonData) {
+        const json = JSON.parse(selectedCharacter.jsonData);
+        authorNote = json.authorNote?.content || '';
+        injectionDepth = json.authorNote?.injection_depth || 0;
+      }
+    } catch {}
+    setAuthorNoteInput(authorNote);
+    setAuthorNoteDepth(injectionDepth); // 新增
+    setShowActions(false);
+    setShowAuthorNoteModal(true);
+  };
+
+  const handleSaveAuthorNote = async () => {
+    if (!selectedCharacter) return;
+    setIsAuthorNoteSaving(true);
+    try {
+      const userNickname = user?.settings?.self.nickname || 'User';
+      const result = await updateAuthorNoteDataForCharacter(
+        selectedCharacter,
+        { content: authorNoteInput, injection_depth: authorNoteDepth }, // 传递 injection_depth
+        userNickname
+      );
+      if (result.success) {
+        Alert.alert('成功', '作者注释已更新');
+        setShowAuthorNoteModal(false);
+      } else {
+        Alert.alert('失败', result.error || '更新失败');
+      }
+    } finally {
+      setIsAuthorNoteSaving(false);
+    }
+  };
 
   const handleSendPress = async () => {
     if (text.trim() === '') return;
@@ -822,6 +868,10 @@ ${recentMessagesContext ? `最近的对话记录:\n${recentMessagesContext}\n` :
     }
   };
 
+  const handleShowFullHistory = () => {
+    setShowActions(false);
+    if (onShowFullHistory) onShowFullHistory();
+  };
 
   // Add function to handle content size change
   const handleContentSizeChange = (event: any) => {
@@ -909,7 +959,28 @@ ${recentMessagesContext ? `最近的对话记录:\n${recentMessagesContext}\n` :
                   </Text>
                   {isTtsEnhancerEnabled && <View style={styles.activeIndicator} />}
                 </View>
-              </TouchableOpacity>            
+              </TouchableOpacity>  
+
+              <TouchableOpacity 
+                style={styles.actionMenuItem}
+                activeOpacity={0.7}
+                onPress={handleEditAuthorNote}>
+                <View style={styles.actionMenuItemInner}>
+                  <Ionicons name="document-text-outline" size={18} color="#f39c12" />
+                  <Text style={styles.actionMenuItemText}>作者注释</Text>
+                </View>
+              </TouchableOpacity>  
+
+              <TouchableOpacity
+                style={styles.actionMenuItem}
+                activeOpacity={0.7}
+                onPress={handleShowFullHistory}
+              >
+                <View style={styles.actionMenuItemInner}>
+                  <Ionicons name="list" size={18} color="#27ae60" />
+                  <Text style={styles.actionMenuItemText}>查看全部聊天历史</Text>
+                </View>
+              </TouchableOpacity>        
             </ScrollView>
           </View>
         </View>
@@ -1142,6 +1213,78 @@ ${recentMessagesContext ? `最近的对话记录:\n${recentMessagesContext}\n` :
               >
                 <Text style={[styles.modalButtonText, {color: '#fff'}]}>
                   {isGeneratingImage ? '处理中...' : '开始编辑'}
+                </Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+        </View>
+      </Modal>
+
+      <Modal
+        visible={showAuthorNoteModal}
+        transparent={true}
+        animationType="fade"
+        onRequestClose={() => setShowAuthorNoteModal(false)}
+      >
+        <View style={styles.modalContainer}>
+          <View style={styles.modalContent}>
+            <Text style={styles.modalTitle}>编辑作者注释</Text>
+            <TextInput
+              style={[styles.urlInput, {height: 100}]}
+              placeholder="输入作者注释..."
+              placeholderTextColor="#999"
+              value={authorNoteInput}
+              onChangeText={setAuthorNoteInput}
+              multiline
+              numberOfLines={4}
+              textAlignVertical="top"
+            />
+            {/* 新增 injection_depth 参数选择 */}
+            <View style={{ flexDirection: 'row', alignItems: 'center', marginBottom: 16 }}>
+              <Text style={{ color: '#fff', marginRight: 8 }}>插入深度:</Text>
+              <TouchableOpacity
+                style={{
+                  backgroundColor: '#444',
+                  borderRadius: 8,
+                  paddingHorizontal: 10,
+                  paddingVertical: 4,
+                  marginRight: 8,
+                }}
+                onPress={() => setAuthorNoteDepth(Math.max(0, authorNoteDepth - 1))}
+                disabled={isAuthorNoteSaving || authorNoteDepth <= 0}
+              >
+                <Text style={{ color: '#fff', fontSize: 18 }}>-</Text>
+              </TouchableOpacity>
+              <Text style={{ color: '#fff', minWidth: 24, textAlign: 'center' }}>{authorNoteDepth}</Text>
+              <TouchableOpacity
+                style={{
+                  backgroundColor: '#444',
+                  borderRadius: 8,
+                  paddingHorizontal: 10,
+                  paddingVertical: 4,
+                  marginLeft: 8,
+                }}
+                onPress={() => setAuthorNoteDepth(authorNoteDepth + 1)}
+                disabled={isAuthorNoteSaving}
+              >
+                <Text style={{ color: '#fff', fontSize: 18 }}>+</Text>
+              </TouchableOpacity>
+            </View>
+            <View style={styles.modalButtons}>
+              <TouchableOpacity 
+                style={styles.modalButton}
+                onPress={() => setShowAuthorNoteModal(false)}
+                disabled={isAuthorNoteSaving}
+              >
+                <Text style={styles.modalButtonText}>取消</Text>
+              </TouchableOpacity>
+              <TouchableOpacity 
+                style={[styles.modalButton, styles.modalButtonPrimary]}
+                onPress={handleSaveAuthorNote}
+                disabled={isAuthorNoteSaving}
+              >
+                <Text style={[styles.modalButtonText, {color: '#fff'}]}>
+                  {isAuthorNoteSaving ? '保存中...' : '保存'}
                 </Text>
               </TouchableOpacity>
             </View>

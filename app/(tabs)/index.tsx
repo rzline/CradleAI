@@ -1638,6 +1638,14 @@ useEffect(() => {
   const characterIdForMemo = selectedConversationId || '';
   const conversationIdForMemo = selectedConversationId ? `conversation-${selectedConversationId}` : '';
 
+  // 新增：历史模态框状态
+  const [isHistoryModalVisible, setHistoryModalVisible] = useState(false);
+
+  // 新增：显示全部聊天历史
+  const handleShowFullHistory = useCallback(() => {
+    setHistoryModalVisible(true);
+  }, []);
+
   // 新增：后处理触发函数
   const triggerExtraBackgroundGeneration = useCallback(async (character: Character, lastBotMessage: string) => {
     // 1. 检查开关和条件
@@ -2255,7 +2263,10 @@ useEffect(() => {
                       onScrollPositionChange={handleScrollPositionChange}
                       messageMemoryState={messageMemoryState}
                       regeneratingMessageId={regeneratingMessageId}
-                      user={user} 
+                      user={user}
+                      isHistoryModalVisible={isHistoryModalVisible}
+                      setHistoryModalVisible={setHistoryModalVisible}
+                      onShowFullHistory={handleShowFullHistory}
                     />
                   )}
                 </View>
@@ -2290,6 +2301,7 @@ useEffect(() => {
                         onShowNovelAI={() => setIsNovelAITestVisible(true)}
                         onShowVNDB={() => setIsVNDBTestVisible(true)}
                         onShowMemoryPanel={toggleMemoryPanel}
+                        onShowFullHistory={handleShowFullHistory}
                       />
                     )
                   )}

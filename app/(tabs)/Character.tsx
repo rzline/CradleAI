@@ -38,6 +38,9 @@ import { LinearGradient } from 'expo-linear-gradient';
 import CharacterEditDialog from '@/components/CharacterEditDialog';
 import CharacterImageGallerySidebar from '@/components/CharacterImageGallerySidebar';
 import ImageRegenerationModal from '@/components/ImageRegenerationModal';
+// 新增：导入表格插件API
+import * as TableMemoryAPI from '@/src/memory/plugins/table-memory/api';
+import Mem0Service from '@/src/memory/services/Mem0Service'; // 新增：导入Mem0Service
 
 const VIEW_MODE_SMALL = 'small';
 const VIEW_MODE_LARGE = 'large';
@@ -363,6 +366,37 @@ const CharactersScreen: React.FC = () => {
           setIsLoading(true);
 
           try {
+            // --- 新增：批量删除角色的所有表格 ---
+            for (const characterId of selectedCharacters) {
+              try {
+                // 获取该角色的所有表格
+                const sheets = await TableMemoryAPI.getCharacterSheets(characterId);
+                if (sheets && sheets.length > 0) {
+                  // 批量删除所有表格
+                  await Promise.all(sheets.map(sheet => TableMemoryAPI.deleteSheet(sheet.uid)));
+                  console.log(`[Character] 已删除角色 ${characterId} 的所有表格`);
+                }
+              } catch (err) {
+                console.warn(`[Character] 删除角色 ${characterId} 表格时出错:`, err);
+              }
+            }
+            // --- 结束 ---
+
+            // --- 新增：批量删除角色的所有向量记忆 ---
+            for (const characterId of selectedCharacters) {
+              try {
+                const mem0 = Mem0Service.getInstance();
+                const memories = await mem0.getCharacterMemories(characterId);
+                if (memories && memories.length > 0) {
+                  await Promise.all(memories.map(m => mem0.deleteMemory(m.id)));
+                  console.log(`[Character] 已删除角色 ${characterId} 的所有向量记忆`);
+                }
+              } catch (err) {
+                console.warn(`[Character] 删除角色 ${characterId} 向量记忆时出错:`, err);
+              }
+            }
+            // --- 结束 ---
+
             const deletePromises = selectedCharacters.map(async (characterId) => {
               console.log(`删除角色数据: ${characterId}`);
               await NodeSTManager.deleteCharacterData(characterId);

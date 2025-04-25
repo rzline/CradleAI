@@ -27,13 +27,6 @@ export default function PagesLayout() {
           headerShown: false,
         }}
       />
-            <Stack.Screen
-        name="create_char_cradle"
-        options={{
-          presentation: 'modal',
-          headerShown: false,
-        }}
-      /> 
       <Stack.Screen
         name="global-settings"
         options={{
