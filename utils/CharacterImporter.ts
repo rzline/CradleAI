@@ -94,6 +94,44 @@ export class CharacterImporter {
     };
   }
 
+  /**
+   * 支持导入Json格式的角色卡（格式需包含roleCard/worldBook/preset）
+   * @param filePath 本地json文件路径
+   */
+  static async importFromJson(filePath: string): Promise<{
+    roleCard: RoleCardJson;
+    worldBook: WorldBookJson;
+    preset?: PresetJson;
+    extractedName: string;
+    backgroundImage?: string;
+  }> {
+    try {
+      let content = await FileSystem.readAsStringAsync(filePath);
+      content = content.replace(/^\uFEFF/, '').trim();
+      const data = JSON.parse(content);
+      if (!data.roleCard || !data.worldBook) {
+        throw new Error('JSON文件缺少roleCard或worldBook字段');
+      }
+      const roleCard: RoleCardJson = data.roleCard;
+      const worldBook: WorldBookJson = data.worldBook;
+      const preset: PresetJson | undefined = data.preset;
+      const extractedName = roleCard.name || '';
+      let backgroundImage: string | undefined = data.backgroundImage;
+      // 如果backgroundImage为本地文件路径，尝试转为base64
+      if (backgroundImage && backgroundImage.startsWith('file://')) {
+        try {
+          const base64Image = await FileSystem.readAsStringAsync(backgroundImage, {
+            encoding: FileSystem.EncodingType.Base64,
+          });
+          backgroundImage = `data:image/png;base64,${base64Image}`;
+        } catch {}
+      }
+      return { roleCard, worldBook, preset, extractedName, backgroundImage };
+    } catch (e) {
+      throw new Error('导入JSON角色卡失败: ' + (e instanceof Error ? e.message : '未知错误'));
+    }
+  }
+
   static async importPresetForCharacter(filePath: string, characterId: string): Promise<PresetJson> {
     try {
       console.log('[预设导入] 开始导入:', filePath);

@@ -76,7 +76,6 @@ const ChatDialog: React.FC<ExtendedChatDialogProps> = ({
   // Add state to track scroll position for different conversations
   const [scrollPositions, setScrollPositions] = useState<Record<string, number>>({});
   const [currentConversationId, setCurrentConversationId] = useState<string | null>(null);
-  const isInitialScrollRestored = useRef(false);
   
   // Add state for TTS functionality
   const [audioStates, setAudioStates] = useState<Record<string, AudioState>>({});
@@ -89,11 +88,6 @@ const ChatDialog: React.FC<ExtendedChatDialogProps> = ({
   
   // Add a ref to track if we're programmatically scrolling
   const isAutoScrollingRef = useRef(false);
-
-  // --- 新增：用于视觉小说模式切换时保存/恢复滚动位置 ---
-  const [preVisualNovelScrollPos, setPreVisualNovelScrollPos] = useState<number | null>(null);
-  const [pendingRestoreScroll, setPendingRestoreScroll] = useState(false); // 新增
-  const prevModeRef = useRef<string>(mode);
 
   // 新增：长按空白区域自动滑到底部
   const handleLongPressOutside = () => {
@@ -125,159 +119,12 @@ const ChatDialog: React.FC<ExtendedChatDialogProps> = ({
   useEffect(() => {
     if (selectedCharacter?.id && selectedCharacter.id !== currentConversationId) {
       setCurrentConversationId(selectedCharacter.id);
-      isInitialScrollRestored.current = false;
     }
   }, [selectedCharacter?.id, currentConversationId]);
 
-  const [isRestoringScroll, setIsRestoringScroll] = useState(false);
-  const [lastContentHeight, setLastContentHeight] = useState<number | null>(null);
-  const [restoreStep, setRestoreStep] = useState<'wait'|'scrollToEnd'|'restoreOffset'|null>(null);
-  const restoreStableCount = useRef(0);
-  const RESTORE_STABLE_THRESHOLD = 2; // 连续2次高度不变视为稳定
-  const restoreTimeoutRef = useRef<NodeJS.Timeout | null>(null); // Add timeout reference
-
-  // Consolidate the visual novel mode transition effects
-  useEffect(() => {
-    // Save position when switching to visual novel mode
-    if ((prevModeRef.current === 'normal' || prevModeRef.current === 'background-focus') && 
-        mode === 'visual-novel') {
-      if (currentConversationId && scrollPositions[currentConversationId] !== undefined) {
-        setPreVisualNovelScrollPos(scrollPositions[currentConversationId]);
-      } else {
-        setPreVisualNovelScrollPos(null);
-      }
-    } 
-    // Restore position when switching back from visual novel mode
-    else if (prevModeRef.current === 'visual-novel' && 
-            (mode === 'normal' || mode === 'background-focus')) {
-      if (preVisualNovelScrollPos !== null) {
-        // Clear any existing restoration timeout
-        if (restoreTimeoutRef.current) {
-          clearTimeout(restoreTimeoutRef.current);
-        }
-        
-        // Initialize restoration process
-        setPendingRestoreScroll(true);
-        setIsRestoringScroll(true);
-        setRestoreStep('wait');
-        setLastContentHeight(null);
-        restoreStableCount.current = 0;
-        
-        // Safety timeout - if restoration takes too long, scroll to end as fallback
-        restoreTimeoutRef.current = setTimeout(() => {
-          if (pendingRestoreScroll) {
-            console.log('[ChatDialog] Restoration timeout - scrolling to end');
-            try {
-              flatListRef.current?.scrollToEnd({ animated: false });
-            } catch {}
-            setPendingRestoreScroll(false);
-            setIsRestoringScroll(false);
-            setRestoreStep(null);
-            restoreStableCount.current = 0;
-          }
-        }, 5000); // 5 second safety timeout
-      }
-      setPreVisualNovelScrollPos(null);
-    }
-    
-    prevModeRef.current = mode;
-  }, [mode, currentConversationId, scrollPositions, preVisualNovelScrollPos, pendingRestoreScroll]);
-
-  // Improved content size change handler for scroll restoration
-  const handleContentSizeChange = useCallback((contentWidth: number, contentHeight: number) => {
-    // Only in restoration process
-    if (pendingRestoreScroll && 
-        flatListRef.current && 
-        preVisualNovelScrollPos !== null && 
-        preVisualNovelScrollPos > 0) {
-      
-      // Step 1: Monitor content height stability
-      if (restoreStep === 'wait' || restoreStep === null) {
-        console.log(`[ChatDialog] Content height: ${contentHeight}, last: ${lastContentHeight}`);
-        
-        if (lastContentHeight === contentHeight) {
-          restoreStableCount.current += 1;
-        } else {
-          restoreStableCount.current = 0;
-        }
-        setLastContentHeight(contentHeight);
-        
-        // More strict stability check before attempting to restore position
-        if (restoreStableCount.current >= RESTORE_STABLE_THRESHOLD) {
-          setRestoreStep('restoreOffset');
-        } else {
-          // Force load more content by scrolling to end
-          setRestoreStep('scrollToEnd');
-        }
-      }
-
-      // Step 2: Scroll to end to force all content to render
-      if (restoreStep === 'scrollToEnd') {
-        setTimeout(() => {
-          try {
-            flatListRef.current?.scrollToEnd({ animated: false });
-          } catch (e) {
-            console.log('[ChatDialog] Error scrolling to end:', e);
-          }
-          setRestoreStep('wait');
-        }, 100); // Slightly longer timeout for rendering
-      }
-
-      // Step 3: Once content is stable, restore the scroll position
-      if (restoreStep === 'restoreOffset') {
-        setTimeout(() => {
-          try {
-            console.log(`[ChatDialog] Restoring to offset: ${preVisualNovelScrollPos}`);
-            flatListRef.current?.scrollToOffset({ 
-              offset: preVisualNovelScrollPos, 
-              animated: false 
-            });
-            
-            // Clean up timeout if restoration completes
-            if (restoreTimeoutRef.current) {
-              clearTimeout(restoreTimeoutRef.current);
-              restoreTimeoutRef.current = null;
-            }
-          } catch (e) {
-            console.log('[ChatDialog] Error restoring scroll:', e);
-          }
-          
-          // Clear restoration state
-          setPendingRestoreScroll(false);
-          setIsRestoringScroll(false);
-          setRestoreStep(null);
-          restoreStableCount.current = 0;
-        }, 120); // Longer delay before final scroll
-      }
-    } else if (pendingRestoreScroll) {
-      // Handle case where we should stop restoration (zero or null position)
-      if (preVisualNovelScrollPos === 0 || preVisualNovelScrollPos === null) {
-        setPendingRestoreScroll(false);
-        setIsRestoringScroll(false);
-        setRestoreStep(null);
-        restoreStableCount.current = 0;
-        
-        // Clean up timeout
-        if (restoreTimeoutRef.current) {
-          clearTimeout(restoreTimeoutRef.current);
-          restoreTimeoutRef.current = null;
-        }
-      }
-    }
-  }, [pendingRestoreScroll, preVisualNovelScrollPos, lastContentHeight, restoreStep]);
-
-  // Clean up timeout on unmount
-  useEffect(() => {
-    return () => {
-      if (restoreTimeoutRef.current) {
-        clearTimeout(restoreTimeoutRef.current);
-      }
-    };
-  }, []);
-
   // --- 自动滚动到底部逻辑，恢复滚动时跳过，视觉小说模式下不自动滚动 ---
   useEffect(() => {
-    if (messages.length > 0 && !pendingRestoreScroll && !isRestoringScroll && mode !== 'visual-novel') {
+    if (messages.length > 0 && mode !== 'visual-novel') {
       const timer = setTimeout(() => {
         if (flatListRef.current) {
           try {
@@ -287,7 +134,7 @@ const ChatDialog: React.FC<ExtendedChatDialogProps> = ({
       }, 100);
       return () => clearTimeout(timer);
     }
-  }, [messages.length, pendingRestoreScroll, isRestoringScroll, mode]);
+  }, [messages.length, mode]);
 
   // Handle scroll
   const handleScroll = (event: any) => {
@@ -1103,19 +950,6 @@ const ChatDialog: React.FC<ExtendedChatDialogProps> = ({
 
   return (
     <>
-      {isRestoringScroll && (
-        <View style={{
-          position: 'absolute',
-          top: 0, left: 0, right: 0, bottom: 0,
-          zIndex: 9999,
-          backgroundColor: 'rgba(0,0,0,0.15)',
-          justifyContent: 'center',
-          alignItems: 'center'
-        }}>
-          <ActivityIndicator size="large" color="#FFE0C3" />
-          <Text style={{ color: '#FFE0C3', marginTop: 10 }}>正在恢复滚动位置...</Text>
-        </View>
-      )}
       {mode === 'visual-novel' ? (
         <>
           <View style={[styles.container, style, styles.backgroundFocusContainer]} />
@@ -1168,7 +1002,6 @@ const ChatDialog: React.FC<ExtendedChatDialogProps> = ({
                 removeClippedSubviews={Platform.OS !== 'web'}
                 automaticallyAdjustContentInsets={false}
                 keyboardShouldPersistTaps="handled"
-                onContentSizeChange={handleContentSizeChange}
               />
             )}
           </TouchableOpacity>

@@ -252,6 +252,13 @@ const { applyRegexTools } = useRegex();
       
       onSendMessage('', 'bot', true);
       
+      console.log('[ChatInput] 开始同一角色继续对话处理...');
+      console.log(`[ChatInput] 用户消息: "${messageToSend}"`);
+      console.log(`[ChatInput] 会话ID: ${conversationId}`);
+      console.log(`[ChatInput] 角色ID: ${selectedCharacter?.id}`);
+      console.log(`[ChatInput] 角色名称: ${selectedCharacter?.name}`);
+      console.log(`[ChatInput] API提供商: ${user?.settings?.chat.apiProvider || 'gemini'}`);
+      
       const result = await NodeSTManager.processChatMessage({
         userMessage: messageToSend,
         status: '同一角色继续对话',
@@ -267,7 +274,12 @@ const { applyRegexTools } = useRegex();
         character: selectedCharacter,
         characterId: selectedCharacter?.id,
       });
-      
+
+      console.log('[ChatInput] 处理结果:', {
+        success: result.success,
+        responseLength: result.text?.length || 0,
+        error: result.error || null
+      });
             // === AI回复流程结束，立即允许输入 ===
             setIsLoading(false);
 

@@ -374,4 +374,41 @@ export class StorageAdapter {
       throw error;
     }
   }
+
+  /**
+   * 导出角色全部数据（可用于角色迁移/备份/分享）
+   * 返回格式与 CharacterImporter.ts 兼容
+   */
+  static async exportCharacterData(conversationId: string): Promise<{
+    roleCard: any;
+    worldBook: any;
+    preset: any;
+    authorNote?: any;
+    chatHistory?: any;
+    contents?: any;
+  }> {
+    try {
+      const [roleCard, worldBook, preset, authorNote, chatHistory, contents] = await Promise.all([
+        this.loadJson<any>(this.getStorageKey(conversationId, '_role')),
+        this.loadJson<any>(this.getStorageKey(conversationId, '_world')),
+        this.loadJson<any>(this.getStorageKey(conversationId, '_preset')),
+        this.loadJson<any>(this.getStorageKey(conversationId, '_note')),
+        this.loadJson<any>(this.getStorageKey(conversationId, '_history')),
+        this.loadJson<any>(this.getStorageKey(conversationId, '_contents')),
+      ]);
+      if (!roleCard) throw new Error('角色卡数据不存在');
+      // worldBook/preset 可为空对象
+      return {
+        roleCard,
+        worldBook: worldBook || { entries: {} },
+        preset: preset || { prompts: [], prompt_order: [{ order: [] }] },
+        authorNote: authorNote || undefined,
+        chatHistory: chatHistory || undefined,
+        contents: contents || undefined,
+      };
+    } catch (error) {
+      console.error('[StorageAdapter] exportCharacterData error:', error);
+      throw error;
+    }
+  }
 }

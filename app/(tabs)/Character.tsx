@@ -41,6 +41,8 @@ import ImageRegenerationModal from '@/components/ImageRegenerationModal';
 // 新增：导入表格插件API
 import * as TableMemoryAPI from '@/src/memory/plugins/table-memory/api';
 import Mem0Service from '@/src/memory/services/Mem0Service'; // 新增：导入Mem0Service
+import { StorageAdapter } from '@/NodeST/nodest/utils/storage-adapter'; // 新增：导入StorageAdapter
+import * as Sharing from 'expo-sharing'; // 新增：用于分享导出文件
 
 const VIEW_MODE_SMALL = 'small';
 const VIEW_MODE_LARGE = 'large';
@@ -93,6 +95,10 @@ const CharactersScreen: React.FC = () => {
 
   const appState = useRef(AppState.currentState);
   const [appStateVisible, setAppStateVisible] = useState(appState.current);
+
+  // 新增：导入对话框相关状态
+  const [showImportOptions, setShowImportOptions] = useState(false);
+  const [importWithPreset, setImportWithPreset] = useState(true);
 
   useEffect(() => {
     const subscription = AppState.addEventListener('change', nextAppState => {
@@ -172,152 +178,146 @@ const CharactersScreen: React.FC = () => {
     }, 100);
   };
 
-  const handleImport = async () => {
+  // 新版导入逻辑
+  const handleImport = () => {
     setShowAddMenu(false);
+    setShowImportOptions(true);
+  };
 
-    // Show import instruction dialog first
-    Alert.alert(
-      '角色导入',
-      '导入角色步骤：\n\n1. 导入PNG格式的角色卡（必选）\n2. 导入预设提示词（可选，JSON格式）',
-      [
-        {
-          text: '取消',
-          style: 'cancel'
-        },
-        {
-          text: '开始导入',
-          onPress: async () => {
-            try {
-              // Step 1: Select PNG character card (required)
-              const result = await ImagePicker.launchImageLibraryAsync({
-                mediaTypes: ImagePicker.MediaTypeOptions.Images,
-                allowsEditing: false,
-              });
-      
-              if (result.canceled || !result.assets[0]) {
-                return; // User canceled PNG selection
+  // 实际执行导入
+  const doImport = async () => {
+    setShowImportOptions(false);
+    try {
+      // 选择文件（支持图片和json）
+      const fileResult = await DocumentPicker.getDocumentAsync({
+        type: [
+          'image/png',
+          'application/json',
+          'application/octet-stream', // 某些安卓json为octet-stream
+        ],
+        copyToCacheDirectory: true,
+      });
+      if (!fileResult.assets || !fileResult.assets[0]) return;
+      const file = fileResult.assets[0];
+      const fileUri = file.uri;
+      const fileName = file.name || '';
+      const isPng = fileName.toLowerCase().endsWith('.png');
+      const isJson = fileName.toLowerCase().endsWith('.json');
+
+      setImportLoading(true);
+
+      let importedData: any;
+      if (isPng) {
+        importedData = await CharacterImporter.importFromPNG(fileUri);
+      } else if (isJson) {
+        importedData = await CharacterImporter.importFromJson(fileUri);
+      } else {
+        throw new Error('仅支持PNG图片或JSON格式角色卡文件');
+      }
+
+      // 头像路径
+      const avatarUri = isPng ? fileUri : undefined;
+
+      // 是否导入预设
+      if (importWithPreset && isPng) {
+        // 仅PNG时才弹出预设选择
+        Alert.alert(
+          '导入预设提示词',
+          '是否要导入预设提示词文件(JSON格式)？\n\n如不导入，将仅使用角色卡自带数据。',
+          [
+            {
+              text: '跳过',
+              onPress: async () => {
+                const completeData = {
+                  roleCard: importedData.roleCard,
+                  worldBook: importedData.worldBook,
+                  avatar: avatarUri,
+                  backgroundImage: importedData.backgroundImage,
+                  replaceDefaultPreset: false
+                };
+                await AsyncStorage.setItem('temp_import_data', JSON.stringify(completeData));
+                setCreationType('import');
+                setShowCreationModal(true);
+                setImportLoading(false);
               }
-
-              // Show import loading animation
-              setImportLoading(true);
-              
-              // Import character data from PNG
-              const importedData = await CharacterImporter.importFromPNG(result.assets[0].uri);
-              
-              // Step 2: Ask if user wants to import a preset JSON (optional)
-              Alert.alert(
-                '导入预设提示词',
-                '是否要导入预设提示词文件(JSON格式)？\n\n如不导入，将仅使用角色卡自带数据。',
-                [
-                  {
-                    text: '跳过',
-                    onPress: async () => {
-                      // Skip preset import, use only PNG data
-                      const completeData = {
-                        roleCard: importedData.roleCard,
-                        worldBook: importedData.worldBook,
-                        avatar: result.assets[0].uri,
-                        backgroundImage: importedData.backgroundImage,
-                        replaceDefaultPreset: false // Don't replace default presets
-                      };
-                      
-                      // Store the import data
-                      await AsyncStorage.setItem('temp_import_data', JSON.stringify(completeData));
-                      console.log('[Character] Import data stored successfully (without preset), opening creation form');
-                      
-                      // Continue to character creation
-                      setCreationType('import');
-                      setShowCreationModal(true);
-                    }
-                  },
-                  {
-                    text: '导入预设',
-                    onPress: async () => {
-                      try {
-                        // Select JSON preset file
-                        const presetResult = await DocumentPicker.getDocumentAsync({
-                          type: 'application/json',
-                          copyToCacheDirectory: true,
-                        });
-                        
-                        if (!presetResult.assets || !presetResult.assets[0]) {
-                          // User canceled preset selection, use only PNG data
-                          const completeData = {
-                            roleCard: importedData.roleCard,
-                            worldBook: importedData.worldBook,
-                            avatar: result.assets[0].uri,
-                            backgroundImage: importedData.backgroundImage,
-                            replaceDefaultPreset: false
-                          };
-                          
-                          await AsyncStorage.setItem('temp_import_data', JSON.stringify(completeData));
-                          console.log('[Character] Import data stored successfully (without preset after cancel), opening creation form');
-                          
-                          setCreationType('import');
-                          setShowCreationModal(true);
-                          return;
-                        }
-                        
-                        // Process the preset file
-                        const fileUri = presetResult.assets[0].uri;
-                        const cacheUri = `${FileSystem.cacheDirectory}${presetResult.assets[0].name}`;
-                        
-                        await FileSystem.copyAsync({
-                          from: fileUri,
-                          to: cacheUri,
-                        });
-                        
-                        const presetJson = await CharacterImporter.importPresetForCharacter(cacheUri, 'temp');
-                        
-                        // Store complete data with preset
-                        const completeData = {
-                          roleCard: importedData.roleCard,
-                          worldBook: importedData.worldBook,
-                          preset: presetJson,
-                          avatar: result.assets[0].uri,
-                          backgroundImage: importedData.backgroundImage,
-                          replaceDefaultPreset: true
-                        };
-                        
-                        await AsyncStorage.setItem('temp_import_data', JSON.stringify(completeData));
-                        console.log('[Character] Import data stored successfully (with preset), opening creation form');
-                        
-                        setCreationType('import');
-                        setShowCreationModal(true);
-                      } catch (presetError) {
-                        console.error('[Character Import] Preset error:', presetError);
-                        Alert.alert(
-                          '预设导入失败', 
-                          '预设文件导入失败，将仅使用角色卡数据。\n\n' + 
-                          (presetError instanceof Error ? presetError.message : '未知错误')
-                        );
-                        
-                        // Continue with just the PNG data
-                        const completeData = {
-                          roleCard: importedData.roleCard,
-                          worldBook: importedData.worldBook,
-                          avatar: result.assets[0].uri,
-                          backgroundImage: importedData.backgroundImage,
-                          replaceDefaultPreset: false
-                        };
-                        
-                        await AsyncStorage.setItem('temp_import_data', JSON.stringify(completeData));
-                        setCreationType('import');
-                        setShowCreationModal(true);
-                      }
-                    }
+            },
+            {
+              text: '导入预设',
+              onPress: async () => {
+                try {
+                  const presetResult = await DocumentPicker.getDocumentAsync({
+                    type: 'application/json',
+                    copyToCacheDirectory: true,
+                  });
+                  if (!presetResult.assets || !presetResult.assets[0]) {
+                    // 用户取消
+                    const completeData = {
+                      roleCard: importedData.roleCard,
+                      worldBook: importedData.worldBook,
+                      avatar: avatarUri,
+                      backgroundImage: importedData.backgroundImage,
+                      replaceDefaultPreset: false
+                    };
+                    await AsyncStorage.setItem('temp_import_data', JSON.stringify(completeData));
+                    setCreationType('import');
+                    setShowCreationModal(true);
+                    setImportLoading(false);
+                    return;
                   }
-                ]
-              );
-            } catch (error) {
-              console.error('[Character Import] Error:', error);
-              Alert.alert('导入失败', error instanceof Error ? error.message : '未知错误');
-              setImportLoading(false);
+                  const presetFileUri = presetResult.assets[0].uri;
+                  const cacheUri = `${FileSystem.cacheDirectory}${presetResult.assets[0].name}`;
+                  await FileSystem.copyAsync({ from: presetFileUri, to: cacheUri });
+                  const presetJson = await CharacterImporter.importPresetForCharacter(cacheUri, 'temp');
+                  const completeData = {
+                    roleCard: importedData.roleCard,
+                    worldBook: importedData.worldBook,
+                    preset: presetJson,
+                    avatar: avatarUri,
+                    backgroundImage: importedData.backgroundImage,
+                    replaceDefaultPreset: true
+                  };
+                  await AsyncStorage.setItem('temp_import_data', JSON.stringify(completeData));
+                  setCreationType('import');
+                  setShowCreationModal(true);
+                  setImportLoading(false);
+                } catch (presetError) {
+                  Alert.alert('预设导入失败', '预设文件导入失败，将仅使用角色卡数据。\n\n' +
+                    (presetError instanceof Error ? presetError.message : '未知错误'));
+                  const completeData = {
+                    roleCard: importedData.roleCard,
+                    worldBook: importedData.worldBook,
+                    avatar: avatarUri,
+                    backgroundImage: importedData.backgroundImage,
+                    replaceDefaultPreset: false
+                  };
+                  await AsyncStorage.setItem('temp_import_data', JSON.stringify(completeData));
+                  setCreationType('import');
+                  setShowCreationModal(true);
+                  setImportLoading(false);
+                }
+              }
             }
-          }
-        }
-      ]
-    );
+          ]
+        );
+      } else {
+        // 不导入预设 或 直接导入JSON
+        const completeData = {
+          roleCard: importedData.roleCard,
+          worldBook: importedData.worldBook,
+          preset: importedData.preset,
+          avatar: avatarUri,
+          backgroundImage: importedData.backgroundImage,
+          replaceDefaultPreset: !!importedData.preset
+        };
+        await AsyncStorage.setItem('temp_import_data', JSON.stringify(completeData));
+        setCreationType('import');
+        setShowCreationModal(true);
+        setImportLoading(false);
+      }
+    } catch (error) {
+      Alert.alert('导入失败', error instanceof Error ? error.message : '未知错误');
+      setImportLoading(false);
+    }
   };
 
   const handleCreateCharImportReady = useCallback(() => {
@@ -421,6 +421,40 @@ const CharactersScreen: React.FC = () => {
         },
       },
     ]);
+  };
+
+  const handleExport = async () => {
+    if (selectedCharacters.length !== 1) {
+      Alert.alert('导出失败', '请仅选择一个角色进行导出。');
+      return;
+    }
+    const characterId = selectedCharacters[0];
+    const character = characters.find(c => c.id === characterId);
+    if (!character) {
+      Alert.alert('导出失败', '未找到角色数据。');
+      return;
+    }
+    try {
+      setIsLoading(true);
+      // 1. 获取角色全部数据
+      const exportData = await StorageAdapter.exportCharacterData(characterId);
+      // 2. 生成导出文件名
+      const fileName = `character_export_${character.name || characterId}.json`;
+      // 3. 写入到本地临时文件
+      const fileUri = FileSystem.cacheDirectory + fileName;
+      await FileSystem.writeAsStringAsync(fileUri, JSON.stringify(exportData, null, 2), { encoding: FileSystem.EncodingType.UTF8 });
+      // 4. 分享或保存
+      if (await Sharing.isAvailableAsync()) {
+        await Sharing.shareAsync(fileUri, { mimeType: 'application/json' });
+      } else {
+        Alert.alert('导出成功', `文件已保存到: ${fileUri}`);
+      }
+    } catch (err) {
+      console.error('[Character] 导出角色失败:', err);
+      Alert.alert('导出失败', err instanceof Error ? err.message : '未知错误');
+    } finally {
+      setIsLoading(false);
+    }
   };
 
   const handleCreationModalClose = () => {
@@ -645,7 +679,77 @@ const CharactersScreen: React.FC = () => {
         >
           <Ionicons name="images-outline" size={24} color="black" />
         </TouchableOpacity>
+        {/* 导出按钮 */}
+        <TouchableOpacity
+          style={[
+            styles.floatingButton,
+            { bottom: 220, backgroundColor: theme.colors.primary }
+          ]}
+          onPress={handleExport}
+          disabled={selectedCharacters.length !== 1}
+        >
+          <Ionicons name="download-outline" size={24} color="black" />
+        </TouchableOpacity>
       </>
+    );
+  };
+
+  // 导入选项弹窗
+  const renderImportOptionsModal = () => {
+    if (!showImportOptions) return null;
+    return (
+      <Modal
+        visible={showImportOptions}
+        transparent
+        animationType="fade"
+        onRequestClose={() => setShowImportOptions(false)}
+      >
+        <View style={{
+          flex: 1, justifyContent: 'center', alignItems: 'center',
+          backgroundColor: 'rgba(0,0,0,0.45)'
+        }}>
+          <View style={{
+            backgroundColor: '#222', borderRadius: 12, padding: 28, width: 320, alignItems: 'center'
+          }}>
+            <Text style={{ color: '#fff', fontSize: 18, fontWeight: 'bold', marginBottom: 18 }}>角色导入</Text>
+            <Text style={{ color: '#fff', fontSize: 15, marginBottom: 18, textAlign: 'center' }}>
+              请选择要导入的角色卡文件（PNG图片或JSON文件）。如为PNG格式，可选择是否导入额外预设。
+            </Text>
+            <View style={{ flexDirection: 'row', alignItems: 'center', marginBottom: 18 }}>
+              <TouchableOpacity
+                onPress={() => setImportWithPreset(v => !v)}
+                style={{
+                  width: 22, height: 22, borderRadius: 4, borderWidth: 2, borderColor: '#fff',
+                  backgroundColor: importWithPreset ? COLOR_BUTTON : 'transparent', marginRight: 10
+                }}
+              >
+                {importWithPreset && (
+                  <Ionicons name="checkmark" size={16} color="#282828" style={{ alignSelf: 'center', marginTop: 1 }} />
+                )}
+              </TouchableOpacity>
+              <Text style={{ color: '#fff', fontSize: 15 }}>导入PNG时同时导入预设（可选）</Text>
+            </View>
+            <View style={{ flexDirection: 'row', marginTop: 8 }}>
+              <TouchableOpacity
+                style={{
+                  backgroundColor: COLOR_BUTTON, borderRadius: 8, paddingVertical: 10, paddingHorizontal: 24, marginRight: 12
+                }}
+                onPress={doImport}
+              >
+                <Text style={{ color: '#282828', fontWeight: 'bold', fontSize: 16 }}>选择文件</Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={{
+                  backgroundColor: '#444', borderRadius: 8, paddingVertical: 10, paddingHorizontal: 24
+                }}
+                onPress={() => setShowImportOptions(false)}
+              >
+                <Text style={{ color: '#fff', fontSize: 16 }}>取消</Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+        </View>
+      </Modal>
     );
   };
 
@@ -778,6 +882,8 @@ const CharactersScreen: React.FC = () => {
           </View>
         </Modal>
       )}
+
+      {renderImportOptionsModal()}
     </SafeAreaView>
   );
 };

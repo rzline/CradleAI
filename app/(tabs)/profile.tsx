@@ -124,6 +124,15 @@ const Profile: React.FC = () => {
           subtitle="Discord | QQ群"
         />
         
+        {/* Add new debug entry point */}
+        <ListItem
+          title="调试工具"
+          leftIcon="construct-outline"
+          chevron={true}
+          onPress={() => router.push('../pages/debug-tools')}
+          subtitle="角色数据检查"
+        />
+        
         <ListItem
           title="关于"
           leftIcon="information-circle-outline"

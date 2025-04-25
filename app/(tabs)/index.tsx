@@ -652,12 +652,18 @@ useEffect(() => {
 
     const messageId = await sendMessageInternal(newMessage, sender, isLoading);
     
-    // When message is sent, update messages state but don't manipulate scroll
-    if (selectedConversationId) {
-      const updatedMessages = getMessages(selectedConversationId);
-      // Create new array reference to ensure state update
-      setMessages([...updatedMessages]); 
-    }
+    // === 新实现：直接追加消息到本地状态 ===
+    setMessages(prev => [
+      ...prev,
+      {
+        id: messageId || `temp-${Date.now()}`,
+        text: newMessage,
+        sender,
+        isLoading,
+        timestamp: Date.now(),
+        metadata
+      }
+    ]);
     
     // If it's a user message, update memory state to "processing"
     if (sender === 'user' && !isLoading && messageId) {
@@ -947,7 +953,7 @@ useEffect(() => {
     }
   };
 
-  // 监听 messagesMap 的变化, 移除多余的本地状态更新
+  // 监听 messagesMap 的变化, 只在切换会话时同步
   useEffect(() => {
     if (selectedConversationId) {
       // 添加一个调试日志，确认确实在更新消息
