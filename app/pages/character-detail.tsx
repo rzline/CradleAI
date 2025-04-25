@@ -200,6 +200,46 @@ const DEFAULT_PRESET_ENTRIES = {
   ]
 };
 
+export async function updateAuthorNoteDataForCharacter(
+  character: Character,
+  authorNoteData: Partial<AuthorNoteJson>,
+  userNickname: string
+): Promise<{ success: boolean; error?: string }> {
+  if (!character || !character.id) {
+    return { success: false, error: '角色不存在' };
+  }
+  try {
+    // 解析原始jsonData
+    const jsonData = character.jsonData ? JSON.parse(character.jsonData) : {};
+    // 只更新authorNote部分
+    jsonData.authorNote = {
+      ...jsonData.authorNote,
+      ...authorNoteData,
+      username: userNickname || 'User',
+      charname: character.name,
+    };
+    // 构造新的character对象
+    const updatedCharacter: Character = {
+      ...character,
+      jsonData: JSON.stringify(jsonData),
+    };
+    // 调用NodeSTManager的“更新人设”方法，仅更新authorNote
+    const apiKey = ''; // 可根据实际情况获取apiKey
+    const apiSettings = undefined; // 可根据实际情况传递apiSettings
+    const result = await NodeSTManager.processChatMessage({
+      userMessage: '',
+      status: '更新人设',
+      conversationId: character.id,
+      apiKey,
+      apiSettings,
+      character: updatedCharacter,
+    });
+    return result;
+  } catch (error) {
+    return { success: false, error: error instanceof Error ? error.message : String(error) };
+  }
+}
+
 const CharacterDetail: React.FC = () => {
   const { id } = useLocalSearchParams<{ id: string }>();
   const router = useRouter();
@@ -1069,7 +1109,17 @@ const CharacterDetail: React.FC = () => {
                 onPress={pickBackground}
               >
                 {character?.backgroundImage ? (
-                  <Image source={{ uri: character.backgroundImage }} style={styles.cardImagePreview} />
+                  <Image
+                    source={{
+                      uri:
+                        typeof character.backgroundImage === 'string'
+                          ? character.backgroundImage
+                          : character.backgroundImage?.localUri ||
+                            character.backgroundImage?.url ||
+                            ''
+                    }}
+                    style={styles.cardImagePreview}
+                  />
                 ) : (
                   <>
                     <Ionicons name="card-outline" size={40} color="#aaa" />
@@ -1129,7 +1179,15 @@ const CharacterDetail: React.FC = () => {
       
       <CharacterDetailHeader
         name={roleCard.name || ''}
-        backgroundImage={character?.backgroundImage || null}
+        backgroundImage={
+          character?.backgroundImage
+            ? typeof character.backgroundImage === 'string'
+              ? character.backgroundImage
+              : character.backgroundImage?.localUri ||
+                character.backgroundImage?.url ||
+                null
+            : null
+        }
         onBackgroundPress={() => setActiveTab('appearance')}
         onBackPress={handleBack}
         onFullscreenPress={() => {
