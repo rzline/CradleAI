@@ -378,7 +378,7 @@ const styles = StyleSheet.create({
     borderRadius: 8,
   },
   submitButtonText: {
-    color: '#fff',
+    color: 'black',
     fontWeight: 'bold',
     fontSize: 14,
   },

@@ -886,7 +886,7 @@ ${recentMessagesContext ? `最近的对话记录:\n${recentMessagesContext}\n` :
           </TouchableWithoutFeedback>
           
           {/* Position the menu directly above the input */}
-          <View style={styles.actionMenuContainer}>
+          <View style={[styles.actionMenuContainer, { minWidth: 180, maxWidth: 260 }]}>
             
             <ScrollView style={styles.actionMenuScroll}>
               <TouchableOpacity 
@@ -1356,6 +1356,9 @@ const styles = StyleSheet.create({
     shadowOpacity: 0.3,
     shadowRadius: 5,
     maxHeight: 250, // Made slightly smaller to save space
+    // 新增宽度适配
+    minWidth: 180,
+    maxWidth: 260,
   },
   actionMenuScroll: {
     paddingHorizontal: 8,

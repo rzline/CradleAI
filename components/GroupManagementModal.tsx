@@ -249,7 +249,7 @@ const GroupManagementModal: React.FC<GroupManagementModalProps> = ({
       
       {currentUser.id === group.groupOwnerId && (
         <View style={styles.ownerBadge}>
-          <Text style={styles.ownerBadgeText}>群组</Text>
+          <Text style={styles.ownerBadgeText}>群主</Text>
         </View>
       )}
     </View>

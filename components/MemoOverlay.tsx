@@ -797,7 +797,7 @@ const MemoOverlay: React.FC<MemoOverlayProps> = ({ isVisible, onClose, character
       <View style={styles.fullScreenContainer}>
         <BlurView intensity={30} tint="dark" style={styles.fullScreenBlurView}>
           <View style={styles.header}>
-            <Text style={styles.title}>表格记忆增强</Text>
+            <Text style={styles.title}>表格记忆</Text>
             <TouchableOpacity onPress={onClose} style={styles.closeButton}>
               <Ionicons name="close" size={28} color="#fff" />
             </TouchableOpacity>

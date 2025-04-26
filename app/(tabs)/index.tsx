@@ -29,6 +29,7 @@ import TTSEnhancerModal from '@/components/TTSEnhancerModal'; // Import the new 
 import GroupDialog from '@/components/GroupDialog';
 import GroupInput from '@/components/GroupInput';
 import GroupManagementModal from '@/components/GroupManagementModal';
+import GroupSettingsSidebar from '@/components/GroupSettingsSidebar'; // 新增导入
 import { Group, GroupMessage, getUserGroups, getGroupMessages, sendGroupMessage } from '@/src/group';
 import { Message, Character, ChatSave } from '@/shared/types';
 import { useCharacters, } from '@/constants/CharactersContext';
@@ -145,6 +146,10 @@ const App = () => {
   // --- Add: Animated value for scaling content on keyboard show/hide ---
   const contentScaleAnim = useRef(new Animated.Value(1)).current;
 
+  // 新增：群聊设置侧边栏动画与显示状态
+  const groupSettingsSidebarAnim = useRef(new Animated.Value(0)).current;
+  const [groupSettingsSidebarVisible, setGroupSettingsSidebarVisible] = useState(false);
+
   // Create a stable memory configuration that won't change on every render
   const memoryConfig = useMemo(() => createStableMemoryConfig(user), []);
 
@@ -218,6 +223,7 @@ const App = () => {
   const [groupMembers, setGroupMembers] = useState<Character[]>([]);
   const [isGroupManageModalVisible, setIsGroupManageModalVisible] = useState(false);
   const [disbandedGroups, setDisbandedGroups] = useState<string[]>([]);
+  const [groupBackgrounds, setGroupBackgrounds] = useState<Record<string, string | undefined>>({}); // 新增
 
   // UI state
   const [isSidebarVisible, setIsSidebarVisible] = useState(false);
@@ -251,7 +257,7 @@ const App = () => {
 
   // Add state to preserve chat scroll positions
   const [chatScrollPositions, setChatScrollPositions] = useState<Record<string, number>>({});
-
+  
   // Add new state for memory management
   const [memoryFacts, setMemoryFacts] = useState<any[]>([]);
   const [isMemoryPanelVisible, setIsMemoryPanelVisible] = useState(false);
@@ -515,6 +521,20 @@ useEffect(() => {
     loadUserGroups();
   }, [selectedGroupId, selectedConversationId, conversations]);
 
+  // 新增：群聊背景变更回调
+  const handleGroupBackgroundChanged = useCallback((groupId: string, newBackground: string | undefined) => {
+    setGroupBackgrounds(prev => ({
+      ...prev,
+      [groupId]: newBackground,
+    }));
+    // 同步更新groups中的backgroundImage字段
+    setGroups(prevGroups =>
+      prevGroups.map(g =>
+        g.groupId === groupId ? { ...g, backgroundImage: newBackground } : g
+      )
+    );
+  }, []);
+
   // --- Component Render ---
 
   // Modify toggleSettingsSidebar to animate settingsSlideAnim
@@ -542,6 +562,18 @@ useEffect(() => {
       duration: 300, // Update to match the settings sidebar animation duration (300ms)
       easing: Easing.inOut(Easing.ease),
       useNativeDriver: true, // Use native driver for better performance
+    }).start();
+  };
+
+  // 新增：群聊设置侧边栏动画控制
+  const toggleGroupSettingsSidebar = () => {
+    const newIsVisible = !groupSettingsSidebarVisible;
+    setGroupSettingsSidebarVisible(newIsVisible);
+    Animated.timing(groupSettingsSidebarAnim, {
+      toValue: newIsVisible ? SIDEBAR_WIDTH : 0,
+      duration: 300,
+      easing: Easing.inOut(Easing.ease),
+      useNativeDriver: true,
     }).start();
   };
 
@@ -1304,6 +1336,20 @@ useEffect(() => {
     return require('@/assets/images/default-background.jpg');
   };
 
+  // 获取群聊背景图片（优先群聊自定义背景）
+  const getGroupBackgroundImage = () => {
+    if (selectedGroup) {
+      // 优先使用本地state中的最新背景
+      if (groupBackgrounds[selectedGroup.groupId]) {
+        return { uri: groupBackgrounds[selectedGroup.groupId] };
+      }
+      if (selectedGroup.backgroundImage) {
+        return { uri: selectedGroup.backgroundImage };
+      }
+    }
+    return require('@/assets/images/group-chat-background.jpg');
+  };
+
   // Update handleResetConversation to send first_mes after reset
   const handleResetConversation = async () => {
     if (selectedConversationId) {
@@ -1692,29 +1738,11 @@ useEffect(() => {
     setVideoError(null);
   }, [characterToUse?.id]);
 
-  // Add a new function to handle scrolling and loading more messages when needed
-  const handleMessagePagination = useCallback((conversationId: string, page: number, pageSize: number) => {
-    // This function would normally query a database or API for paginated messages
-    // In our case, we're just working with local messages array
-    
-    // For now we're handling pagination in the ChatDialog component directly,
-    // but this is where you'd add server-side pagination if needed in the future
-    
-    console.log(`[App] Message pagination requested: conversation=${conversationId}, page=${page}, pageSize=${pageSize}`);
-    
-    // Return all messages for now - the ChatDialog will handle the virtualization
-    return Promise.resolve({
-      messages: getMessages(conversationId),
-      totalCount: getMessages(conversationId).length,
-      hasMore: false
-    });
-  }, [getMessages]);
-
   const handleToggleGroupManage = () => {
     setIsGroupManageModalVisible(!isGroupManageModalVisible);
   };
 
-  const selectedGroup = selectedGroupId ? groups.find(g => g.groupId === selectedGroupId) : null;
+  const selectedGroup: Group | null = selectedGroupId ? groups.find(g => g.groupId === selectedGroupId) || null : null;
 
   const toggleMemoOverlay = () => {
     setIsMemoSheetVisible(!isMemoSheetVisible);
@@ -2166,17 +2194,16 @@ useEffect(() => {
               )}
             </>
           ) : (
-            // Render static background image if dynamic portrait is disabled or no video
-            <ImageBackground
-              source={isGroupMode 
-                ? require('@/assets/images/group-chat-background.jpg') 
-                : (characterToUse ? getBackgroundImage() : require('@/assets/images/default-background.jpg'))}
-              style={styles.backgroundImage}
-              resizeMode="cover"
-            >
-              {/* This empty View ensures the ImageBackground fills the container */}
-              <View style={{flex: 1}} />
-            </ImageBackground>
+          // 修正：群聊模式下优先显示群聊自定义背景
+          <ImageBackground
+            source={isGroupMode 
+              ? getGroupBackgroundImage()
+              : (characterToUse ? getBackgroundImage() : require('@/assets/images/default-background.jpg'))}
+            style={styles.backgroundImage}
+            resizeMode="cover"
+          >
+            <View style={{flex: 1}} />
+          </ImageBackground>
           )}
         </View>
 
@@ -2211,7 +2238,19 @@ useEffect(() => {
             disbandedGroups={disbandedGroups} // Pass disbanded groups to Sidebar
           />
         )}
-        
+
+      {/* 新增：群聊设置侧边栏 */}
+      {isGroupMode && (
+        <GroupSettingsSidebar
+          isVisible={groupSettingsSidebarVisible}
+          onClose={toggleGroupSettingsSidebar}
+          animationValue={groupSettingsSidebarAnim}
+          selectedGroup={selectedGroup}
+          currentUser={user}
+          onGroupBackgroundChanged={handleGroupBackgroundChanged} // 新增
+        />
+      )}
+
         {/* Everything else (content + topbar) gets animated together */}
         <Animated.View 
           style={[
@@ -2221,13 +2260,16 @@ useEffect(() => {
                 { 
                   translateX: Animated.add(
                     contentSlideAnim,
-                    Animated.multiply(settingsSlideAnim, -1) // Negative value to move left
-                  ) 
+                    Animated.multiply(settingsSlideAnim, -1),
+                  ),
                 },
-                // --- Add: scale transform for keyboard animation ---
+                // 新增：群聊设置侧边栏动画（左移）
+                { 
+                  translateX: Animated.multiply(groupSettingsSidebarAnim, -1)
+                },
                 { scale: contentScaleAnim }
               ],
-              width: '100%',  // Ensure full width
+              width: '100%',
             }
           ]}
         >
@@ -2249,9 +2291,11 @@ useEffect(() => {
                 onSaveManagerPress={isGroupMode ? undefined : toggleSaveManager}
                 showBackground={false}
                 isGroupMode={isGroupMode}
-                currentUser={user} // Pass current user for permission checks
-                onGroupDisbanded={handleGroupDisbanded} // Pass the disband callback
-                isEmpty={!isGroupMode && (!characterToUse || messages.length === 0)} // Pass empty state
+                currentUser={user}
+                onGroupDisbanded={handleGroupDisbanded}
+                isEmpty={!isGroupMode && (!characterToUse || messages.length === 0)}
+                // 新增：群聊设置按钮事件
+                onGroupSettingsPress={toggleGroupSettingsSidebar}
               />
 
               <SafeAreaView style={[
@@ -2649,3 +2693,4 @@ const styles = StyleSheet.create({
 });
 
 export default App;
+

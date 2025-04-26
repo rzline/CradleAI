@@ -12,6 +12,7 @@ export interface Group {
   groupUpdatedAt: Date; // 群组更新时间
   groupAvatar?: string; // 群组头像 (群内的所有角色头像)
   groupSettings?: GroupSettings; // 群组设置 (例如，是否允许匿名发言等)
+  backgroundImage?: string; // 群组背景图 (可选)
 }
 
 /**

@@ -120,8 +120,12 @@ const CharactersScreen: React.FC = () => {
     useCallback(() => {
       console.log('[Character] Screen focused, refreshing data');
       setRefreshKey(prev => prev + 1);
+      // 页面聚焦时不做处理
       return () => {
-        console.log('[Character] Screen unfocused');
+        // 离开页面时自动关闭菜单和管理模式
+        setShowAddMenu(false);
+        setIsManaging(false);
+        setSelectedCharacters([]);
       };
     }, [])
   );
@@ -558,9 +562,10 @@ const CharactersScreen: React.FC = () => {
         // 新增：传递图库和图片生成入口
         onOpenGallerySidebar={handleOpenGallerySidebar}
         onOpenImageGen={handleOpenImageGen}
+        onOpenEditDialog={handleOpenEditDialog}
       />
     ),
-    [isManaging, selectedCharacters, toggleSelectCharacter, handleCharacterPress, viewMode, handleOpenGallerySidebar, handleOpenImageGen]
+    [isManaging, selectedCharacters, toggleSelectCharacter, handleCharacterPress, viewMode, handleOpenGallerySidebar, handleOpenImageGen, handleOpenEditDialog]
   );
 
   const keyExtractor = useMemo(() => (item: any) => item.id, []);
@@ -568,21 +573,56 @@ const CharactersScreen: React.FC = () => {
   const renderAddMenu = () => {
     if (!showAddMenu) return null;
 
+    // 样式与ChatInput一致
     return (
-      <View style={styles.addMenuContainer}>
-        <TouchableOpacity style={styles.addMenuItem} onPress={handleCreateManual}>
-          <Ionicons name="create-outline" size={20} color="#282828" />
-          <Text style={styles.addMenuItemText}>手动创建</Text>
+      <View style={{
+        position: 'absolute',
+        top: Platform.OS === 'android' ? (StatusBar.currentHeight || 0) + 62 : 102,
+        right: 16,
+        backgroundColor: 'rgba(40, 40, 40, 0.95)',
+        borderRadius: 12,
+        marginHorizontal: 10,
+        marginBottom: 4,
+        paddingBottom: 6,
+        elevation: 8,
+        shadowColor: '#000',
+        shadowOffset: { width: 0, height: 4 },
+        shadowOpacity: 0.3,
+        shadowRadius: 5,
+        zIndex: 20,
+        minWidth: 180, // 适配最长文本宽度
+        maxWidth: 260,
+      }}>
+        <TouchableOpacity style={{
+          flexDirection: 'row',
+          alignItems: 'center',
+          paddingVertical: 8,
+          paddingHorizontal: 12,
+          borderBottomWidth: 1,
+          borderBottomColor: 'rgba(255, 255, 255, 0.08)',
+        }} onPress={handleCreateManual}>
+          <Ionicons name="create-outline" size={18} color="#fff" />
+          <Text style={{ color: '#fff', fontSize: 15, fontWeight: '400', marginLeft: 12, flex: 1 }}>手动创建</Text>
         </TouchableOpacity>
-
-        <TouchableOpacity style={styles.addMenuItem} onPress={handleCreateAuto}>
-          <Ionicons name="color-wand-outline" size={20} color="#282828" />
-          <Text style={styles.addMenuItemText}>自动创建</Text>
+        <TouchableOpacity style={{
+          flexDirection: 'row',
+          alignItems: 'center',
+          paddingVertical: 8,
+          paddingHorizontal: 12,
+          borderBottomWidth: 1,
+          borderBottomColor: 'rgba(255, 255, 255, 0.08)',
+        }} onPress={handleCreateAuto}>
+          <Ionicons name="color-wand-outline" size={18} color="#fff" />
+          <Text style={{ color: '#fff', fontSize: 15, fontWeight: '400', marginLeft: 12, flex: 1 }}>自动创建</Text>
         </TouchableOpacity>
-
-        <TouchableOpacity style={styles.addMenuItem} onPress={handleImport}>
-          <Ionicons name="cloud-upload-outline" size={20} color="#282828" />
-          <Text style={styles.addMenuItemText}>导入</Text>
+        <TouchableOpacity style={{
+          flexDirection: 'row',
+          alignItems: 'center',
+          paddingVertical: 8,
+          paddingHorizontal: 12,
+        }} onPress={handleImport}>
+          <Ionicons name="cloud-upload-outline" size={18} color="#fff" />
+          <Text style={{ color: '#fff', fontSize: 15, fontWeight: '400', marginLeft: 12, flex: 1 }}>导入</Text>
         </TouchableOpacity>
       </View>
     );
@@ -806,8 +846,8 @@ const CharactersScreen: React.FC = () => {
         </Modal>
       )}
 
-      {/* 图库侧栏 */}
-      {showGallerySidebar && gallerySidebarCharacter && (
+      {/* 图库侧栏：管理模式下不展示 */}
+      {showGallerySidebar && gallerySidebarCharacter && !isManaging && (
         <CharacterImageGallerySidebar
           visible={showGallerySidebar}
           onClose={() => setShowGallerySidebar(false)}
@@ -899,6 +939,8 @@ const CharacterCard: React.FC<{
   // 新增props
   onOpenGallerySidebar: (character: Character) => void;
   onOpenImageGen: (character: Character) => void;
+  // 新增：编辑入口
+  onOpenEditDialog?: (character: Character) => void;
 }> = React.memo(
   ({
     item,
@@ -909,7 +951,8 @@ const CharacterCard: React.FC<{
     onOpenDiary,
     viewMode,
     onOpenGallerySidebar,
-    onOpenImageGen
+    onOpenImageGen,
+    onOpenEditDialog
   }) => {
     const isLargeView = viewMode === VIEW_MODE_LARGE;
     const isVerticalView = viewMode === VIEW_MODE_VERTICAL;
@@ -1037,7 +1080,6 @@ const CharacterCard: React.FC<{
               <Text style={styles.cardName}>{item.name}</Text>
               {!isManaging && (
                 <View style={{ flexDirection: 'row', gap: 6 }}>
-                  {/* ...按钮组... */}
                   <TouchableOpacity
                     style={styles.diaryButton}
                     onPress={e => {
@@ -1047,6 +1089,7 @@ const CharacterCard: React.FC<{
                   >
                     <Ionicons name="book-outline" size={18} color="#fff" />
                   </TouchableOpacity>
+                  {/* 仅非管理模式下显示图库按钮 */}
                   <TouchableOpacity
                     style={styles.diaryButton}
                     onPress={e => {
@@ -1064,6 +1107,16 @@ const CharacterCard: React.FC<{
                     }}
                   >
                     <Ionicons name="color-wand-outline" size={18} color="#fff" />
+                  </TouchableOpacity>
+                  {/* 编辑按钮，最右侧 */}
+                  <TouchableOpacity
+                    style={styles.diaryButton}
+                    onPress={e => {
+                      e.stopPropagation();
+                      onOpenEditDialog && onOpenEditDialog(item);
+                    }}
+                  >
+                    <Ionicons name="construct-outline" size={18} color="#fff" />
                   </TouchableOpacity>
                 </View>
               )}
@@ -1092,6 +1145,7 @@ const CharacterCard: React.FC<{
                   >
                     <Ionicons name="book-outline" size={18} color="#fff" />
                   </TouchableOpacity>
+                  {/* 仅非管理模式下显示图库按钮 */}
                   <TouchableOpacity
                     style={styles.diaryButton}
                     onPress={e => {
@@ -1109,6 +1163,16 @@ const CharacterCard: React.FC<{
                     }}
                   >
                     <Ionicons name="color-wand-outline" size={18} color="#fff" />
+                  </TouchableOpacity>
+                  {/* 编辑按钮，最右侧 */}
+                  <TouchableOpacity
+                    style={styles.diaryButton}
+                    onPress={e => {
+                      e.stopPropagation();
+                      onOpenEditDialog && onOpenEditDialog(item);
+                    }}
+                  >
+                    <Ionicons name="construct-outline" size={18} color="#fff" />
                   </TouchableOpacity>
                 </View>
               )}
