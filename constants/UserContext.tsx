@@ -1,5 +1,5 @@
 import React, { createContext, useContext, useState, useEffect } from 'react';
-import AsyncStorage from '@react-native-async-storage/async-storage';
+import * as FileSystem from 'expo-file-system';
 import { User, GlobalSettings } from '@/shared/types';
 import { storeUserSettingsGlobally, updateCloudServiceStatus } from '@/utils/settings-helper';
 
@@ -13,6 +13,28 @@ interface UserContextProps {
 
 const UserContext = createContext<UserContextProps | undefined>(undefined);
 
+const USER_FILE_PATH = FileSystem.documentDirectory + 'user.json';
+
+async function readUserFromFile(): Promise<User | null> {
+  try {
+    const fileInfo = await FileSystem.getInfoAsync(USER_FILE_PATH);
+    if (!fileInfo.exists) return null;
+    const content = await FileSystem.readAsStringAsync(USER_FILE_PATH);
+    return JSON.parse(content);
+  } catch (e) {
+    console.error('[UserContext] Failed to read user file:', e);
+    return null;
+  }
+}
+
+async function writeUserToFile(user: User): Promise<void> {
+  try {
+    await FileSystem.writeAsStringAsync(USER_FILE_PATH, JSON.stringify(user));
+  } catch (e) {
+    console.error('[UserContext] Failed to write user file:', e);
+  }
+}
+
 export const UserProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const [user, setUser] = useState<User | null>(null);
   const [loading, setLoading] = useState(true);
@@ -20,24 +42,17 @@ export const UserProvider: React.FC<{ children: React.ReactNode }> = ({ children
   useEffect(() => {
     const loadUser = async () => {
       try {
-        const userData = await AsyncStorage.getItem('user');
-        if (userData) {
-          const parsedUser = JSON.parse(userData);
+        const parsedUser = await readUserFromFile();
+        if (parsedUser) {
           setUser(parsedUser);
-          
-          // Store settings globally for services to access
+
           if (parsedUser.settings) {
             storeUserSettingsGlobally(parsedUser.settings);
-            
-            // Update cloud service status based on user settings
             if (parsedUser.settings.chat && parsedUser.settings.chat.useCloudService !== undefined) {
               updateCloudServiceStatus(parsedUser.settings.chat.useCloudService);
             }
           }
-          
-          // Also store to localStorage for web compatibility (already handled by settings helper)
         } else {
-          // Initialize with default settings
           const defaultUser: User = {
             id: 'user-1',
             name: 'User',
@@ -67,7 +82,7 @@ export const UserProvider: React.FC<{ children: React.ReactNode }> = ({ children
                 maxTokens: 800,
                 maxtokens: 800,
                 useZhipuEmbedding: false,
-                useCloudService: false, // Default to not using cloud service
+                useCloudService: false,
                 zhipuApiKey: '',
                 openrouter: {
                   enabled: false,
@@ -89,13 +104,10 @@ export const UserProvider: React.FC<{ children: React.ReactNode }> = ({ children
             }
           };
           setUser(defaultUser);
-          await AsyncStorage.setItem('user', JSON.stringify(defaultUser));
-          
-          // Store settings globally for services to access
+          await writeUserToFile(defaultUser);
+
           if (defaultUser.settings) {
             storeUserSettingsGlobally(defaultUser.settings);
-            
-            // Update cloud service status based on default settings
             if (defaultUser.settings.chat) {
               updateCloudServiceStatus(defaultUser.settings.chat.useCloudService || false);
             }
@@ -113,13 +125,13 @@ export const UserProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
   const updateAvatar = async (uri: string): Promise<void> => {
     if (!user) return;
-    
+
     const updatedUser = {
       ...user,
       avatar: uri
     };
     setUser(updatedUser);
-    await AsyncStorage.setItem('user', JSON.stringify(updatedUser));
+    await writeUserToFile(updatedUser);
   };
 
   const updateSettings = async (settings: Partial<GlobalSettings>) => {
@@ -127,7 +139,7 @@ export const UserProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
     try {
       if (!user.settings) throw new Error('User settings not initialized');
-      
+
       const updatedUser = {
         ...user,
         settings: {
@@ -148,18 +160,16 @@ export const UserProvider: React.FC<{ children: React.ReactNode }> = ({ children
       };
 
       setUser(updatedUser);
-      await AsyncStorage.setItem('user', JSON.stringify(updatedUser));
-      
-      // Also update global settings for direct access by services
+      await writeUserToFile(updatedUser);
+
       storeUserSettingsGlobally(updatedUser.settings);
-      
-      // Update cloud service status when settings are updated
+
       if (settings.chat && settings.chat.useCloudService !== undefined) {
         updateCloudServiceStatus(settings.chat.useCloudService);
       }
-      
-      console.log('[UserContext] Settings updated successfully, apiProvider:', 
-        updatedUser.settings.chat.apiProvider, 
+
+      console.log('[UserContext] Settings updated successfully, apiProvider:',
+        updatedUser.settings.chat.apiProvider,
         'useCloudService:', updatedUser.settings.chat.useCloudService);
     } catch (error) {
       console.error('Failed to update settings:', error);

@@ -1,4 +1,5 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import * as FileSystem from 'expo-file-system';
 import { ChatHistoryEntity, ChatMessage,} from '../../../shared/types';
 import{ CircleMemory  } from '../../../shared/types/circle-types';
 /**
@@ -6,6 +7,14 @@ import{ CircleMemory  } from '../../../shared/types/circle-types';
  * focusing on actual user-AI conversation without exposing framework details.
  */
 export class StorageAdapter {
+  // 角色数据文件存储目录
+  private static characterDataDir = FileSystem.documentDirectory + 'nodest_characters/';
+
+  // 辅助方法：获取角色数据文件路径
+  private static getCharacterDataFilePath(key: string): string {
+    return StorageAdapter.characterDataDir + key + '.json';
+  }
+
   /**
    * Generates a standardized storage key for a given conversation
    * @param conversationId The conversation identifier
@@ -17,13 +26,19 @@ export class StorageAdapter {
   }
 
   /**
-   * Save JSON data to AsyncStorage
+   * Save JSON data to AsyncStorage or file (for character data)
    * @param key Storage key
    * @param data Data to store
    */
   static async saveJson<T>(key: string, data: T): Promise<void> {
     try {
-      await AsyncStorage.setItem(key, JSON.stringify(data));
+      if (key.startsWith('nodest_')) {
+        await FileSystem.makeDirectoryAsync(StorageAdapter.characterDataDir, { intermediates: true }).catch(() => {});
+        const filePath = StorageAdapter.getCharacterDataFilePath(key);
+        await FileSystem.writeAsStringAsync(filePath, JSON.stringify(data));
+      } else {
+        await AsyncStorage.setItem(key, JSON.stringify(data));
+      }
     } catch (error) {
       console.error(`[StorageAdapter] Error saving data for key ${key}:`, error);
       throw error;
@@ -31,14 +46,22 @@ export class StorageAdapter {
   }
 
   /**
-   * Load JSON data from AsyncStorage
+   * Load JSON data from AsyncStorage or file (for character data)
    * @param key Storage key
    * @returns Parsed JSON data or null if not found
    */
   static async loadJson<T>(key: string): Promise<T | null> {
     try {
-      const data = await AsyncStorage.getItem(key);
-      return data ? JSON.parse(data) : null;
+      if (key.startsWith('nodest_')) {
+        const filePath = StorageAdapter.getCharacterDataFilePath(key);
+        const fileInfo = await FileSystem.getInfoAsync(filePath);
+        if (!fileInfo.exists) return null;
+        const content = await FileSystem.readAsStringAsync(filePath);
+        return content ? JSON.parse(content) : null;
+      } else {
+        const data = await AsyncStorage.getItem(key);
+        return data ? JSON.parse(data) : null;
+      }
     } catch (error) {
       console.error(`[StorageAdapter] Error loading data for key ${key}:`, error);
       return null;

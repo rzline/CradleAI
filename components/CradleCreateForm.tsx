@@ -25,11 +25,7 @@ import * as ImageManipulator from 'expo-image-manipulator';
 import TagSelector from './TagSelector';
 // Import vndb data for traits
 import vndbData from '@/app/data/vndb.json';
-// Import VNDB API service
-import { defaultClient as vndb } from '@/src/services/vndb';
 import { VNDBCharacter } from '@/src/services/vndb/types';
-import { processVNDBResponse } from '@/src/utils/vndbFormatters';
-import { formatVNDBCharactersForLLM } from '@/src/utils/vndbLLMFormatter';
 import ArtistReferenceSelector from './ArtistReferenceSelector';
 // Import theme
 import { theme } from '@/constants/theme';
@@ -131,8 +127,8 @@ const traitTranslations: Record<string, string> = {
   "Hypocrite": "虚伪",
   "Chuunibyou": "中二病",
   "Puffy": "易怒",
-  "Cat Person": "猫派",
-  "Dog Person": "狗派",
+  "Cat Person": "猫系",
+  "Dog Person": "犬系",
   "Carefree": "无忧无虑",
   "Patient": "有耐心",
   "Narcissist": "自恋",
@@ -154,7 +150,7 @@ const traitTranslations: Record<string, string> = {
   "Kind": "善良",
   "Kuudere": "酷娇",
   "Outgoing": "外向",
-  "Pervert": "变态",
+  "Pervert": "怪异",
   "Pretending": "假装",
   "Protective": "保护欲强",
   "Reserved": "内敛",
@@ -273,13 +269,7 @@ const CradleCreateForm: React.FC<CradleCreateFormProps> = ({
   // State for trait selection modal
   const [traitModalVisible, setTraitModalVisible] = useState(false);
   const [expandedCategories, setExpandedCategories] = useState<string[]>([]);
-  // Add new state for VNDB search results
-  const [vndbSearchResults, setVndbSearchResults] = useState<VNDBCharacter[]>([]);
-  const [vndbSearchError, setVndbSearchError] = useState<string | null>(null);
-  const [isVndbSearching, setIsVndbSearching] = useState(false);
-  // Add new state for retry management
-  const [vndbSearchRetryCount, setVndbSearchRetryCount] = useState(0);
-  const MAX_RETRY_ATTEMPTS = 3;
+
 
   // Add new state for enhanced filtering options
   const [traitFilterOperator, setTraitFilterOperator] = useState<'and' | 'or'>('and');
@@ -291,6 +281,15 @@ const CradleCreateForm: React.FC<CradleCreateFormProps> = ({
   // Add state for voice related properties
   const [voiceGender, setVoiceGender] = useState<'male' | 'female'>('male');
   const [voiceTemplateId, setVoiceTemplateId] = useState<string | null>(null);
+
+
+
+
+
+
+
+
+
 
   // Reset state when form closes
   useEffect(() => {
@@ -372,160 +371,7 @@ const CradleCreateForm: React.FC<CradleCreateFormProps> = ({
   };
 
   // Add a new function to perform VNDB search based on user inputs
-const performVndbSearch = async () => {
-  try {
-    setIsVndbSearching(true);
-    setVndbSearchError(null);
-    setVndbSearchRetryCount(0); // Reset retry counter on new search
-    
-    console.log('[摇篮角色创建] 正在发起VNDB角色检索...');
-    
-    // Convert character age range to numeric range for VNDB
-    let ageFilter: any = null;
-    
-    // Use the custom age filter if value is provided, otherwise fall back to presets
-    if (ageFilterValue && !isNaN(parseInt(ageFilterValue))) {
-      const ageVal = parseInt(ageFilterValue);
-      ageFilter = ["age", ageFilterOperator, ageVal];
-      console.log(`[摇篮角色创建] 使用自定义年龄过滤：${ageFilterOperator} ${ageVal}`);
-    } else {
-      switch(characterAge) {
-        case 'child':
-          ageFilter = ["age", ">=", 0];
-          break;
-        case 'teen':
-          ageFilter = ["age", ">=", 13];
-          break;
-        case 'young-adult':
-          ageFilter = ["age", ">=", 18];
-          break;
-        case 'adult':
-          ageFilter = ["age", ">=", 26];
-          break;
-        case 'middle-aged':
-          ageFilter = ["age", ">=", 40];
-          break;
-        case 'elderly':
-          ageFilter = ["age", ">=", 60];
-          break;
-      }
-    }
-    
-    // Build filter for traits based on user-selected operator (AND/OR)
-    let traitFilter: any = null;
-    if (selectedTraits.length > 0) {
-      const traitFilters = selectedTraits.map(traitId => ["trait", "=", traitId]);
-      
-      // Use the selected logical operator for combining traits
-      if (traitFilters.length > 1) {
-        traitFilter = [traitFilterOperator, ...traitFilters];
-        console.log(`[摇篮角色创建] 使用 ${traitFilterOperator.toUpperCase()} 组合 ${traitFilters.length} 个特征过滤器`);
-      } else {
-        traitFilter = traitFilters[0];
-      }
-    }
-    
-    // Build gender filter
-    let sexFilter: any = null;
-    switch(gender) {
-      case 'male':
-        sexFilter = ["sex", "=", "m"];
-        break;
-      case 'female':
-        sexFilter = ["sex", "=", "f"];
-        break;
-      case 'other':
-        sexFilter = ["sex", "=", "b"];
-        break;
-    }
-    
-    // Build VN filter with default conditions
-    const vnFilter = ["vn", "=", [
-      "and",
-      ["rating", ">", 50.0],
-      ["has_description", "=", 1],
-      // Add Otome game tag if user is female
-      ...(userGender === 'female' ? [["tag", "=", "g542"]] : [])
-    ]];
-    
-    // Combine all filters
-    const combinedFilters = ["and"];
-    
-    // Add each filter if it exists
-    if (sexFilter) combinedFilters.push(sexFilter);
-    if (ageFilter) combinedFilters.push(ageFilter);
-    if (traitFilter) combinedFilters.push(traitFilter);
-    
-    // Add empty search filter for searchrank sorting
-    combinedFilters.push(["search", "=", ""]);
-    
-    // Add VN filter
-    if (combinedFilters.length > 1) {
-      combinedFilters.push(vnFilter);
-    }
-    
-    console.log(`[摇篮角色创建] VNDB检索过滤器: ${JSON.stringify(combinedFilters)}`);
-    
-    // Include group_name and name sub-fields for traits
-    const fieldsString = 'id,name,image.url,age,description,traits{name,group_name}';
-    
-    // Only perform search if we have at least one filter condition
-    if (combinedFilters.length > 1) {
-      console.log('[摇篮角色创建] 正在执行VNDB检索...');
-      
-      // Add retry logic for better error handling
-      const executeSearch = async (attempt = 1): Promise<VNDBCharacter[]> => {
-        try {
-          console.log(`[摇篮角色创建] VNDB检索尝试 #${attempt}`);
-          const response = await vndb.getCharacters({
-            filters: combinedFilters,
-            fields: fieldsString,
-            results: 5,
 
-          });
-          
-          // Log the complete response for debugging
-          console.log('[摇篮角色创建] 完整VNDB响应数据:');
-          console.log(JSON.stringify(response, null, 2));
-          
-          // Format and log character information in the requested format
-          console.log('[摇篮角色创建] 格式化角色信息:');
-          console.log(processVNDBResponse(response));
-          
-          console.log(`[摇篮角色创建] VNDB检索完成，找到${response.results.length}个结果`);
-          return response.results;
-        } catch (error) {
-          console.error(`[摇篮角色创建] VNDB检索尝试 #${attempt} 失败:`, error);
-          
-          if (attempt < MAX_RETRY_ATTEMPTS) {
-            // Exponential backoff with 1s, 2s, 4s...
-            const backoffTime = Math.pow(2, attempt - 1) * 1000;
-            console.log(`[摇篮角色创建] 将在 ${backoffTime}ms 后重试 (${attempt}/${MAX_RETRY_ATTEMPTS})`);
-            
-            await new Promise(resolve => setTimeout(resolve, backoffTime));
-            setVndbSearchRetryCount(attempt);
-            return executeSearch(attempt + 1);
-          } else {
-            throw error;
-          }
-        }
-      };
-      
-      const results = await executeSearch();
-      setVndbSearchResults(results);
-      return results;
-    } else {
-      console.log('[摇篮角色创建] 过滤条件不足，跳过VNDB检索');
-      return [];
-    }
-  } catch (error) {
-    console.error('[摇篮角色创建] VNDB检索失败:', error);
-    setVndbSearchError(error instanceof Error ? error.message : '检索角色数据失败');
-    return [];
-  } finally {
-    setIsVndbSearching(false);
-  }
-};
 
   // 修改 handleCreateCharacter 函数，移除立即生成选项
 const handleCreateCharacter = async () => {
@@ -548,12 +394,7 @@ const handleCreateCharacter = async () => {
     // Log API settings for debugging
     console.log(`[摇篮角色创建] 使用API提供商: ${apiProvider}, 密钥有效: ${!!apiKey}`);
     
-    // Perform VNDB search before creating character
-    const vndbResults = await performVndbSearch();
-    
-    // Format VNDB results for LLM consumption
-    const formattedVndbResults = formatVNDBCharactersForLLM(vndbResults);
-    console.log(`[摇篮角色创建] 格式化的VNDB结果供LLM使用:`, formattedVndbResults);
+
     
     // 生成稳定的、唯一的ID
     const characterId = generateUniqueId();
@@ -613,7 +454,6 @@ const handleCreateCharacter = async () => {
           const trait = findTraitById(id);
           return trait ? getTranslatedName(trait.name) : id;
         }),
-        vndbResults: formattedVndbResults,
         description: description || '',
         userGender: userGender
       },
@@ -669,7 +509,26 @@ const handleCreateCharacter = async () => {
         : [...prev, traitId]
     );
   };
-
+    // 新增：随机选择2-4个特征
+    const rollTraits = () => {
+      // 扁平化所有可选特征ID
+      const allTraitIds: string[] = [];
+      vndbData.forEach(category => {
+        category.children.forEach(subCat => {
+          if (subCat.children && subCat.children.length > 0) {
+            allTraitIds.push(...subCat.children);
+          } else {
+            allTraitIds.push(subCat.id);
+          }
+        });
+      });
+      // 去重
+      const uniqueTraitIds = Array.from(new Set(allTraitIds));
+      // 随机选择2-4个
+      const count = Math.floor(Math.random() * 3) + 2; // 2~4
+      const shuffled = uniqueTraitIds.sort(() => 0.5 - Math.random());
+      setSelectedTraits(shuffled.slice(0, count));
+    };
   // Helper function to toggle category expansion
   const toggleCategory = (categoryId: string) => {
     setExpandedCategories(prev => 
@@ -973,12 +832,7 @@ const handleCreateCharacter = async () => {
                 size={20} 
                 color={gender === 'male' ? '#fff' : '#aaa'} 
               />
-              <Text style={[
-                styles.genderText,
-                gender === 'male' && styles.selectedGenderText
-              ]}>
-                男性
-              </Text>
+
             </TouchableOpacity>
             
             <TouchableOpacity
@@ -993,12 +847,7 @@ const handleCreateCharacter = async () => {
                 size={20} 
                 color={gender === 'female' ? '#fff' : '#aaa'} 
               />
-              <Text style={[
-                styles.genderText,
-                gender === 'female' && styles.selectedGenderText
-              ]}>
-                女性
-              </Text>
+
             </TouchableOpacity>
             
             <TouchableOpacity
@@ -1069,51 +918,55 @@ const handleCreateCharacter = async () => {
         {/* Character traits section - ENHANCED with AND/OR selection */}
         <View style={styles.inputGroup}>
           <View style={styles.traitHeaderRow}>
-            <View style={styles.traitHeaderLeft}>
-              <Text style={styles.inputLabel}>角色特征</Text>
-              
-              {/* Add AND/OR operator selector */}
-              {selectedTraits.length > 1 && (
-                <View style={styles.traitOperatorSelector}>
-                  <TouchableOpacity
-                    style={[
-                      styles.traitOperatorButton,
-                      traitFilterOperator === 'and' && styles.selectedTraitOperator
-                    ]}
-                    onPress={() => setTraitFilterOperator('and')}
-                  >
-                    <Text style={[
-                      styles.traitOperatorText,
-                      traitFilterOperator === 'and' && styles.selectedTraitOperatorText
-                    ]}>
-                      AND
-                    </Text>
-                  </TouchableOpacity>
-                  <TouchableOpacity
-                    style={[
-                      styles.traitOperatorButton,
-                      traitFilterOperator === 'or' && styles.selectedTraitOperator
-                    ]}
-                    onPress={() => setTraitFilterOperator('or')}
-                  >
-                    <Text style={[
-                      styles.traitOperatorText,
-                      traitFilterOperator === 'or' && styles.selectedTraitOperatorText
-                    ]}>
-                      OR
-                    </Text>
-                  </TouchableOpacity>
-                </View>
-              )}
+            <Text style={styles.inputLabel}>角色特征</Text>
+            {/* 按钮组：AND/OR + 选择特征 + 骰子 */}
+            <View style={styles.traitHeaderButtons}>
+              {/* AND/OR operator selector - always visible */}
+              <View style={styles.traitOperatorSelector}>
+                <TouchableOpacity
+                  style={[
+                    styles.traitOperatorButton,
+                    traitFilterOperator === 'and' && styles.selectedTraitOperator
+                  ]}
+                  onPress={() => setTraitFilterOperator('and')}
+                >
+                  <Text style={[
+                    styles.traitOperatorText,
+                    traitFilterOperator === 'and' && styles.selectedTraitOperatorText
+                  ]}>
+                    AND
+                  </Text>
+                </TouchableOpacity>
+                <TouchableOpacity
+                  style={[
+                    styles.traitOperatorButton,
+                    traitFilterOperator === 'or' && styles.selectedTraitOperator
+                  ]}
+                  onPress={() => setTraitFilterOperator('or')}
+                >
+                  <Text style={[
+                    styles.traitOperatorText,
+                    traitFilterOperator === 'or' && styles.selectedTraitOperatorText
+                  ]}>
+                    OR
+                  </Text>
+                </TouchableOpacity>
+              </View>
+              {/* 选择特征按钮 */}
+              <TouchableOpacity
+                style={styles.selectTraitsButton}
+                onPress={() => setTraitModalVisible(true)}
+              >
+                <Ionicons name="add-circle-outline" size={20} color={theme.colors.primary} />
+              </TouchableOpacity>
+              {/* 骰子按钮 */}
+              <TouchableOpacity
+                style={[styles.selectTraitsButton, { marginLeft: 8, backgroundColor: 'rgba(224, 196, 168, 0.15)' }]}
+                onPress={rollTraits}
+              >
+                <Ionicons name="dice-outline" size={20} color={theme.colors.primary} />
+              </TouchableOpacity>
             </View>
-            
-            <TouchableOpacity
-              style={styles.selectTraitsButton}
-              onPress={() => setTraitModalVisible(true)}
-            >
-              <Ionicons name="add-circle-outline" size={20} color={theme.colors.primary} />
-              <Text style={styles.selectTraitsText}>选择特征</Text>
-            </TouchableOpacity>
           </View>
           
           {/* Display selected traits */}
@@ -1160,12 +1013,12 @@ const handleCreateCharacter = async () => {
         
         {/* Character description */}
         <View style={styles.inputGroup}>
-          <Text style={styles.inputLabel}>角色描述</Text>
+          <Text style={styles.inputLabel}>描述</Text>
           <TextInput
             style={[styles.textInput, styles.textArea]}
             value={description}
             onChangeText={setDescription}
-            placeholder="描述角色的背景、身份等信息"
+            placeholder="自定义描述"
             placeholderTextColor="#aaa"
             multiline
             numberOfLines={4}
@@ -1282,22 +1135,22 @@ const handleCreateCharacter = async () => {
                                   <View style={styles.traitList}>
                                     {subcategory.children.length > 0 ? (
                                       subcategory.children.map(trait => {
-                                        const isSelected = selectedTraits.includes(trait.id);
+                                        const isSelected = selectedTraits.includes(trait);
                                         
                                         return (
                                           <TouchableOpacity
-                                            key={trait.id}
+                                            key={trait}
                                             style={[
                                               styles.traitItem,
                                               isSelected && styles.selectedTraitButton
                                             ]}
-                                            onPress={() => toggleTrait(trait.id)}
+                                            onPress={() => toggleTrait(trait)}
                                           >
                                             <Text style={[
                                               styles.traitItemText,
                                               isSelected && styles.selectedTraitButtonText
                                             ]}>
-                                              {getTranslatedName(trait.name)}
+                                              {getTranslatedName(trait)}
                                             </Text>
                                           </TouchableOpacity>
                                         );
@@ -1535,11 +1388,6 @@ const styles = StyleSheet.create({
   characterSettingsContainer: {
     flex: 1,
   },
-  traitHeaderRow: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-  },
   selectTraitsButton: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -1702,7 +1550,7 @@ const styles = StyleSheet.create({
     alignItems: 'center',
   },
   confirmTraitsText: {
-    color: '#fff',
+    color: 'black',
     fontSize: 16,
     fontWeight: 'bold',
   },
@@ -2022,7 +1870,7 @@ const styles = StyleSheet.create({
     marginLeft: 8,
   },
   selectedGenderText: {
-    color: '#fff',
+    color: 'black',
     fontWeight: 'bold',
   },
   cardPreviewSection: {
@@ -2113,7 +1961,7 @@ const styles = StyleSheet.create({
     fontSize: 12,
   },
   selectedOperatorText: {
-    color: '#fff',
+    color: 'black',
   },
   traitHeaderLeft: {
     flexDirection: 'row',
@@ -2138,7 +1986,7 @@ const styles = StyleSheet.create({
     fontSize: 12,
   },
   selectedTraitOperatorText: {
-    color: '#fff',
+    color: 'black',
   },
   filterExplanation: {
     marginTop: 12,
@@ -2263,6 +2111,16 @@ const styles = StyleSheet.create({
     color: '#aaa',
     fontSize: 12,
     marginLeft: 2,
+  },
+  traitHeaderRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+  },
+  traitHeaderButtons: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    // 保证按钮组靠右紧凑排列
   },
 });
 

@@ -73,7 +73,7 @@ const CharacterDetailHeader: React.FC<CharacterDetailHeaderProps> = ({
           source={
             backgroundImage
               ? { uri: backgroundImage }
-              : require('@/assets/images/default-background.png')
+              : require('@/assets/images/default-background.jpg')
           }
           style={styles.backgroundImage}
         >

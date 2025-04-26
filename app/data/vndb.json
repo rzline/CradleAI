@@ -4,34 +4,8 @@
     "name": "Talking Patterns",
     "children": [
       {
-        "id": "i3361",
-        "name": "Japanese Dialect",
-        "children": [
-          {
-            "id": "i805",
-            "name": "Kansai-ben",
-            "children": []
-          }
-        ]
-      },
-      {
-        "id": "i3982",
-        "name": "Animal Speech",
-        "children": []
-      },
-      {
-        "id": "i2430",
-        "name": "Ara Ara",
-        "children": []
-      },
-      {
         "id": "i2798",
         "name": "Archaic Dialect",
-        "children": []
-      },
-      {
-        "id": "i4003",
-        "name": "Broken Japanese",
         "children": []
       },
       {
@@ -186,11 +160,6 @@
         "children": []
       },
       {
-        "id": "i1471",
-        "name": "Father Complex",
-        "children": []
-      },
-      {
         "id": "i3946",
         "name": "Marriage Complex",
         "children": []
@@ -223,18 +192,8 @@
     "name": "Otaku",
     "children": [
       {
-        "id": "i3215",
-        "name": "2D Character Lover",
-        "children": []
-      },
-      {
         "id": "i2233",
         "name": "BL Fan",
-        "children": []
-      },
-      {
-        "id": "i2948",
-        "name": "Girls' Love Fan",
         "children": []
       }
     ]
@@ -282,27 +241,6 @@
     ]
   },
   {
-    "id": "i49",
-    "name": "Transgender",
-    "children": [
-      {
-        "id": "i1430",
-        "name": "Non-Binary",
-        "children": []
-      },
-      {
-        "id": "i2451",
-        "name": "Trans Man",
-        "children": []
-      },
-      {
-        "id": "i2450",
-        "name": "Trans Woman",
-        "children": []
-      }
-    ]
-  },
-  {
     "id": "i217",
     "name": "Tsundere",
     "children": [
@@ -319,38 +257,6 @@
       {
         "id": "i218",
         "name": "Modern Tsundere",
-        "children": []
-      }
-    ]
-  },
-  {
-    "id": "i1324",
-    "name": "Dishonest",
-    "children": [
-      {
-        "id": "i3859",
-        "name": "Hypocrite",
-        "children": []
-      },
-      {
-        "id": "i983",
-        "name": "Sly",
-        "children": []
-      }
-    ]
-  },
-  {
-    "id": "i891",
-    "name": "Immature",
-    "children": [
-      {
-        "id": "i1156",
-        "name": "Chuunibyou",
-        "children": []
-      },
-      {
-        "id": "i1211",
-        "name": "Puffy",
         "children": []
       }
     ]
@@ -383,22 +289,6 @@
       {
         "id": "i3909",
         "name": "Patient",
-        "children": []
-      }
-    ]
-  },
-  {
-    "id": "i242",
-    "name": "Selfish",
-    "children": [
-      {
-        "id": "i243",
-        "name": "Narcissist",
-        "children": []
-      },
-      {
-        "id": "i241",
-        "name": "Spoiled",
         "children": []
       }
     ]
@@ -662,17 +552,6 @@
     ]
   },
   {
-    "id": "i1118",
-    "name": "Violent",
-    "children": [
-      {
-        "id": "i1617",
-        "name": "Childishly Violent",
-        "children": []
-      }
-    ]
-  },
-  {
     "id": "i1399",
     "name": "Wise",
     "children": [
@@ -691,11 +570,6 @@
   {
     "id": "i229",
     "name": "Airhead",
-    "children": []
-  },
-  {
-    "id": "i736",
-    "name": "Antisocial",
     "children": []
   },
   {
@@ -736,11 +610,6 @@
   {
     "id": "i3908",
     "name": "Creative",
-    "children": []
-  },
-  {
-    "id": "i1525",
-    "name": "Cruel",
     "children": []
   },
   {

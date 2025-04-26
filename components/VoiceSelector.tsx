@@ -219,12 +219,6 @@ const VoiceSelector: React.FC<VoiceSelectorProps> = ({
             size={20} 
             color={selectedGender === 'male' ? '#fff' : '#aaa'} 
           />
-          <Text style={[
-            styles.genderText,
-            selectedGender === 'male' && styles.selectedGenderText
-          ]}>
-            男性声线
-          </Text>
         </TouchableOpacity>
         
         <TouchableOpacity
@@ -239,12 +233,6 @@ const VoiceSelector: React.FC<VoiceSelectorProps> = ({
             size={20} 
             color={selectedGender === 'female' ? '#fff' : '#aaa'} 
           />
-          <Text style={[
-            styles.genderText,
-            selectedGender === 'female' && styles.selectedGenderText
-          ]}>
-            女性声线
-          </Text>
         </TouchableOpacity>
       </View>
       

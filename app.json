@@ -22,11 +22,14 @@
         "backgroundColor": "#ffffff"
       },
       "permissions": [
-        "READ_EXTERNAL_STORAGE",
-        "WRITE_EXTERNAL_STORAGE",
-        "MEDIA_LIBRARY",
-        "CAMERA"
-      ]
+        "android.permission.READ_EXTERNAL_STORAGE",
+        "android.permission.WRITE_EXTERNAL_STORAGE",
+        "android.permission.MEDIA_LIBRARY",
+        "android.permission.CAMERA",
+        "android.permission.RECORD_AUDIO",
+        "android.permission.INTERNET"
+      ],
+      "package": "com.anonymous.cradle"
     },
     "web": {
       "bundler": "metro",
@@ -74,9 +77,7 @@
         {
           "icon": "./assets/images/notification-icon.png",
           "color": "#ffffff",
-          "sounds": [
-            "./assets/sounds/notification.wav"
-          ]
+          "sound": false
         }
       ],
       "expo-video"
@@ -93,6 +94,14 @@
         "tsx",
         "mjs"
       ]
+    },
+    "extra": {
+      "router": {
+        "origin": false
+      },
+      "eas": {
+        "projectId": "af0fdb7a-431d-4f1a-8c55-baa9c9cc0fdb"
+      }
     }
   }
 }

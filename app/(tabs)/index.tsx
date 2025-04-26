@@ -51,6 +51,7 @@ import { DEFAULT_NEGATIVE_PROMPTS, DEFAULT_POSITIVE_PROMPTS } from '@/constants/
 import NovelAIService from '@/components/NovelAIService'; // 新增
 import { CloudServiceProvider } from '@/services/cloud-service-provider';
 import type  CloudServiceProviderClass  from '@/services/cloud-service-provider';
+import * as FileSystem from 'expo-file-system'; // 新增导入
 
 // Create a stable memory configuration outside the component
 type MemoryConfig = {
@@ -154,11 +155,60 @@ const App = () => {
     getMessages,
     addMessage,
     clearMessages,
-    updateCharacterExtraBackgroundImage
+    updateCharacterExtraBackgroundImage,
+    isLoading: charactersLoading, // 新增：获取加载状态
+    setCharacters // 新增：用于兜底时补充context
   } = useCharacters();
   
   const [selectedConversationId, setSelectedConversationId] = useState<string | null>(null);
   const [messages, setMessages] = useState<Message[]>([]);
+
+  // 新增：selectedCharacter 兜底机制
+  const [fallbackCharacter, setFallbackCharacter] = useState<Character | null>(null);
+
+  const selectedCharacter: Character | undefined | null =
+    selectedConversationId
+      ? characters.find((char: Character) => char.id === selectedConversationId)
+      : null;
+
+  // 兜底逻辑：如果 context 里查不到角色，尝试直接从 characters.json 读取
+  useEffect(() => {
+    if (
+      selectedConversationId &&
+      !selectedCharacter &&
+      !charactersLoading // 避免加载中时误判
+    ) {
+      // eslint-disable-next-line no-console
+      console.warn('[App] selectedCharacter not found in context, try fallback from storage:', selectedConversationId);
+      (async () => {
+        try {
+          const filePath = FileSystem.documentDirectory + 'characters.json';
+          const fileInfo = await FileSystem.getInfoAsync(filePath);
+          if (fileInfo.exists) {
+            const content = await FileSystem.readAsStringAsync(filePath);
+            const arr = JSON.parse(content);
+            if (Array.isArray(arr)) {
+              const found = arr.find((c: any) => c.id === selectedConversationId);
+              if (found) {
+                setFallbackCharacter(found);
+                // 可选：自动补充到 context，保证后续 context 可用
+              // 修正：直接传递新数组
+              if (!characters.some(c => c.id === found.id)) {
+                setCharacters([...characters, found]);
+              }
+              return;
+            }
+          }
+        }
+          setFallbackCharacter(null);
+        } catch (e) {
+          setFallbackCharacter(null);
+        }
+      })();
+    } else {
+      setFallbackCharacter(null);
+    }
+  }, [selectedConversationId, selectedCharacter, charactersLoading, setCharacters]);
 
   // Group-related state
   const [selectedGroupId, setSelectedGroupId] = useState<string | null>(null);
@@ -850,7 +900,7 @@ useEffect(() => {
           apiProvider: user?.settings?.chat?.apiProvider || 'gemini',
           openrouter: user?.settings?.chat?.openrouter
         },
-        character: selectedCharacter || undefined
+        character: fallbackCharacter || selectedCharacter || undefined
       });
       
       // Clear regenerating state after completion
@@ -1053,7 +1103,15 @@ useEffect(() => {
     }
   };
 
-  const selectedCharacter: Character | undefined | null = selectedConversationId ? characters.find((char: Character) => char.id === selectedConversationId) : null;
+  const characterToUse = fallbackCharacter || selectedCharacter;
+
+  // 新增：启动或切换到index时验证characterToUse
+  useEffect(() => {
+    if (!characterToUse) {
+      // eslint-disable-next-line no-console
+      console.log('(NOBRIDGE) LOG  警告！characterToUse 不存在');
+    }
+  }, [characterToUse]);
 
   const handleAvatarPress = () => {
     // If in preview mode, ask user if they want to exit before navigating
@@ -1234,14 +1292,14 @@ useEffect(() => {
     }
     // 只在角色开启自动生成背景且有extrabackgroundimage时显示
     if (
-      selectedCharacter?.enableAutoExtraBackground &&
-      selectedCharacter?.extrabackgroundimage
+      characterToUse?.enableAutoExtraBackground &&
+      characterToUse?.extrabackgroundimage
     ) {
-      return { uri: selectedCharacter.extrabackgroundimage };
+      return { uri: characterToUse.extrabackgroundimage };
     }
     // 否则回退到原始backgroundImage
-    if (selectedCharacter?.backgroundImage) {
-      return { uri: selectedCharacter.backgroundImage };
+    if (characterToUse?.backgroundImage) {
+      return { uri: characterToUse.backgroundImage };
     }
     return require('@/assets/images/default-background.jpg');
   };
@@ -1259,9 +1317,9 @@ useEffect(() => {
       
       // After a short delay, trigger the first message effect
       setTimeout(() => {
-        if (selectedCharacter?.jsonData) {
+        if (characterToUse?.jsonData) {
           try {
-            const characterData = JSON.parse(selectedCharacter.jsonData);
+            const characterData = JSON.parse(characterToUse.jsonData);
             if (characterData.roleCard?.first_mes) {
               addMessage(selectedConversationId, {
                 id: `first-reset-${Date.now()}`,
@@ -1292,20 +1350,20 @@ useEffect(() => {
     }
     
     // If auto messaging is disabled, no character selected, or waiting for user reply, don't set up timer
-    if (!autoMessageEnabled || !selectedCharacter?.id || waitingForUserReplyRef.current) {
-      console.log(`[App] Auto message timer not set: enabled=${autoMessageEnabled}, hasCharacter=${!!selectedCharacter}, waitingForUserReply=${waitingForUserReplyRef.current}`);
+    if (!autoMessageEnabled || !characterToUse?.id || waitingForUserReplyRef.current) {
+      console.log(`[App] Auto message timer not set: enabled=${autoMessageEnabled}, hasCharacter=${!!characterToUse}, waitingForUserReply=${waitingForUserReplyRef.current}`);
       return;
     }
 
     // Check character-specific settings:
     // 1. autoMessage must be explicitly enabled
-    if (selectedCharacter.autoMessage !== true) {
+    if (characterToUse.autoMessage !== true) {
       console.log('[App] Auto message disabled for this character in settings');
       return;
     }
 
     // Use character-specific interval or default to 5 minutes
-    const interval = selectedCharacter.autoMessageInterval || 5;
+    const interval = characterToUse.autoMessageInterval || 5;
     autoMessageIntervalRef.current = interval;
 
     // Set up new timer
@@ -1317,7 +1375,7 @@ useEffect(() => {
       console.log('[App] Auto message timer triggered');
       
       // Only send auto message if we have a selected character and conversation
-      if (selectedCharacter && selectedConversationId) {
+      if (characterToUse && selectedConversationId) {
         // Reset timer reference since it's been triggered
         autoMessageTimerRef.current = null;
         
@@ -1340,7 +1398,7 @@ useEffect(() => {
               useGeminiKeyRotation: user?.settings?.chat.useGeminiKeyRotation,
               additionalGeminiKeys: user?.settings?.chat.additionalGeminiKeys
             },
-            character: selectedCharacter
+            character: characterToUse
           });
           
           // If successful, add the auto message response directly (no loading state)
@@ -1370,7 +1428,7 @@ useEffect(() => {
             console.log('[App] Auto message sent, now waiting for user reply');
             
             // IMPORTANT: Only update notification badge if notificationEnabled is true
-            if (selectedCharacter.notificationEnabled === true) {
+            if (characterToUse.notificationEnabled === true) {
               console.log('[App] Notifications enabled for this character, updating unread count');
               updateUnreadMessagesCount(1);
             } else {
@@ -1386,13 +1444,13 @@ useEffect(() => {
     }, intervalMs);
     
     console.log(`[App] Auto message timer set for ${autoMessageIntervalRef.current} minutes`);
-  }, [selectedCharacter, selectedConversationId, autoMessageEnabled, user?.settings, messages]);
+  }, [characterToUse, selectedConversationId, autoMessageEnabled, user?.settings, messages]);
 
   // Update handleAutoMessageSettings function to properly handle state changes
   useEffect(() => {
     // Initialize auto message interval from character settings if available
-    if (selectedCharacter) {
-      const newAutoMessageEnabled = selectedCharacter.autoMessage === true;
+    if (characterToUse) {
+      const newAutoMessageEnabled = characterToUse.autoMessage === true;
       
       // Only log and update if the setting has actually changed
       if (autoMessageEnabled !== newAutoMessageEnabled) {
@@ -1401,7 +1459,7 @@ useEffect(() => {
       }
       
       // Get the interval directly from the character settings
-      autoMessageIntervalRef.current = selectedCharacter.autoMessageInterval || 5;
+      autoMessageIntervalRef.current = characterToUse.autoMessageInterval || 5;
       
       // Only reset the timer if auto messages are enabled
       if (newAutoMessageEnabled) {
@@ -1424,7 +1482,7 @@ useEffect(() => {
         autoMessageTimerRef.current = null;
       }
     };
-  }, [selectedCharacter, setupAutoMessageTimer]);
+  }, [characterToUse, setupAutoMessageTimer]);
 
   // Add unread messages counter function
   const updateUnreadMessagesCount = (count: number) => {
@@ -1453,12 +1511,12 @@ useEffect(() => {
   // Set up timer when character changes
   useEffect(() => {
     // Initialize auto message interval from character settings if available
-    if (selectedCharacter) {
+    if (characterToUse) {
       // Use explicit boolean check for autoMessage setting
-      setAutoMessageEnabled(selectedCharacter.autoMessage === true);
+      setAutoMessageEnabled(characterToUse.autoMessage === true);
       
       // Get the interval directly from the character settings
-      autoMessageIntervalRef.current = selectedCharacter.autoMessageInterval || 5;
+      autoMessageIntervalRef.current = characterToUse.autoMessageInterval || 5;
       
       setupAutoMessageTimer();
     }
@@ -1470,7 +1528,7 @@ useEffect(() => {
         autoMessageTimerRef.current = null;
       }
     };
-  }, [selectedCharacter, setupAutoMessageTimer]);
+  }, [characterToUse, setupAutoMessageTimer]);
 
   // Save scroll positions on app pause/background
   useEffect(() => {
@@ -1559,7 +1617,7 @@ useEffect(() => {
       const mem0Service = Mem0Service.getInstance();
       const searchResults = await mem0Service.searchMemories(
         userMessage,
-        selectedCharacter?.id || "",
+        characterToUse?.id || "",
         selectedConversationId,
         10
       );
@@ -1574,7 +1632,7 @@ useEffect(() => {
 
   // Add function to process message memory
   const processMessageMemory = async (messageId: string, text: string, conversationId: string | null) => {
-    if (!conversationId || !selectedCharacter?.id) return;
+    if (!conversationId || !characterToUse?.id) return;
     
     try {
       const mem0Service = Mem0Service.getInstance();
@@ -1583,7 +1641,7 @@ useEffect(() => {
       await mem0Service.addChatMemory(
         text,
         'user',
-        selectedCharacter.id,
+        characterToUse.id,
         conversationId
       );
       
@@ -1632,7 +1690,7 @@ useEffect(() => {
   useEffect(() => {
     setIsVideoReady(false);
     setVideoError(null);
-  }, [selectedCharacter?.id]);
+  }, [characterToUse?.id]);
 
   // Add a new function to handle scrolling and loading more messages when needed
   const handleMessagePagination = useCallback((conversationId: string, page: number, pageSize: number) => {
@@ -1908,7 +1966,7 @@ useEffect(() => {
       await updateCharacterExtraBackgroundImage(character.id, url);
       console.log('[后处理] updateCharacterExtraBackgroundImage已调用:', character.id, url);
       // 自动切换背景
-      if (selectedCharacter?.id === character.id) {
+      if (characterToUse?.id === character.id) {
         setExtraBgImage(url);
         console.log('[后处理] 当前角色，触发setExtraBgImage:', url);
       }
@@ -1929,30 +1987,30 @@ useEffect(() => {
       setIsExtraBgGenerating(false);
       console.error('[后处理] 图片生成异常:', lastError);
     }
-  }, [user, selectedCharacter, updateCharacterExtraBackgroundImage, messages, saveProcessedExtraBgMessageIds]);
+  }, [user, characterToUse, updateCharacterExtraBackgroundImage, messages, saveProcessedExtraBgMessageIds]);
   
   // 聊天后处理主入口：监听messages变化
   useEffect(() => {
     console.log('messages updated:', messages.map(m => ({sender: m.sender, isLoading: m.isLoading, text: m.text})));
-    if (!selectedCharacter) {
-      console.log('[后处理] 不触发：selectedCharacter 不存在');
+    if (!characterToUse) {
+      console.log('[后处理] 不触发：characterToUse 不存在');
       return;
     }
-    if (!selectedCharacter.enableAutoExtraBackground) {
+    if (!characterToUse.enableAutoExtraBackground) {
       console.log('[后处理] 不触发：enableAutoExtraBackground 为 false');
       return;
     }
     // 新增：判断backgroundImageConfig?.isNovelAI 或 backgroundImage对象的isNovelAI
     const isNovelAI =
-      selectedCharacter.backgroundImageConfig?.isNovelAI === true ||
-      (typeof selectedCharacter.backgroundImage === 'object' &&
-        selectedCharacter.backgroundImage !== null &&
-        (selectedCharacter.backgroundImage as any).isNovelAI === true);
+      characterToUse.backgroundImageConfig?.isNovelAI === true ||
+      (typeof characterToUse.backgroundImage === 'object' &&
+        characterToUse.backgroundImage !== null &&
+        (characterToUse.backgroundImage as any).isNovelAI === true);
     if (!isNovelAI) {
       console.log('[后处理] 不触发：backgroundImageConfig.isNovelAI 为 false');
       return;
     }
-    if (!selectedCharacter.backgroundImage) {
+    if (!characterToUse.backgroundImage) {
       console.log('[后处理] 不触发：backgroundImage 为空');
       return;
     }
@@ -1986,51 +2044,51 @@ useEffect(() => {
 
     {
       console.log('触发后处理，最后一条AI消息:', lastMsg.text);
-      triggerExtraBackgroundGeneration(selectedCharacter, lastMsg.text);
+      triggerExtraBackgroundGeneration(characterToUse, lastMsg.text);
       // 覆盖生成
       extraBgGenAbortRef.current.aborted = true;
     }
-  }, [messages, selectedCharacter, selectedCharacter?.enableAutoExtraBackground, triggerExtraBackgroundGeneration]);
+  }, [messages, characterToUse, characterToUse?.enableAutoExtraBackground, triggerExtraBackgroundGeneration]);
 
   // --- 清理机制：当对话被重置或消息被清空时，清空已处理集合 ---
   useEffect(() => {
-    if ((!messages || messages.length === 0) && selectedCharacter?.id) {
+    if ((!messages || messages.length === 0) && characterToUse?.id) {
       processedExtraBgMessageIds.current.clear();
-      saveProcessedExtraBgMessageIds(selectedCharacter.id);
+      saveProcessedExtraBgMessageIds(characterToUse.id);
     }
-  }, [messages, selectedCharacter?.id, saveProcessedExtraBgMessageIds]);
+  }, [messages, characterToUse?.id, saveProcessedExtraBgMessageIds]);
 
   // 切换角色时加载集合
   useEffect(() => {
-    if (selectedCharacter?.id) {
-      loadProcessedExtraBgMessageIds(selectedCharacter.id);
+    if (characterToUse?.id) {
+      loadProcessedExtraBgMessageIds(characterToUse.id);
     }
-  }, [selectedCharacter?.id, loadProcessedExtraBgMessageIds]);
+  }, [characterToUse?.id, loadProcessedExtraBgMessageIds]);
 
   // 4. 取消自动生成背景后，背景还原为backgroundImage，并清理extraBgImage缓存
   useEffect(() => {
-    if (selectedCharacter && !selectedCharacter.enableAutoExtraBackground) {
+    if (characterToUse && !characterToUse.enableAutoExtraBackground) {
       setExtraBgImage(null);
     }
-  }, [selectedCharacter?.enableAutoExtraBackground]);
+  }, [characterToUse?.enableAutoExtraBackground]);
 
   // 5. 检查extraBgImage的缓存是否及时清理
   useEffect(() => {
     // 当切换角色、关闭自动生成、或extraBgImage对应的角色ID变化时清理
     if (
-      !selectedCharacter ||
-      !selectedCharacter.enableAutoExtraBackground ||
-      (extraBgImage && selectedCharacter?.extrabackgroundimage !== extraBgImage)
+      !characterToUse ||
+      !characterToUse.enableAutoExtraBackground ||
+      (extraBgImage && characterToUse?.extrabackgroundimage !== extraBgImage)
     ) {
       setExtraBgImage(null);
     }
-  }, [selectedCharacter, selectedCharacter?.enableAutoExtraBackground, selectedCharacter?.extrabackgroundimage]);
+  }, [characterToUse, characterToUse?.enableAutoExtraBackground, characterToUse?.extrabackgroundimage]);
 
   // 新增：开启自动生成背景时自动触发后处理
   useEffect(() => {
     if (
-      selectedCharacter &&
-      selectedCharacter.enableAutoExtraBackground &&
+      characterToUse &&
+      characterToUse.enableAutoExtraBackground &&
       // 没有本地extraBgImage（防止重复生成）
       !extraBgImage
     ) {
@@ -2046,12 +2104,12 @@ useEffect(() => {
           !(lastMsg.metadata && lastMsg.metadata.isErrorMessage)
         ) {
           // 触发后处理
-          triggerExtraBackgroundGeneration(selectedCharacter, lastMsg.text);
+          triggerExtraBackgroundGeneration(characterToUse, lastMsg.text);
         }
       }
     }
     // eslint-disable-next-line
-  }, [selectedCharacter?.enableAutoExtraBackground]);
+  }, [characterToUse?.enableAutoExtraBackground]);
 
   return (
     <View style={styles.outerContainer}>
@@ -2062,12 +2120,12 @@ useEffect(() => {
         
         {/* Background container remains static */}
         <View style={styles.backgroundContainer}>
-          {!isGroupMode && selectedCharacter?.dynamicPortraitEnabled && selectedCharacter?.dynamicPortraitVideo ? (
+          {!isGroupMode && characterToUse?.dynamicPortraitEnabled && characterToUse?.dynamicPortraitVideo ? (
             // Render video background if enabled and video exists
             <>
               <Video
                 ref={videoRef}
-                source={{ uri: selectedCharacter.dynamicPortraitVideo }}
+                source={{ uri: characterToUse.dynamicPortraitVideo }}
                 style={styles.backgroundVideo}
                 resizeMode={ResizeMode.COVER}
                 isLooping
@@ -2093,8 +2151,8 @@ useEffect(() => {
               {videoError && (
                 <View style={styles.videoErrorContainer}>
                   <ImageBackground
-                    source={selectedCharacter.backgroundImage 
-                      ? { uri: selectedCharacter.backgroundImage } 
+                    source={characterToUse.backgroundImage 
+                      ? { uri: characterToUse.backgroundImage } 
                       : require('@/assets/images/default-background.jpg')}
                     style={styles.backgroundImage}
                     resizeMode="cover"
@@ -2112,7 +2170,7 @@ useEffect(() => {
             <ImageBackground
               source={isGroupMode 
                 ? require('@/assets/images/group-chat-background.jpg') 
-                : (selectedCharacter ? getBackgroundImage() : require('@/assets/images/default-background.jpg'))}
+                : (characterToUse ? getBackgroundImage() : require('@/assets/images/default-background.jpg'))}
               style={styles.backgroundImage}
               resizeMode="cover"
             >
@@ -2184,10 +2242,10 @@ useEffect(() => {
           >
             <View style={[
               styles.container,
-              (selectedCharacter || isGroupMode) ? styles.transparentBackground : styles.darkBackground
+              (characterToUse || isGroupMode) ? styles.transparentBackground : styles.darkBackground
             ]}>
               <TopBarWithBackground
-                selectedCharacter={!isGroupMode ? selectedCharacter : null}
+                selectedCharacter={!isGroupMode ? characterToUse : null}
                 selectedGroup={isGroupMode ? selectedGroup : null}
                 onAvatarPress={isGroupMode ? handleToggleGroupManage : handleAvatarPress}
                 onMemoPress={() => setIsMemoSheetVisible(true)}
@@ -2198,12 +2256,12 @@ useEffect(() => {
                 isGroupMode={isGroupMode}
                 currentUser={user} // Pass current user for permission checks
                 onGroupDisbanded={handleGroupDisbanded} // Pass the disband callback
-                isEmpty={!isGroupMode && (!selectedCharacter || messages.length === 0)} // Pass empty state
+                isEmpty={!isGroupMode && (!characterToUse || messages.length === 0)} // Pass empty state
               />
 
               <SafeAreaView style={[
                 styles.safeArea,
-                (selectedCharacter || isGroupMode) && styles.transparentBackground,
+                (characterToUse || isGroupMode) && styles.transparentBackground,
                 mode === 'background-focus' && styles.backgroundFocusSafeArea
               ]}>
                 {/* 错误提示条，仅临时显示，不进入消息流 */}
@@ -2259,7 +2317,7 @@ useEffect(() => {
                 
                 <View style={[
                   styles.contentContainer,
-                  (selectedCharacter || isGroupMode) && styles.transparentBackground,
+                  (characterToUse || isGroupMode) && styles.transparentBackground,
                   mode === 'background-focus' && !isGroupMode && styles.backgroundFocusContentContainer
                 ]}>
                   {/* Conditionally render either GroupDialog or ChatDialog */}
@@ -2283,10 +2341,10 @@ useEffect(() => {
                     <ChatDialog
                       messages={messages}
                       style={StyleSheet.flatten([styles.chatDialog])}
-                      selectedCharacter={selectedCharacter}
+                      selectedCharacter={characterToUse}
                       onRateMessage={handleRateMessage}
                       onRegenerateMessage={handleRegenerateMessage}
-                      savedScrollPosition={selectedCharacter?.id ? chatScrollPositions[selectedCharacter.id] : undefined}
+                      savedScrollPosition={characterToUse?.id ? chatScrollPositions[characterToUse.id] : undefined}
                       onScrollPositionChange={handleScrollPositionChange}
                       messageMemoryState={messageMemoryState}
                       regeneratingMessageId={regeneratingMessageId}
@@ -2301,7 +2359,7 @@ useEffect(() => {
                 {/* Adjust input bar position for different modes */}
                 <View style={[
                   styles.inputBar,
-                  (selectedCharacter || isGroupMode) && styles.transparentBackground,
+                  (characterToUse || isGroupMode) && styles.transparentBackground,
                   mode === 'background-focus' && !isGroupMode && styles.backgroundFocusInputBar
                 ]}>
                   {/* Conditionally render either ChatInput or GroupInput */}
@@ -2313,13 +2371,13 @@ useEffect(() => {
                       groupMembers={groupMembers}
                     />
                   ) : (
-                    selectedCharacter && (
+                    characterToUse && (
                       <ChatInput
                         onSendMessage={handleSendMessage}
                         selectedConversationId={selectedConversationId}
                         conversationId={selectedConversationId ? getCharacterConversationId(selectedConversationId) ?? '' : ''}
                         onResetConversation={handleResetConversation}
-                        selectedCharacter={selectedCharacter}
+                        selectedCharacter={characterToUse}
                         // Pass search and TTS functionality to ChatInput
                         braveSearchEnabled={braveSearchEnabled}
                         toggleBraveSearch={toggleBraveSearch}
@@ -2379,14 +2437,14 @@ useEffect(() => {
               />
               
               {/* Save Manager */}
-              {selectedCharacter && (
+              {characterToUse && (
                 <SaveManager
                   visible={isSaveManagerVisible}
                   onClose={() => setIsSaveManagerVisible(false)}
                   conversationId={selectedConversationId || ''}
-                  characterId={selectedCharacter.id}
-                  characterName={selectedCharacter.name}
-                  characterAvatar={selectedCharacter.avatar || undefined}
+                  characterId={characterToUse.id}
+                  characterName={characterToUse.name}
+                  characterAvatar={characterToUse.avatar || undefined}
                   messages={messages}
                   onSaveCreated={handleSaveCreated}
                   onLoadSave={handleLoadSave}
@@ -2404,7 +2462,7 @@ useEffect(() => {
         </Animated.View>
 
         {/* SettingsSidebar 绝对定位并放在所有内容之后，确保在最顶层 */}
-        {selectedCharacter && (
+        {characterToUse && (
           <View
             pointerEvents="box-none"
             style={{
@@ -2419,7 +2477,7 @@ useEffect(() => {
             <SettingsSidebar
               isVisible={isSettingsSidebarVisible}
               onClose={toggleSettingsSidebar}
-              selectedCharacter={selectedCharacter}
+              selectedCharacter={characterToUse}
               animationValue={settingsSlideAnim}
             />
           </View>

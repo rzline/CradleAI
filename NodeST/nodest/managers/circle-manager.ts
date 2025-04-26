@@ -8,6 +8,7 @@ import { PromptBuilderService, DEntry, RFrameworkEntry } from '../services/promp
 import CirclePrompts, { defaultScenePrompt, ScenePromptParams } from '@/prompts/circle-prompts';
 import { StorageAdapter } from '../utils/storage-adapter';
 import { getCloudServiceStatus, getApiSettings } from '../../../utils/settings-helper';
+import * as FileSystem from 'expo-file-system'; // Add this import
 
 export { CirclePostOptions, CircleResponse };
 export class CircleManager {
@@ -110,11 +111,20 @@ export class CircleManager {
         return `nodest_${conversationId}${suffix}`;
     }
 
+    // Replace AsyncStorage with FileSystem for JSON storage
     private async saveJson(key: string, data: any): Promise<void> {
         try {
             const jsonString = JSON.stringify(data);
-            console.log(`【CircleManager】保存数据到 ${key}, 数据大小: ${jsonString.length} 字符`);
-            await AsyncStorage.setItem(key, jsonString);
+            // Save as a file in the nodest_characters directory, using the key as filename
+            const dir = FileSystem.documentDirectory + 'nodest_characters/';
+            // Ensure directory exists
+            const dirInfo = await FileSystem.getInfoAsync(dir);
+            if (!dirInfo.exists) {
+                await FileSystem.makeDirectoryAsync(dir, { intermediates: true });
+            }
+            const filePath = dir + key + '.json';
+            await FileSystem.writeAsStringAsync(filePath, jsonString, { encoding: FileSystem.EncodingType.UTF8 });
+            console.log(`【CircleManager】保存数据到 ${filePath}, 数据大小: ${jsonString.length} 字符`);
         } catch (error) {
             console.error(`【CircleManager】保存数据失败，键名: ${key}:`, error);
             throw error;
@@ -123,12 +133,19 @@ export class CircleManager {
 
     private async loadJson<T>(key: string): Promise<T | null> {
         try {
-            const data = await AsyncStorage.getItem(key);
-            if (!data) {
-                console.log(`【CircleManager】未找到数据，键名: ${key}`);
+            const dir = FileSystem.documentDirectory + 'nodest_characters/';
+            const filePath = dir + key + '.json';
+            // Check if file exists
+            const fileInfo = await FileSystem.getInfoAsync(filePath);
+            if (!fileInfo.exists) {
+                console.log(`【CircleManager】未找到数据文件，键名: ${key}`);
                 return null;
             }
-            
+            const data = await FileSystem.readAsStringAsync(filePath, { encoding: FileSystem.EncodingType.UTF8 });
+            if (!data) {
+                console.log(`【CircleManager】数据文件为空，键名: ${key}`);
+                return null;
+            }
             console.log(`【CircleManager】加载数据成功，键名: ${key}, 数据大小: ${data.length} 字符`);
             return JSON.parse(data);
         } catch (error) {
@@ -487,17 +504,36 @@ export class CircleManager {
         try {
             console.log(`【朋友圈】开始初始化角色 ${character.name} 的朋友圈框架`);
             
+            // 新增：从 characters.json 加载持久化角色数据，优先使用持久化数据
+            let persistentCharacter: Character | undefined = undefined;
+            try {
+                const charactersStr = await FileSystem.readAsStringAsync(
+                    FileSystem.documentDirectory + 'characters.json',
+                    { encoding: FileSystem.EncodingType.UTF8 }
+                ).catch(() => '[]');
+                const allCharacters: Character[] = JSON.parse(charactersStr);
+                persistentCharacter = allCharacters.find(c => c.id === character.id);
+                if (persistentCharacter) {
+                    console.log(`【朋友圈】已从文件系统加载到角色 ${persistentCharacter.name} 的持久化数据`);
+                } else {
+                    console.warn(`【朋友圈】文件系统中未找到角色 ${character.id}，将使用传入的character对象`);
+                }
+            } catch (fsError) {
+                console.error('【朋友圈】加载 characters.json 失败:', fsError);
+            }
+            const characterToUse = persistentCharacter || character;
+
             // 从角色的 role_card 中获取正确的描述和性格
             const roleCard = await this.loadJson<any>(
-                this.getStorageKey(character.id, '_role')
+                this.getStorageKey(characterToUse.id, '_role')
             );
 
             if (!roleCard) {
-                console.error(`【朋友圈】未找到角色 ${character.name} 的角色卡`);
-                throw new Error(`未找到角色 ${character.name} 的角色卡`);
+                console.error(`【朋友圈】未找到角色 ${characterToUse.name} 的角色卡`);
+                throw new Error(`未找到角色 ${characterToUse.name} 的角色卡`);
             }
 
-            console.log(`【朋友圈】成功加载角色 ${character.name} 的角色卡`);
+            console.log(`【朋友圈】成功加载角色 ${characterToUse.name} 的角色卡`);
 
             // 构建朋友圈场景的R框架，使用默认的场景提示词
             const circleRFramework: CircleRFramework = {
@@ -522,17 +558,17 @@ export class CircleManager {
 
             // 保存R框架到storage
             await this.saveJson(
-                this.getStorageKey(character.id, '_circle_framework'),
+                this.getStorageKey(characterToUse.id, '_circle_framework'),
                 circleRFramework
             );
             
             // 保存角色数据以便后续处理
             await this.saveJson(
-                this.getStorageKey(character.id, '_character_data'),
-                character
+                this.getStorageKey(characterToUse.id, '_character_data'),
+                characterToUse
             );
             
-            console.log(`【朋友圈】成功为角色 ${character.name} 初始化朋友圈框架`);
+            console.log(`【朋友圈】成功为角色 ${characterToUse.name} 初始化朋友圈框架`);
 
             return true;
         } catch (error) {

@@ -2,7 +2,7 @@ import { ChatMessage } from '@/shared/types';
 import { mcpAdapter } from './mcp-adapter';
 import { CloudServiceProvider } from '@/services/cloud-service-provider';
 import { addCloudServiceStatusListener } from '@/utils/cloud-service-tracker';
-import { getCloudServiceStatus, } from '@/utils/settings-helper';
+import { getCloudServiceStatus, getApiSettings } from '@/utils/settings-helper';
 import { getCharacterTablesData } from '@/src/memory/plugins/table-memory/api';
 
 // Define interfaces for image handling
@@ -2346,6 +2346,7 @@ private async executeGenerateContent(contents: ChatMessage[], modelId: string, c
 }
 
     // 静态方法：允许外部直接生成内容（简化调用）
+    // 静态方法：允许外部直接生成内容（简化调用）
     static async executeDirectGenerateContent(
         promptOrMessages: string | ChatMessage[] | { role: string; content: string }[],
         options?: {
@@ -2354,8 +2355,23 @@ private async executeGenerateContent(contents: ChatMessage[], modelId: string, c
             modelId?: string;
         }
     ): Promise<string> {
-        // 1. 获取API key（优先参数，其次全局设置）
-        const apiKey = options?.apiKey || (typeof global !== 'undefined' && (global as any).GEMINI_API_KEY) || '';
+        // 1. 获取API key（优先参数，其次全局设置，再次settings-helper）
+        let apiKey = options?.apiKey 
+            || (typeof global !== 'undefined' && (global as any).GEMINI_API_KEY)
+            || '';
+
+        if (!apiKey) {
+            // 尝试通过 settings-helper 获取
+            try {
+                const apiSettings = getApiSettings();
+                if (apiSettings && apiSettings.apiKey) {
+                    apiKey = apiSettings.apiKey;
+                }
+            } catch (e) {
+                // 忽略异常，继续后续判断
+            }
+        }
+
         if (!apiKey) {
             throw new Error('GeminiAdapter.executeDirectGenerateContent: API key is required');
         }

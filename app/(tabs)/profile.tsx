@@ -64,7 +64,7 @@ const Profile: React.FC = () => {
 
       {/* Header Image */}
       <Image 
-        source={require('@/assets/images/default-background.jpeg')}
+        source={require('@/assets/images/default-background.jpg')}
         style={styles.headerImage}
         resizeMode="cover"
       />
@@ -77,7 +77,7 @@ const Profile: React.FC = () => {
             style={styles.avatar}
           />
           <View style={styles.editAvatarButton}>
-            <Ionicons name="camera" size={16} color="#fff" />
+            <Ionicons name="camera" size={16} color="black" />
           </View>
         </TouchableOpacity>
       </View>
@@ -125,13 +125,13 @@ const Profile: React.FC = () => {
         />
         
         {/* Add new debug entry point */}
-        {/* <ListItem
+        <ListItem
           title="调试工具"
           leftIcon="construct-outline"
           chevron={true}
           onPress={() => router.push('../pages/debug-tools')}
           subtitle="角色数据检查"
-        /> */}
+        />
         
         <ListItem
           title="关于"

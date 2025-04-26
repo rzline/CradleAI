@@ -63,7 +63,7 @@ const GlobalSettings = () => {
 
       <ScrollView style={styles.scrollView}>
         <Image 
-          source={require('@/assets/images/default-background.jpeg')}
+          source={require('@/assets/images/default-background.jpg')}
           style={styles.headerImage}
           resizeMode="cover"
         />

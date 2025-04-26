@@ -1242,8 +1242,8 @@ const ApiSettings = () => {
               style={styles.saveButton}
               onPress={saveSettings}
             >
-              <Ionicons name="save-outline" size={18} color="#fff" style={styles.buttonIcon} />
-              <Text style={styles.buttonText}>保存设置</Text>
+              <Ionicons name="save-outline" size={18} color="black" style={styles.buttonIcon} />
+              <Text style={styles.savebuttonText}>保存设置</Text>
             </TouchableOpacity>
           </View>
         </ScrollView>
@@ -1460,6 +1460,11 @@ const styles = StyleSheet.create({
     marginRight: 8,
   },
   buttonText: {
+    color: 'white',
+    fontWeight: 'bold',
+    fontSize: 16,
+  },
+  savebuttonText: {
     color: 'black',
     fontWeight: 'bold',
     fontSize: 16,

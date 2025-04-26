@@ -91,7 +91,6 @@ export default function RootLayout() {
                   <Stack.Screen name="(tabs)" />
                   <Stack.Screen name="pages/character-detail" />
                   <Stack.Screen name="pages/create_char" />
-                  <Stack.Screen name="pages/create_char_cradle" />
                   <Stack.Screen name="pages/create_character_tabs" />
                 </Stack>
                 <StatusBar style="dark" backgroundColor='black' />

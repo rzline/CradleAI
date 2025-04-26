@@ -39,12 +39,12 @@ import { CircleScheduler } from '@/services/circle-scheduler';
 import { NodeSTManager } from '@/utils/NodeSTManager';
 import { GeminiAdapter } from '@/NodeST/nodest/utils/gemini-adapter';
 import { ImageManager } from '@/utils/ImageManager';
+import * as FileSystem from 'expo-file-system'; // 新增导入
 
 const { width } = Dimensions.get('window');
 const CARD_WIDTH = width - 32;
 const AVATAR_SIZE = 48;
 const HEADER_HEIGHT = 90;
-
 const Explore: React.FC = () => {
   const { characters, setCharacters, updateCharacter, toggleFavorite, addMessage } = useCharacters();
   const { user } = useUser();
@@ -58,7 +58,7 @@ const Explore: React.FC = () => {
   const [testResults, setTestResults] = useState<Array<{characterId: string, name: string, success: boolean, action?: any}>>([]);
   const [showTestResults, setShowTestResults] = useState(false);
   const flatListRef = useRef<FlatList>(null);
-
+  const [fallbackCharacter, setFallbackCharacter] = useState<Character | null>(null);
 
   const [isForwardSheetVisible, setIsForwardSheetVisible] = useState(false);
   const [selectedPost, setSelectedPost] = useState<CirclePost | null>(null);
@@ -99,6 +99,46 @@ const Explore: React.FC = () => {
 
   // Add useRef for storing scheduler instance
   const schedulerRef = useRef<CircleScheduler | null>(null);
+
+  // 新增：selectedCharacter 兜底机制
+  const selectedCharacter = selectedCharacterId
+    ? characters.find((char: Character) => char.id === selectedCharacterId)
+    : null;
+
+  // 兜底逻辑：如果 context 里查不到角色，尝试直接从 characters.json 读取
+  useEffect(() => {
+    if (
+      selectedCharacterId &&
+      !selectedCharacter // context 里查不到
+    ) {
+      (async () => {
+        try {
+          const filePath = FileSystem.documentDirectory + 'characters.json';
+          const fileInfo = await FileSystem.getInfoAsync(filePath);
+          if (fileInfo.exists) {
+            const content = await FileSystem.readAsStringAsync(filePath);
+            const arr = JSON.parse(content);
+            if (Array.isArray(arr)) {
+              const found = arr.find((c: any) => c.id === selectedCharacterId);
+              if (found) {
+                setFallbackCharacter(found);
+                // 可选：自动补充到 context，保证后续 context 可用
+                if (!characters.some(c => c.id === found.id)) {
+                  setCharacters([...characters, found]);
+                }
+                return;
+              }
+            }
+          }
+          setFallbackCharacter(null);
+        } catch (e) {
+          setFallbackCharacter(null);
+        }
+      })();
+    } else {
+      setFallbackCharacter(null);
+    }
+  }, [selectedCharacterId, selectedCharacter, characters, setCharacters]);
 
   // Get scheduler instance
   useEffect(() => {
@@ -194,14 +234,6 @@ const Explore: React.FC = () => {
     } finally {
       setIsGeneratingActions(false);
     }
-  };
-
-  // Map characters object to an array for CharacterSelector
-  const charactersArray = Object.values(characters || {});
-
-  // Process characters update from RelationshipActions component
-  const handleUpdateCharacters = (updatedCharacters: Character[]) => {
-    setCharacters(updatedCharacters);
   };
 
   // Circle interaction handling
@@ -1278,8 +1310,11 @@ const Explore: React.FC = () => {
     try {
       console.log(`【朋友圈】转发帖子给角色 ID: ${characterId}, 附加消息: ${message}`);
       
-      // Find the target character
-      const character = characters.find(c => c.id === characterId);
+      // 优先用 fallbackCharacter
+      const character = (fallbackCharacter && fallbackCharacter.id === characterId)
+        ? fallbackCharacter
+        : characters.find(c => c.id === characterId);
+
       if (!character) {
         Alert.alert('转发失败', '未找到所选角色');
         return;
@@ -1310,7 +1345,7 @@ const Explore: React.FC = () => {
       console.error('【朋友圈】转发失败:', error);
       Alert.alert('转发失败', error instanceof Error ? error.message : '请检查网络连接');
     }
-  }, [selectedPost, characters, addMessage]);
+  }, [selectedPost, characters, fallbackCharacter, addMessage]);
   
   // Add new helper function to handle text-only forwards
   const handleForwardTextOnly = async (character: Character, forwardedContent: string) => {
@@ -1704,7 +1739,7 @@ const Explore: React.FC = () => {
     >
       <StatusBar barStyle="light-content" backgroundColor={theme.colors.background} />
       <ImageBackground 
-        source={require('@/assets/images/default-background.jpeg')}
+        source={require('@/assets/images/default-background.jpg')}
         style={styles.backgroundImage}
       >
         {renderHeader()}

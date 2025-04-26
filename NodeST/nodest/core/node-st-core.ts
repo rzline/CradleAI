@@ -1,3 +1,4 @@
+import * as FileSystem from 'expo-file-system';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { GeminiAdapter } from '../utils/gemini-adapter';
 import { OpenRouterAdapter } from '../utils/openrouter-adapter';
@@ -15,7 +16,15 @@ import {
 } from '../../../shared/types';
 import { MessagePart } from '@/shared/types';
 import { memoryService } from '@/services/memory-service';
+
 export class NodeSTCore {
+        // 角色数据文件存储目录
+        private static characterDataDir = FileSystem.documentDirectory + 'nodest_characters/';
+            // 辅助方法：获取角色数据文件路径
+    private getCharacterDataFilePath(key: string): string {
+        // key 形如 nodest_{conversationId}_{suffix}
+        return NodeSTCore.characterDataDir + key + '.json';
+    }
     private geminiAdapter: GeminiAdapter | null = null;
     private openRouterAdapter: OpenRouterAdapter | null = null;
     private currentContents: ChatMessage[] | null = null;
@@ -167,7 +176,10 @@ export class NodeSTCore {
 
     private async saveJson(key: string, data: any): Promise<void> {
         try {
-            await AsyncStorage.setItem(key, JSON.stringify(data));
+            // 统一全部写入文件
+            await FileSystem.makeDirectoryAsync(NodeSTCore.characterDataDir, { intermediates: true }).catch(() => {});
+            const filePath = this.getCharacterDataFilePath(key);
+            await FileSystem.writeAsStringAsync(filePath, JSON.stringify(data));
         } catch (error) {
             console.error(`Error saving data for key ${key}:`, error);
             throw error;
@@ -176,8 +188,12 @@ export class NodeSTCore {
 
     private async loadJson<T>(key: string): Promise<T | null> {
         try {
-            const data = await AsyncStorage.getItem(key);
-            return data ? JSON.parse(data) : null;
+            // 统一全部从文件读取
+            const filePath = this.getCharacterDataFilePath(key);
+            const fileInfo = await FileSystem.getInfoAsync(filePath);
+            if (!fileInfo.exists) return null;
+            const content = await FileSystem.readAsStringAsync(filePath);
+            return content ? JSON.parse(content) : null;
         } catch (error) {
             console.error(`Error loading data for key ${key}:`, error);
             return null;
@@ -2305,11 +2321,11 @@ export class NodeSTCore {
      * @param conversationId The conversation ID to delete data for
      * @returns true if deletion was successful, false otherwise
      */
+
     async deleteCharacterData(conversationId: string): Promise<boolean> {
         try {
             console.log('[NodeSTCore] Deleting all data for conversation:', conversationId);
-            
-            // Define all the keys we need to delete
+            // 角色数据文件key列表
             const keys = [
                 this.getStorageKey(conversationId, '_role'),
                 this.getStorageKey(conversationId, '_world'),
@@ -2318,17 +2334,19 @@ export class NodeSTCore {
                 this.getStorageKey(conversationId, '_history'),
                 this.getStorageKey(conversationId, '_contents')
             ];
-            
-            // Delete all keys in parallel
+            // 删除文件
             await Promise.all(keys.map(async (key) => {
+                const filePath = this.getCharacterDataFilePath(key);
                 try {
-                    await AsyncStorage.removeItem(key);
-                    console.log(`[NodeSTCore] Deleted key: ${key}`);
+                    const fileInfo = await FileSystem.getInfoAsync(filePath);
+                    if (fileInfo.exists) {
+                        await FileSystem.deleteAsync(filePath, { idempotent: true });
+                        console.log(`[NodeSTCore] Deleted file: ${filePath}`);
+                    }
                 } catch (error) {
-                    console.error(`[NodeSTCore] Error deleting key ${key}:`, error);
+                    console.error(`[NodeSTCore] Error deleting file ${filePath}:`, error);
                 }
             }));
-            
             console.log('[NodeSTCore] Successfully deleted all data for conversation:', conversationId);
             return true;
         } catch (error) {

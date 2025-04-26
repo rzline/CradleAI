@@ -517,7 +517,7 @@ const TopBarWithBackground: React.FC<TopBarWithBackgroundProps> = ({
             source={
               typeof selectedCharacter.backgroundImage === 'string'
                 ? { uri: selectedCharacter.backgroundImage }
-                : (selectedCharacter.backgroundImage as any) || require('@/assets/images/default-background.jpeg')
+                : (selectedCharacter.backgroundImage as any) || require('@/assets/images/default-background.jpg')
             }
             style={styles.backgroundImage}
           />

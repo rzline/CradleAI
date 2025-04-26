@@ -38,32 +38,6 @@ interface SettingsSideBarProps {
   animationValue?: Animated.Value; // Add animation value prop
 }
 
-// Add this interface for CircleInteractionSettings props
-interface CircleInteractionSettingsProps {
-  character: Character;
-  updateCharacter: (character: Character) => Promise<void>;
-}
-
-// Add this interface for MemorySummarySettings props
-interface MemorySummarySettingsProps {
-  character: Character;
-  updateCharacter: (character: Character) => Promise<void>;
-}
-
-// Add this interface for DialogModeSettings props
-interface DialogModeSettingsProps {
-  updateVisualNovelSettings: (settings: Partial<{
-    fontFamily: string;
-    textColor: string;
-    backgroundColor: string;
-  }>) => void;
-  visualNovelSettings: {
-    fontFamily: string;
-    textColor: string;
-    backgroundColor: string;
-  };
-}
-
 // Add this interface for CustomUserSettingProps
 interface CustomUserSettingProps {
   character: Character;
