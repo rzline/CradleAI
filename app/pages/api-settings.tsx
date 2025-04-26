@@ -36,7 +36,11 @@ const ApiSettings = () => {
   const [isTesting, setIsTesting] = useState(false);
 
   // Gemini settings
-  const [geminiKey, setGeminiKey] = useState(user?.settings?.chat?.characterApiKey || '');
+  const [geminiKey, setGeminiKey] = useState(
+    user?.settings?.chat?.characterApiKey && user?.settings?.chat?.characterApiKey !== '123'
+      ? user.settings.chat.characterApiKey
+      : ''
+  );
   const [additionalGeminiKeys, setAdditionalGeminiKeys] = useState<string[]>(
     user?.settings?.chat?.additionalGeminiKeys || ['', '']
   );
@@ -92,7 +96,9 @@ const ApiSettings = () => {
     user?.settings?.chat?.useZhipuEmbedding || false
   );
   const [zhipuApiKey, setZhipuApiKey] = useState(
-    user?.settings?.chat?.zhipuApiKey || ''
+    user?.settings?.chat?.zhipuApiKey && user?.settings?.chat?.zhipuApiKey !== '123'
+      ? user.settings.chat.zhipuApiKey
+      : ''
   );
 
   // Brave Search API settings
@@ -145,6 +151,11 @@ const ApiSettings = () => {
     'gemini-1.5-flash-8b-exp-0827'
   ];
 
+  // 修复：如果未填写geminiKey，则设为'123'以触发回退
+  const effectiveGeminiKey = geminiKey && geminiKey.trim() !== '' ? geminiKey : '123';
+  // 修复：如果未填写zhipuApiKey，则设为'123'以触发回退
+  const effectiveZhipuApiKey = zhipuApiKey && zhipuApiKey.trim() !== '' ? zhipuApiKey : '123';
+
   // Load existing license information on component mount
   useEffect(() => {
     const loadLicenseInfo = async () => {
@@ -156,9 +167,6 @@ const ApiSettings = () => {
           setActivationCode(info.licenseKey || ''); // Ensure we don't set undefined
           console.log('已加载验证信息:', {
             key: info.licenseKey ? info.licenseKey.substring(0, 4) + '****' : 'No key',
-            // planId: info.planId,
-            // expiryDate: info.expiryDate,
-            // deviceId: info.deviceId ? info.deviceId.substring(0, 4) + '****' : 'Unknown',
             isValid: info.isValid
           });
 
@@ -287,7 +295,7 @@ const ApiSettings = () => {
     try {
       setIsTesting(true);
 
-      const apiKey = openRouterEnabled ? openRouterKey : geminiKey;
+      const apiKey = openRouterEnabled ? openRouterKey : (geminiKey && geminiKey.trim() !== '' ? geminiKey : '123');
       const apiProvider = openRouterEnabled ? 'openrouter' : 'gemini';
 
       if (!apiKey) {
@@ -396,7 +404,9 @@ const ApiSettings = () => {
     try {
       setIsTesting(true);
 
-      if (!zhipuApiKey) {
+      const apiKeyToUse = zhipuApiKey && zhipuApiKey.trim() !== '' ? zhipuApiKey : '123';
+
+      if (!apiKeyToUse || apiKeyToUse === '') {
         Alert.alert('错误', '请输入智谱清言API密钥');
         return;
       }
@@ -414,7 +424,7 @@ const ApiSettings = () => {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
-          'Authorization': `Bearer ${zhipuApiKey}`
+          'Authorization': `Bearer ${apiKeyToUse}`
         },
         body: JSON.stringify(requestBody)
       });
@@ -533,9 +543,6 @@ const ApiSettings = () => {
       // Filter out empty additional API keys
       const validAdditionalKeys = additionalGeminiKeys.filter(key => key && key.trim() !== '');
 
-      // 修复：如果未填写geminiKey，则设为'123'以触发回退
-      const effectiveGeminiKey = geminiKey && geminiKey.trim() !== '' ? geminiKey : '123';
-
       if (useActivationCode && licenseInfo) {
         const apiSettings: Partial<GlobalSettings> = {
           chat: {
@@ -555,7 +562,7 @@ const ApiSettings = () => {
             maxtokens: user?.settings?.chat?.maxtokens || 2000,
             maxTokens: user?.settings?.chat?.maxTokens || 2000,
             useZhipuEmbedding: useZhipuEmbedding,
-            zhipuApiKey: zhipuApiKey,
+            zhipuApiKey: effectiveZhipuApiKey,
             useCloudService: useCloudService,
             cloudModel: useCloudService ? cloudModel : undefined,
             openrouter: {
@@ -603,11 +610,11 @@ const ApiSettings = () => {
         }
 
         // Update zhipuApiKey in Mem0Service directly if embedding is enabled
-        if (useZhipuEmbedding && zhipuApiKey) {
+        if (useZhipuEmbedding && effectiveZhipuApiKey) {
           try {
             const Mem0Service = require('@/src/memory/services/Mem0Service').default;
             const mem0Service = Mem0Service.getInstance();
-            mem0Service.updateEmbedderApiKey(zhipuApiKey);
+            mem0Service.updateEmbedderApiKey(effectiveZhipuApiKey);
             console.log('Updated zhipuApiKey in Mem0Service');
             
             // Reset embedding availability flag to true since we have a key now
@@ -674,7 +681,7 @@ const ApiSettings = () => {
             maxtokens: user?.settings?.chat?.maxtokens || 2000,
             maxTokens: user?.settings?.chat?.maxTokens || 2000,
             useZhipuEmbedding: useZhipuEmbedding,
-            zhipuApiKey: zhipuApiKey,
+            zhipuApiKey: effectiveZhipuApiKey,
             useCloudService: false,
             openrouter: {
               enabled: openRouterEnabled,
@@ -715,11 +722,11 @@ const ApiSettings = () => {
         }
 
         // Update zhipuApiKey in Mem0Service directly if embedding is enabled
-        if (useZhipuEmbedding && zhipuApiKey) {
+        if (useZhipuEmbedding && effectiveZhipuApiKey) {
           try {
             const Mem0Service = require('@/src/memory/services/Mem0Service').default;
             const mem0Service = Mem0Service.getInstance();
-            mem0Service.updateEmbedderApiKey(zhipuApiKey);
+            mem0Service.updateEmbedderApiKey(effectiveZhipuApiKey);
             console.log('Updated zhipuApiKey in Mem0Service');
             
             // Reset embedding availability flag to true since we have a key now
@@ -853,7 +860,7 @@ const ApiSettings = () => {
                         color="#4CAF50"
                       /> 已激活
                     </Text>
-                    {/* <Text style={styles.licenseInfoText}>
+{/* <Text style={styles.licenseInfoText}>
                       计划: {licenseInfo.planId || '标准版'}
                     </Text>
                     <Text style={styles.licenseInfoText}>

@@ -2187,16 +2187,11 @@ useEffect(() => {
             top: 90, // 与TopBarWithBackground下沿对齐（原top: 40）
             right: 30,
             zIndex: 999999,
-            backgroundColor: 'rgba(40,40,40,0.85)',
             borderRadius: 20,
             paddingVertical: 8,
             paddingHorizontal: 18,
             flexDirection: 'row',
             alignItems: 'center',
-            shadowColor: '#000',
-            shadowOffset: { width: 0, height: 2 },
-            shadowOpacity: 0.15,
-            shadowRadius: 4,
             elevation: 8,
           }}>
             <ActivityIndicator size="small" color="rgb(255, 224, 195)" />

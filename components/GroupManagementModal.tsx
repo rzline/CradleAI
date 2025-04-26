@@ -240,17 +240,16 @@ const GroupManagementModal: React.FC<GroupManagementModalProps> = ({
         style={styles.memberAvatar}
       />
       <View style={styles.memberInfoContainer}>
-        <Text style={styles.memberName}>{currentUser.name || 'You'}</Text>
-        <Text style={styles.memberDescription}>Current user</Text>
+        <Text style={styles.memberName}>{currentUser.name || '我'}</Text>
       </View>
       
       <View style={styles.userBadge}>
-        <Text style={styles.userBadgeText}>You</Text>
+        <Text style={styles.userBadgeText}>我</Text>
       </View>
       
       {currentUser.id === group.groupOwnerId && (
         <View style={styles.ownerBadge}>
-          <Text style={styles.ownerBadgeText}>Owner</Text>
+          <Text style={styles.ownerBadgeText}>群组</Text>
         </View>
       )}
     </View>
@@ -300,9 +299,9 @@ const GroupManagementModal: React.FC<GroupManagementModalProps> = ({
       ) : (
         <>
           <Ionicons name="search" size={40} color="#666" />
-          <Text style={styles.emptyText}>No available characters found</Text>
+          <Text style={styles.emptyText}>没有可加入的角色</Text>
           <Text style={styles.emptySubText}>
-            Create more characters to add them to this group
+            创建更多角色以加入此群组
           </Text>
         </>
       )}
@@ -478,7 +477,7 @@ const GroupManagementModal: React.FC<GroupManagementModalProps> = ({
               onPress={() => setActiveTab('members')}
             >
               <Text style={[styles.tabText, activeTab === 'members' && styles.activeTabText]}>
-                Members ({(group.groupMemberIds?.length || 0)})
+                群成员 ({(group.groupMemberIds?.length || 0)})
               </Text>
             </TouchableOpacity>
 
@@ -487,7 +486,7 @@ const GroupManagementModal: React.FC<GroupManagementModalProps> = ({
               onPress={() => setActiveTab('add')}
             >
               <Text style={[styles.tabText, activeTab === 'add' && styles.activeTabText]}>
-                Add Characters
+                新增群成员
               </Text>
             </TouchableOpacity>
           </View>

@@ -31,6 +31,9 @@ const { width, height } = Dimensions.get('window');
 const getCharacterImageDir = (characterId: string) =>
   `${FileSystem.documentDirectory}character_${characterId}/`;
 
+const getGalleryMetaFile = (characterId: string) =>
+  `${getCharacterImageDir(characterId)}gallery.json`;
+
 interface CharacterImageGallerySidebarProps {
   visible: boolean;
   onClose: () => void;
@@ -88,7 +91,18 @@ const CharacterImageGallerySidebar: React.FC<CharacterImageGallerySidebarProps> 
   const loadPersistedImagesFromFS = async () => {
     try {
       const dir = getCharacterImageDir(character.id);
+      const metaFile = getGalleryMetaFile(character.id);
       const dirInfo = await FileSystem.getInfoAsync(dir);
+      let meta: Record<string, any> = {};
+      const metaInfo = await FileSystem.getInfoAsync(metaFile);
+      if (metaInfo.exists) {
+        const metaStr = await FileSystem.readAsStringAsync(metaFile);
+        try {
+          meta = JSON.parse(metaStr);
+        } catch {
+          meta = {};
+        }
+      }
       if (!dirInfo.exists) {
         setPersistedImages([]);
         return;
@@ -98,15 +112,23 @@ const CharacterImageGallerySidebar: React.FC<CharacterImageGallerySidebarProps> 
         .filter(f => /\.(jpg|jpeg|png|webp)$/i.test(f))
         .map(f => {
           const uri = dir + f;
+          const metaItem = meta[f];
           return {
             id: f,
             url: uri,
             localUri: uri,
             characterId: character.id,
-            createdAt: Date.now(),
-            isFavorite: false,
-            isUserUploaded: true,
-            generationStatus: 'success',
+            createdAt: metaItem?.createdAt || Date.now(),
+            isFavorite: metaItem?.isFavorite || false,
+            isUserUploaded: metaItem?.isUserUploaded || true,
+            generationStatus: metaItem?.generationStatus || 'success',
+            generationConfig: metaItem?.generationConfig,
+            tags: metaItem?.tags,
+            isAvatar: metaItem?.isAvatar,
+            isDefaultBackground: metaItem?.isDefaultBackground,
+            setAsBackground: metaItem?.setAsBackground,
+            isNovelAI: metaItem?.isNovelAI,
+            seed: metaItem?.seed,
           };
         });
       setPersistedImages(images);
@@ -122,6 +144,7 @@ const CharacterImageGallerySidebar: React.FC<CharacterImageGallerySidebarProps> 
 
   const addImageAndPersist = async (newImage: CharacterImage) => {
     const dir = getCharacterImageDir(character.id);
+    const metaFile = getGalleryMetaFile(character.id);
     const filename = newImage.localUri?.split('/').pop() || newImage.url?.split('/').pop();
     if (!filename) return;
     const fileUri = dir + filename;
@@ -130,6 +153,22 @@ const CharacterImageGallerySidebar: React.FC<CharacterImageGallerySidebarProps> 
       if (!fileInfo.exists && newImage.localUri && newImage.localUri !== fileUri) {
         await FileSystem.copyAsync({ from: newImage.localUri, to: fileUri });
       }
+      let meta: Record<string, any> = {};
+      const metaInfo = await FileSystem.getInfoAsync(metaFile);
+      if (metaInfo.exists) {
+        try {
+          meta = JSON.parse(await FileSystem.readAsStringAsync(metaFile));
+        } catch {
+          meta = {};
+        }
+      }
+      meta[filename] = {
+        ...newImage,
+        url: fileUri,
+        localUri: fileUri,
+        id: filename,
+      };
+      await FileSystem.writeAsStringAsync(metaFile, JSON.stringify(meta));
       await loadPersistedImagesFromFS();
     } catch (e) {
       console.warn('[图库侧栏] 保存图片到文件系统失败', e);
@@ -139,31 +178,13 @@ const CharacterImageGallerySidebar: React.FC<CharacterImageGallerySidebarProps> 
   const allImages = useMemo(() => {
     let combinedImages: CharacterImage[] = [];
     combinedImages = [...persistedImages, ...images];
-    if (character.avatar) {
-      const avatarImage: CharacterImage = {
-        id: `avatar_${character.id}_${lastUpdateTimestamp}`,
-        url: character.avatar,
-        localUri: character.avatar,
-        characterId: character.id,
-        createdAt: character.createdAt || Date.now(),
-        isFavorite: false,
-        isAvatar: true
-      };
-      combinedImages.unshift(avatarImage);
-    }
-    if (character.backgroundImage && character.backgroundImage !== character.avatar) {
-      const bgImage: CharacterImage = {
-        id: `bg_${character.id}_${lastUpdateTimestamp}`,
-        url: typeof character.backgroundImage === 'string' ? character.backgroundImage : character.backgroundImage.url,
-        localUri: typeof character.backgroundImage === 'string' ? character.backgroundImage : character.backgroundImage.url,
-        characterId: character.id,
-        createdAt: character.createdAt || Date.now(),
-        isFavorite: false,
-        isDefaultBackground: true,
-        isAvatar: false
-      };
-      combinedImages.unshift(bgImage);
-    }
+    const seen = new Set();
+    combinedImages = combinedImages.filter(img => {
+      const key = img.localUri || img.url;
+      if (seen.has(key)) return false;
+      seen.add(key);
+      return true;
+    });
     combinedImages = combinedImages.map(img => {
       if (img.generationStatus === 'pending' && (img.url || img.localUri)) {
         return {
@@ -194,10 +215,15 @@ const CharacterImageGallerySidebar: React.FC<CharacterImageGallerySidebarProps> 
     const image = allImages.find(img => img.id === imageId);
     if (image && setCharacterBackgroundImage) {
       await addImageAndPersist(image);
+      // 修正：补全 isNovelAI 字段
+      const config = {
+        ...(image.generationConfig || {}),
+        isNovelAI: image.isNovelAI === true || (image.generationConfig && image.generationConfig.isNovelAI === true)
+      };
       await setCharacterBackgroundImage(
         character.id,
         image.localUri || image.url,
-        image.generationConfig
+        config
       );
       setShowOptionsMenu(false);
       setUpdateCounter(prev => prev + 1);
@@ -205,8 +231,10 @@ const CharacterImageGallerySidebar: React.FC<CharacterImageGallerySidebarProps> 
   };
 
   const handleAddNewImage = (newImage: CharacterImage) => {
-    addImageAndPersist(newImage);
-    setUpdateCounter(prev => prev + 1);
+    if (newImage.generationConfig) {
+      addImageAndPersist(newImage);
+      setUpdateCounter(prev => prev + 1);
+    }
   };
 
   useEffect(() => {
@@ -532,10 +560,23 @@ const CharacterImageGallerySidebar: React.FC<CharacterImageGallerySidebarProps> 
   const handleDeleteImage = (imageId: string) => {
     setPersistedImages(prev => {
       const updated = prev.filter(img => img.id !== imageId);
-      // 文件删除逻辑移到这里，确保异步执行
       const imgToDelete = prev.find(img => img.id === imageId);
       if (imgToDelete && imgToDelete.localUri) {
         FileSystem.deleteAsync(imgToDelete.localUri, { idempotent: true }).catch(() => {});
+        (async () => {
+          const metaFile = getGalleryMetaFile(character.id);
+          let meta: Record<string, any> = {};
+          const metaInfo = await FileSystem.getInfoAsync(metaFile);
+          if (metaInfo.exists) {
+            try {
+              meta = JSON.parse(await FileSystem.readAsStringAsync(metaFile));
+            } catch {
+              meta = {};
+            }
+          }
+          delete meta[imgToDelete.id];
+          await FileSystem.writeAsStringAsync(metaFile, JSON.stringify(meta));
+        })();
       }
       return updated;
     });
@@ -884,7 +925,7 @@ const CharacterImageGallerySidebar: React.FC<CharacterImageGallerySidebarProps> 
             initialSettingsState={lastImageGenSettings}
             initialSeed={lastImageGenSeed}
             onSuccess={(newImage, settingsState, usedSeed) => {
-              addImageAndPersist(newImage);
+              handleAddNewImage(newImage);
               setShowRegenerationModal(false);
               if (settingsState) setLastImageGenSettings(settingsState);
               if (usedSeed) setLastImageGenSeed(usedSeed);

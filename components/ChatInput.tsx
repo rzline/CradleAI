@@ -848,14 +848,6 @@ ${recentMessagesContext ? `最近的对话记录:\n${recentMessagesContext}\n` :
     }
   };
   
-  const openImageEditGenModal = () => {
-    setShowActions(false);
-    setReferenceImage(null);
-    setReferenceImageType(null);
-    setImagePrompt('');
-    setShowImageEditGenModal(true);
-  };
-  
   const handleBraveSearchToggle = () => {
     setShowActions(false);
     if (toggleBraveSearch) {
