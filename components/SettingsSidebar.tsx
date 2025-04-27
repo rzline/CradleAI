@@ -551,24 +551,6 @@ export default function SettingsSidebar({
     }
   };
 
-  // Add handler to update memory summary settings
-  const updateMemorySummarySettings = async () => {
-    if (selectedCharacter) {
-      try {
-        await memoryService.saveSettings(selectedCharacter.id, {
-          enabled: isMemorySummaryEnabled,
-          summaryThreshold,
-          summaryLength,
-          lastSummarizedAt: 0 // Reset last summarized timestamp
-        });
-        
-        Alert.alert('成功', '记忆总结设置已更新');
-      } catch (error) {
-        console.error('Error saving memory settings:', error);
-        Alert.alert('错误', '无法保存记忆设置');
-      }
-    }
-  };
 
   const handleAutoMessageToggle = async () => {
     if (selectedCharacter) {
@@ -627,26 +609,6 @@ export default function SettingsSidebar({
         
         // Emit event to clear badge
         EventRegister.emit('unreadMessagesUpdated', 0);
-      }
-    }
-  };
-
-  const handleCircleInteractionToggle = async () => {
-    if (selectedCharacter) {
-      const updatedCharacter = {
-        ...selectedCharacter,
-        circleInteraction: !isCircleInteractionEnabled
-      };
-      await updateCharacter(updatedCharacter);
-      setIsCircleInteractionEnabled(!isCircleInteractionEnabled);
-      
-      // Show a hint if enabling circle interaction
-      if (!isCircleInteractionEnabled) {
-        Alert.alert(
-          '提示', 
-          '已启用朋友圈互动功能，角色将能够发布、点赞和评论朋友圈内容。',
-          [{ text: '确定', style: 'default' }]
-        );
       }
     }
   };

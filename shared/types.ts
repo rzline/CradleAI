@@ -479,6 +479,7 @@ export interface CharacterImage {
   };
   isNovelAI?: boolean; // 顶层也可加，便于兼容
   seed?: number; // Optional seed for image generation
+  localAsset?: string; // Local asset path for the image
 }
 
 // Fix the CradleCharacter interface by making it extend Character

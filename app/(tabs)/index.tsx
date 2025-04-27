@@ -53,6 +53,7 @@ import NovelAIService from '@/components/NovelAIService'; // 新增
 import { CloudServiceProvider } from '@/services/cloud-service-provider';
 import type  CloudServiceProviderClass  from '@/services/cloud-service-provider';
 import * as FileSystem from 'expo-file-system'; // 新增导入
+import { importDefaultCharactersIfNeeded, resetDefaultCharacterImported } from '@/components/DefaultCharacterImporter';
 
 // Create a stable memory configuration outside the component
 type MemoryConfig = {
@@ -162,7 +163,9 @@ const App = () => {
     clearMessages,
     updateCharacterExtraBackgroundImage,
     isLoading: charactersLoading, // 新增：获取加载状态
-    setCharacters // 新增：用于兜底时补充context
+    setCharacters ,// 新增：用于兜底时补充context
+    addCharacter, // <-- 修复：确保解构
+    addConversation, // <-- 修复：确保解构
   } = useCharacters();
   
   const [selectedConversationId, setSelectedConversationId] = useState<string | null>(null);
@@ -175,6 +178,84 @@ const App = () => {
     selectedConversationId
       ? characters.find((char: Character) => char.id === selectedConversationId)
       : null;
+
+    // 新增：重置初始化状态按钮
+    const handleResetDefaultCharacterInit = async () => {
+      await resetDefaultCharacterImported();
+      Alert.alert('已重置', '下次启动将重新导入默认角色');
+    };
+    const [defaultCharacterNavigated, setDefaultCharacterNavigated] = useState(false);
+    const characterToUse = fallbackCharacter || selectedCharacter;
+    const { mode, setMode } = useDialogMode();
+  // Add state for default character import loading
+  const [isInitializing, setIsInitializing] = useState(true);
+  // 自动初始化默认角色（仅首次）
+  // 修改：自动初始化默认角色（仅首次）
+  useEffect(() => {
+    // 只在应用启动时调用一次
+    (async () => {
+      try {
+        console.log('[index] 调用 importDefaultCharactersIfNeeded ...');
+        setIsInitializing(true); // 开始初始化
+        
+        const result = await importDefaultCharactersIfNeeded(
+          addCharacter,
+          addConversation,
+          // 下面两个方法在 context 中已定义
+          (id: string, uri: string) => {
+            console.log(`[index] 调用 updateCharacterExtraBackgroundImage: id=${id}, uri=${uri}`);
+            return updateCharacterExtraBackgroundImage(id, uri);
+          },
+          (id: string, uri: string) => {
+            console.log(`[index] 调用 setCharacterAvatar: id=${id}, uri=${uri}`);
+            // 兼容 context 的 setCharacterAvatar
+            if (typeof id === 'string' && typeof uri === 'string') {
+              return characters.find(c => c.id === id)
+                ? Promise.resolve()
+                : Promise.resolve();
+            }
+            return Promise.resolve();
+          }
+        );
+        
+        console.log('[index] importDefaultCharactersIfNeeded 完成', result);
+        
+        // 如果有角色ID，自动选择该角色（不进行路由跳转）
+        if (result && result.characterId) {
+          setSelectedConversationId(result.characterId);
+          
+          // 如果是新导入的角色，更新消息列表
+          if (result.imported) {
+            const characterMessages = getMessages(result.characterId);
+            setMessages(characterMessages);
+            console.log(`[index] 选择了新导入的默认角色：${result.characterId}`);
+          }
+          // 新增：如果视觉小说模式已激活，设置 defaultCharacterNavigated 为 true
+          if (mode === 'visual-novel') {
+            console.log('[index] 视觉小说模式已激活，设置 defaultCharacterNavigated 为 true');
+            setDefaultCharacterNavigated(true);// <--- 必须加上这一行
+            if (defaultCharacterNavigated) {
+              console.log('[index] defaultCharacterNavigated 已为 true，直接调用 handleResetConversation');
+            } else {
+              console.log('[index] 设置 defaultCharacterNavigated = true，reset');
+              setDefaultCharacterNavigated(true);
+
+            }
+          }
+        }
+        // 延迟一些时间再关闭加载状态，以确保UI正确渲染
+        setTimeout(() => setIsInitializing(false), 500);
+      } catch (e) {
+        // eslint-disable-next-line no-console
+        console.warn('[DefaultCharacterImporter] 初始化失败:', e);
+        setIsInitializing(false); // 即使失败也关闭加载状态
+      }
+    })();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+
+
 
   // 兜底逻辑：如果 context 里查不到角色，尝试直接从 characters.json 读取
   useEffect(() => {
@@ -248,6 +329,9 @@ const App = () => {
   // Add ref to track if first message needs to be sent
   const firstMessageSentRef = useRef<Record<string, boolean>>({});
 
+  // Add ref to track if first_mes has been sent for each character
+  const firstMesSentRef = useRef<Record<string, boolean>>({});
+
   // Add auto-message feature variables
   const [autoMessageEnabled, setAutoMessageEnabled] = useState(true);
   const autoMessageTimerRef = useRef<NodeJS.Timeout | null>(null);
@@ -271,7 +355,7 @@ const App = () => {
   const [isTtsEnhancerModalVisible, setIsTtsEnhancerModalVisible] = useState(false);
 
   // Get dialog mode
-  const { mode } = useDialogMode();
+  
 
   // Add new ref for video component
   const videoRef = useRef<Video | null>(null);
@@ -1135,15 +1219,7 @@ useEffect(() => {
     }
   };
 
-  const characterToUse = fallbackCharacter || selectedCharacter;
 
-  // 新增：启动或切换到index时验证characterToUse
-  useEffect(() => {
-    if (!characterToUse) {
-      // eslint-disable-next-line no-console
-      console.log('(NOBRIDGE) LOG  警告！characterToUse 不存在');
-    }
-  }, [characterToUse]);
 
   const handleAvatarPress = () => {
     // If in preview mode, ask user if they want to exit before navigating
@@ -1302,6 +1378,47 @@ useEffect(() => {
     }
   }, [characterId, characters, getMessages]);
 
+  // 监听 messages 变化，自动发送 first_mes（仅角色会话，且消息为空时）
+  useEffect(() => {
+    // 避免 handleResetConversation 后重复触发
+    if (
+      selectedConversationId &&
+      !isGroupMode &&
+      characterToUse &&
+      messages.length === 0 &&
+      !firstMesSentRef.current[selectedConversationId]
+    ) {
+      let firstMes = '';
+      try {
+        if (characterToUse.jsonData) {
+          const characterData = JSON.parse(characterToUse.jsonData);
+          firstMes = characterData.roleCard?.first_mes || '';
+        }
+      } catch (e) {
+        firstMes = '';
+      }
+      if (firstMes) {
+        addMessage(selectedConversationId, {
+          id: `first-auto-${Date.now()}`,
+          text: firstMes,
+          sender: 'bot',
+          timestamp: Date.now()
+        });
+        firstMesSentRef.current[selectedConversationId] = true;
+      }
+    }
+    // 如果消息不为空，标记已发送
+    if (selectedConversationId && messages.length > 0) {
+      firstMesSentRef.current[selectedConversationId] = true;
+    }
+    // 如果切换到新角色或清空消息，重置标记
+    if (selectedConversationId && messages.length === 0) {
+      // 只在未通过 reset 主动设置时重置
+      // 若 reset 后已设置为 true，则不重置
+      // 这里不需要特殊处理，reset 会主动设置为 true
+    }
+  }, [selectedConversationId, characterToUse, messages, isGroupMode, addMessage]);
+
   useEffect(() => {
     if (selectedConversationId) {
       console.log('[Index] Saving selectedConversationId to AsyncStorage:', selectedConversationId);
@@ -1316,25 +1433,31 @@ useEffect(() => {
     return selectedConversationId || undefined;
   }
 
-  // 获取角色的背景图片
-  const getBackgroundImage = () => {
-    // 优先显示extraBgImage（本地后处理生成的临时图片）
-    if (extraBgImage) {
-      return { uri: extraBgImage };
-    }
-    // 只在角色开启自动生成背景且有extrabackgroundimage时显示
+ // 获取角色的背景图片
+const getBackgroundImage = () => {
+  if (extraBgImage) {
+    return { uri: extraBgImage };
+  }
+  if (
+    characterToUse?.enableAutoExtraBackground &&
+    characterToUse?.extrabackgroundimage
+  ) {
+    return { uri: characterToUse.extrabackgroundimage };
+  }
+  // 修正：兼容 localAsset 格式
+  if (characterToUse?.backgroundImage) {
     if (
-      characterToUse?.enableAutoExtraBackground &&
-      characterToUse?.extrabackgroundimage
+      typeof characterToUse.backgroundImage === 'object' &&
+      characterToUse.backgroundImage.localAsset
     ) {
-      return { uri: characterToUse.extrabackgroundimage };
+      return characterToUse.backgroundImage.localAsset;
     }
-    // 否则回退到原始backgroundImage
-    if (characterToUse?.backgroundImage) {
+    if (typeof characterToUse.backgroundImage === 'string') {
       return { uri: characterToUse.backgroundImage };
     }
-    return require('@/assets/images/default-background.jpg');
-  };
+  }
+  return require('@/assets/images/default-background.jpg');
+};
 
   // 获取群聊背景图片（优先群聊自定义背景）
   const getGroupBackgroundImage = () => {
@@ -1353,15 +1476,13 @@ useEffect(() => {
   // Update handleResetConversation to send first_mes after reset
   const handleResetConversation = async () => {
     if (selectedConversationId) {
-      // Reset the conversation
       await clearMessages(selectedConversationId);
-      
-      // Clear the "first message sent" flag for this conversation
+      // 清除 first_mes 已发送标记
       if (firstMessageSentRef.current[selectedConversationId]) {
         delete firstMessageSentRef.current[selectedConversationId];
       }
-      
-      // After a short delay, trigger the first message effect
+      // 立即设置 firstMesSentRef，防止 useEffect 再次自动触发
+      firstMesSentRef.current[selectedConversationId] = true;
       setTimeout(() => {
         if (characterToUse?.jsonData) {
           try {
@@ -1373,9 +1494,7 @@ useEffect(() => {
                 sender: 'bot',
                 timestamp: Date.now()
               });
-              firstMessageSentRef.current[selectedConversationId] = true;
-              
-              // Reset auto-message timer
+              // 已经设置为 true，无需再次设置
               lastMessageTimeRef.current = Date.now();
               setupAutoMessageTimer();
             }
@@ -2139,14 +2258,47 @@ useEffect(() => {
     // eslint-disable-next-line
   }, [characterToUse?.enableAutoExtraBackground]);
 
+
+
   return (
     <View style={styles.outerContainer}>
       <StatusBar translucent backgroundColor="transparent" />
+            {/* 新增：初始化加载蒙层 */}
+            {isInitializing && (
+        <View style={styles.initializingOverlay}>
+          <ImageBackground 
+            source={require('@/assets/images/default-background.jpg')}
+            style={styles.initializingBackground}
+            resizeMode="cover"
+          >
+            <View style={styles.initializingIndicatorContainer}>
+              <ActivityIndicator size="large" color="#ffffff" />
+            </View>
+          </ImageBackground>
+        </View>
+      )}
+             {/* 新增：测试按钮，重置初始化状态 */}
+      <TouchableOpacity
+        style={{
+          position: 'absolute',
+          top: 40,
+          right: 20,
+          zIndex: 999999,
+          backgroundColor: '#fff',
+          borderRadius: 8,
+          paddingVertical: 6,
+          paddingHorizontal: 14,
+          elevation: 8,
+        }}
+        onPress={handleResetDefaultCharacterInit}
+      >
+        <Text style={{ color: '#333', fontWeight: 'bold' }}>重置默认角色初始化</Text>
+      </TouchableOpacity>
 
       <MemoryProvider config={memoryConfig}>
         <Mem0Initializer />
         
-        {/* Background container remains static */}
+
         <View style={styles.backgroundContainer}>
           {!isGroupMode && characterToUse?.dynamicPortraitEnabled && characterToUse?.dynamicPortraitVideo ? (
             // Render video background if enabled and video exists
@@ -2690,6 +2842,21 @@ const styles = StyleSheet.create({
     padding: 10,
     backgroundColor: `transparent`,
   },
+  initializingOverlay: {
+    ...StyleSheet.absoluteFillObject,
+    zIndex: 10000, // 确保在最上层
+  },
+  initializingBackground: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  initializingIndicatorContainer: {
+    backgroundColor: 'rgba(0, 0, 0, 0.4)',
+    borderRadius: 16,
+    padding: 24,
+  },
+  
 });
 
 export default App;
