@@ -2277,8 +2277,8 @@ const getBackgroundImage = () => {
           </ImageBackground>
         </View>
       )}
-             {/* 新增：测试按钮，重置初始化状态 */}
-      <TouchableOpacity
+             
+      {/* <TouchableOpacity  //新增：测试按钮，重置初始化状态
         style={{
           position: 'absolute',
           top: 40,
@@ -2293,7 +2293,7 @@ const getBackgroundImage = () => {
         onPress={handleResetDefaultCharacterInit}
       >
         <Text style={{ color: '#333', fontWeight: 'bold' }}>重置默认角色初始化</Text>
-      </TouchableOpacity>
+      </TouchableOpacity> */}
 
       <MemoryProvider config={memoryConfig}>
         <Mem0Initializer />

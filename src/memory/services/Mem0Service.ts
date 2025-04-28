@@ -266,16 +266,18 @@ class Mem0Service {
    * @param role 角色 ('user' | 'bot')
    * @param characterId 角色ID
    * @param conversationId 会话ID
+   * @param llmResponse 可选的LLM响应
    */
   async addChatMemory(
     message: string,
     role: 'user' | 'bot',
     characterId: string,
     conversationId: string,
+    llmResponse?: string // 新增参数：可选LLM响应
   ): Promise<void> {
     try {
       this.checkInitialized();
-      
+
       // 如果嵌入服务不可用且表格插件也不可用，记录消息但不尝试添加
       if (!this.isEmbeddingAvailable || !this.memoryEnabled) {
         // 新增：嵌入不可用时，主动调用表格插件兜底
@@ -285,15 +287,6 @@ class Mem0Service {
             if (tableMemoryIntegration.isTableMemoryEnabled()) {
               // 检查角色是否有表格
               const tables = await tableMemoryIntegration.getTableDataForPrompt(characterId, conversationId);
-              if (tables && tables.length > 0) {
-                console.log('[Mem0Service] 用表格记忆处理消息:');
-                await tableMemoryIntegration.processChat(
-                  message,
-                  characterId,
-                  conversationId,
-                  { userName: this.getUserName(characterId), aiName: this.getAIName(characterId) }
-                );
-              }
             }
           } catch (e) {
             console.warn('[Mem0Service] 嵌入不可用时表格插件兜底失败:', e);
@@ -301,7 +294,7 @@ class Mem0Service {
         }
         return;
       }
-      
+
       if (!message || message.trim() === '') {
         console.log('[Mem0Service] 跳过空消息');
         return;

@@ -84,12 +84,16 @@ export class MobileMemory {
    */
   private async initializeTableMemory(): Promise<void> {
     try {
-      // 获取数据库路径
-      const dbPath = await getDatabasePath('table_memory.db');
+      // 获取数据库路径但确保使用正确的格式
+      const basePath = await getDatabasePath('table_memory');
+      // 移除.db后缀以防止目录创建错误
+      const storageDir = basePath.replace(/\.db$/, '_data');
+      
+      console.log(`[MobileMemory] 初始化表格记忆插件，使用存储目录: ${storageDir}`);
       
       // 初始化表格记忆插件
       await initializeTableMemory({
-        dbPath,
+        dbPath: storageDir,
         defaultTemplates: true,
         enabled: this.tableMemoryEnabled
       });
@@ -378,18 +382,6 @@ export class MobileMemory {
               return `${role}: ${content}`;
             }).join('\n\n');
           }
-          // 直接调用表格记忆处理
-          await tableMemoryIntegration.processChat(
-            messages,
-            characterId,
-            conversationId,
-            {
-              userName,
-              aiName,
-              isMultiRound,
-              chatContent
-            }
-          );
           // 返回空向量记忆结果，仅表格记忆已处理
           return { results: [] };
         }
@@ -662,14 +654,13 @@ export class MobileMemory {
     }
 
     // ----------- 新增：无论后续嵌入是否失败，先异步处理表格操作指令 -----------
+    let tableActionsProcessed = false;
     if (useTableMemory && tableActions && Array.isArray(tableActions) && tableActions.length > 0) {
       try {
         const characterId = filters.agentId;
         const conversationId = filters.runId;
         if (characterId && conversationId) {
-          // 这里立即异步处理表格操作，不等待后续嵌入
           const tableMemoryIntegration = require('./integration/table-memory-integration');
-          // 日志应能输出
           console.log(`[MobileMemory] 处理${tableActions.length}条表格操作指令`);
           tableMemoryIntegration.processLLMResponseForTableMemory(
             cleanResponse,
@@ -678,6 +669,9 @@ export class MobileMemory {
           ).catch((error: Error) => {
             console.error("[MobileMemory] 处理表格记忆时出错:", error);
           });
+          tableActionsProcessed = true;
+          // 标记本轮表格操作已处理，防止 extendAddToVectorStore 再处理
+          metadata._tableActionsProcessed = true;
         }
       } catch (error) {
         console.error("[MobileMemory] 处理表格操作指令时出错:", error);
@@ -836,51 +830,13 @@ export class MobileMemory {
     
     // 处理表格操作指令（如果有）
     if (useTableMemory && tableActions && Array.isArray(tableActions) && tableActions.length > 0) {
-      try {
-        // 获取角色ID和会话ID
-        const characterId = filters.agentId;
-        const conversationId = filters.runId;
-        
-        if (characterId && conversationId) {
-          console.log(`[MobileMemory] 处理${tableActions.length}条表格操作指令`);
-          // 使用表格记忆集成模块处理表格操作
-          const tableMemoryIntegration = require('./integration/table-memory-integration');
-          tableMemoryIntegration.processLLMResponseForTableMemory(
-            cleanResponse, 
-            characterId, 
-            conversationId
-          ).catch((error: Error) => {
-            console.error("[MobileMemory] 处理表格记忆时出错:", error);
-          });
-          
-          // 另外，尝试使用原始消息内容单独调用表格处理，确保对话内容被正确处理
-          if (metadata._rawChatContent) {
-            console.log("[MobileMemory] 尝试使用原始对话内容处理表格...");
-            tableMemoryIntegration.processChat(
-              metadata._rawChatContent,
-              characterId,
-              conversationId,
-              {
-                userName,
-                aiName,
-                isMultiRound
-              }
-            ).catch((error: Error) => {
-              console.error("[MobileMemory] 使用原始对话内容处理表格记忆时出错:", error);
-            });
-          }
-        }
-      } catch (error) {
-        console.error("[MobileMemory] 处理表格操作指令时出错:", error);
-      }
-    } else if (useTableMemory) {
+      // ...已处理，无需再处理...
+    } else if (useTableMemory && !tableActionsProcessed) {
+      // 只有在未处理过tableActions时，才用chatContent兜底
       console.log('[MobileMemory] LLM响应中未包含表格操作指令');
-      
-      // 即使LLM没有返回表格操作，也尝试使用原始对话内容进行表格处理
       try {
         const characterId = filters.agentId;
         const conversationId = filters.runId;
-        
         if (characterId && conversationId && metadata._rawChatContent) {
           console.log("[MobileMemory] LLM未返回表格操作，尝试使用原始对话内容直接处理表格...");
           const tableMemoryIntegration = require('./integration/table-memory-integration');

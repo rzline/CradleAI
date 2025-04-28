@@ -2114,7 +2114,8 @@ private async executeGenerateContent(contents: ChatMessage[], modelId: string, c
 - **我会根据角色设定，聊天上下文和记忆内容**，输出我对检索记忆的回忆过程，并用<mem></mem>包裹。
   - 示例: <mem>我想起起您上次提到过类似的问题，当时...</mem>
 - 我会确保回复保持角色人设的一致性。
-- - **我不会在回复中使用多组<mem>，整个回复只能有一组<mem>标签。**
+- **我不会在回复中使用多组<mem>，整个回复只能有一组<mem>标签。**
+- 我会结合表格记忆的内容回复（如果有），但我不会输出表格的具体内容，仅将表格作为内心记忆。
 </response_guidelines>`;
 
             // Log prepared prompt

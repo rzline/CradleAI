@@ -61,6 +61,7 @@ const MemoOverlay: React.FC<MemoOverlayProps> = ({ isVisible, onClose, character
 
   // State for plugin settings
   const [pluginEnabled, setPluginEnabled] = useState<boolean>(false);
+  const [queueSystemEnabled, setQueueSystemEnabled] = useState<boolean>(true);
 
   // 新增：角色表格数据
   const [characterTablesData, setCharacterTablesData] = useState<Awaited<ReturnType<typeof TableMemory.getCharacterTablesData>> | null>(null);
@@ -91,9 +92,10 @@ const MemoOverlay: React.FC<MemoOverlayProps> = ({ isVisible, onClose, character
     try {
       setLoading(true);
       // Initialize table memory plugin and set default templates
+      // 更新: 显式禁用队列系统，使用直接操作模式
       const success = await initializeTableMemory({
         defaultTemplates: true,
-        enabled: true
+        enabled: true,
       });
 
       setPluginEnabled(isTableMemoryEnabled());
@@ -124,14 +126,13 @@ const MemoOverlay: React.FC<MemoOverlayProps> = ({ isVisible, onClose, character
     }
 
     try {
-      // Load ALL available templates from the API, not just selected ones
+      // 顺序加载模板和表格，避免并发
       const templateManager = TableMemory.API;
-
-      // Use getAllTemplates from the API instead of getSelectedTemplates
+      let availableTemplates: TableMemory.SheetTemplate[] = [];
       try {
-        const availableTemplates = await templateManager.getAllTemplates();
+        // 使用包装后的API方法，适配文件系统存储
+        availableTemplates = await templateManager.getAllTemplates();
         console.log(`[MemoOverlay] Loaded ${availableTemplates.length} total templates`);
-
         if (isMountedRef.current) {
           setAllTemplates(availableTemplates);
         }
@@ -139,40 +140,44 @@ const MemoOverlay: React.FC<MemoOverlayProps> = ({ isVisible, onClose, character
         console.error('[MemoOverlay] Failed to load all templates:', templateError);
       }
 
-      // Load selected template IDs (separate from all templates)
-      const selectedIds = await TableMemory.getSelectedTemplateIds();
-      console.log(`[MemoOverlay] Loaded ${selectedIds.length} selected template IDs`);
-
-      if (isMountedRef.current) {
-        setSelectedTemplateIds(selectedIds);
+      // 加载选中模板
+      let selectedIds: string[] = [];
+      try {
+        // 使用file system friendly API
+        selectedIds = await TableMemory.getSelectedTemplateIds();
+        console.log(`[MemoOverlay] Loaded ${selectedIds.length} selected template IDs`);
+        if (isMountedRef.current) {
+          setSelectedTemplateIds(selectedIds);
+        }
+      } catch (err) {
+        console.error('[MemoOverlay] Failed to load selected template IDs:', err);
       }
 
-      // 加载角色表格数据（通过getCharacterTablesData）
+      // 加载表格数据 - 使用优化的文件系统API
       try {
         const effectiveConversationId = conversationId || characterId;
         const safeCharacterId = String(characterId);
         const safeConversationId = String(effectiveConversationId);
 
-        // 用新API获取角色所有表格及内容
+        // 使用getCharacterTablesData接口，该接口已针对文件系统实现优化
         const tablesData = await TableMemory.getCharacterTablesData(
           safeCharacterId,
-          safeConversationId          
+          safeConversationId
         );
         if (isMountedRef.current) {
           setCharacterTablesData(tablesData);
-          // 兼容旧逻辑：生成tables和默认选中表格
           if (tablesData.success) {
+            // 直接使用tablesData中的表格数据构建表格列表
             setTables(
               tablesData.tables.map(t => ({
                 uid: t.id,
                 name: t.name,
-                cells: [], // cells不再直接用，内容用tablesData.tables
+                cells: [], // 不再需要加载完整cells，表格内容已在tablesData中
                 characterId: safeCharacterId,
                 conversationId: safeConversationId,
-                templateId: '', // Add empty string for templateId (required by type)
-                createdAt: new Date().toISOString(), // Add a timestamp for createdAt
-                updatedAt: new Date().toISOString(), // Add a timestamp for updatedAt
-
+                templateId: '', // 文件系统不依赖缓存的templateId
+                createdAt: new Date().toISOString(),
+                updatedAt: new Date().toISOString(),
               }))
             );
             if (tablesData.tables.length > 0 && !selectedTableId) {
@@ -205,7 +210,7 @@ const MemoOverlay: React.FC<MemoOverlayProps> = ({ isVisible, onClose, character
         newSelectedIds = selectedTemplateIds.filter(id => id !== templateId);
       }
 
-      // Update selected templates
+      // 使用文件系统友好的API更新模板选择
       await TableMemory.API.selectTemplates(newSelectedIds);
       setSelectedTemplateIds(newSelectedIds);
 
@@ -226,13 +231,19 @@ const MemoOverlay: React.FC<MemoOverlayProps> = ({ isVisible, onClose, character
     try {
       setLoading(true);
 
-      // Use the characterId as the conversationId fallback
+      // 安全地转换字符串类型的ID，防止文件系统路径问题
       const effectiveConversationId = conversationId || characterId;
+      const safeCharacterId = String(characterId).trim();
+      // 修复: 去除 conversationId 前缀
+      let safeConversationId = String(effectiveConversationId).trim();
+      if (safeConversationId.startsWith('conversation-')) {
+        safeConversationId = safeConversationId.replace(/^conversation-/, '');
+      }
 
-      console.log(`[MemoOverlay] Creating tables from templates for character ${characterId}, conversation ${effectiveConversationId}`);
+      console.log(`[MemoOverlay] Creating tables from templates for character "${safeCharacterId}", conversation "${safeConversationId}"`);
       console.log(`[MemoOverlay] Selected template IDs: ${selectedTemplateIds.join(', ')}`);
 
-      // Get the selected templates first to ensure they exist
+      // 获取实际的模板对象，而不是仅使用ID - 配合文件系统实现
       const selectedTemplates = await TableMemory.getSelectedTemplates();
       const validTemplates = selectedTemplates.filter(template =>
         selectedTemplateIds.includes(template.uid)
@@ -244,20 +255,23 @@ const MemoOverlay: React.FC<MemoOverlayProps> = ({ isVisible, onClose, character
         return;
       }
 
-      // Create tables using exported createSheetsFromTemplates method
+      // 使用文件系统优化后的API创建表格
       const createdTableIds = await TableMemory.createSheetsFromTemplates(
-        validTemplates, // Pass the actual template objects instead of just IDs
-        characterId,
-        effectiveConversationId
+        validTemplates, // 传递完整模板对象而非ID，避免额外的文件访问
+        safeCharacterId,
+        safeConversationId
       );
 
       if (createdTableIds.length > 0) {
         console.log(`[MemoOverlay] Created ${createdTableIds.length} tables with IDs: ${createdTableIds.join(', ')}`);
 
-        // Reload data to display newly created tables
+        // 给文件系统一些时间写入文件
+        await new Promise(resolve => setTimeout(resolve, 300));
+        
+        // 重新加载数据以显示新创建的表格
         await loadData(true);
 
-        // Set the first created table as selected
+        // 设置第一个创建的表格为选中
         if (createdTableIds[0]) {
           setSelectedTableId(createdTableIds[0]);
         }
@@ -322,7 +336,7 @@ const MemoOverlay: React.FC<MemoOverlayProps> = ({ isVisible, onClose, character
     setEditingCell(null);
   };
 
-  // Add a new row to the table
+  // Add a new row to the table - 优化文件系统写入
   const handleAddRow = async () => {
     if (!selectedTableId) return;
 
@@ -337,12 +351,15 @@ const MemoOverlay: React.FC<MemoOverlayProps> = ({ isVisible, onClose, character
       // 构造空行
       const rowData: Record<number, string> = {};
       for (let i = 0; i < colCount; i++) {
-        rowData[i] = '';
+        rowData[i] = ''; // 空值，将由文件系统插入到表格中
       }
 
       // 插入行
       await TableMemory.insertRow(selectedTableId, rowData);
 
+      // 适当延迟确保文件系统写入完成
+      await new Promise(resolve => setTimeout(resolve, 200));
+      
       // 刷新
       await loadData(true);
     } catch (error) {
@@ -355,14 +372,20 @@ const MemoOverlay: React.FC<MemoOverlayProps> = ({ isVisible, onClose, character
     }
   };
 
-  // Delete a row from the table
+  // Delete a row from the table - 文件系统优化
   const handleDeleteRow = async (rowIndex: number) => {
     // 不允许删除表头
     if (rowIndex === 0 || !selectedTableId) return;
 
     try {
       setLoading(true);
+      // 调用文件系统API删除行
       await TableMemory.deleteRow(selectedTableId, rowIndex);
+      
+      // 适当延迟确保文件系统写入完成
+      await new Promise(resolve => setTimeout(resolve, 200));
+      
+      // 刷新数据
       await loadData(true);
     } catch (error) {
       console.error('[MemoOverlay] Failed to delete row:', error);
@@ -374,7 +397,7 @@ const MemoOverlay: React.FC<MemoOverlayProps> = ({ isVisible, onClose, character
     }
   };
 
-  // Delete an entire table
+  // Delete an entire table - 文件系统优化
   const handleDeleteTable = async (tableId: string) => {
     if (!tableId) return;
     Alert.alert(
@@ -388,13 +411,20 @@ const MemoOverlay: React.FC<MemoOverlayProps> = ({ isVisible, onClose, character
           onPress: async () => {
             try {
               setLoading(true);
+              // 调用文件系统API删除表格
               const success = await TableMemory.deleteSheet(tableId);
+              
               if (success) {
                 setTables(prevTables => prevTables.filter(table => table.uid !== tableId));
                 if (selectedTableId === tableId) {
                   setSelectedTableId(null);
                 }
-                setTimeout(() => loadData(), 500);
+                
+                // 适当延迟确保文件系统删除操作完成
+                await new Promise(resolve => setTimeout(resolve, 300));
+                
+                // 刷新数据
+                await loadData(true);
               } else {
                 Alert.alert('Error', 'Failed to delete table');
               }
@@ -458,6 +488,32 @@ const MemoOverlay: React.FC<MemoOverlayProps> = ({ isVisible, onClose, character
     } catch (error) {
       console.error('[MemoOverlay] Failed to rebuild table:', error);
       Alert.alert('错误', '更新表格时发生错误，请重试');
+    } finally {
+      if (isMountedRef.current) {
+        setLoading(false);
+      }
+    }
+  };
+
+  // 添加重置文件系统存储队列的方法 - 用于处理可能的锁定
+  const handleResetStorageQueue = async () => {
+    try {
+      setLoading(true);
+      // 使用文件系统存储的resetDatabaseConnection方法重置队列
+      const result = await TableMemory.resetDatabaseConnection();
+      if (result) {
+        console.log('[MemoOverlay] Successfully reset file system storage queue');
+      } else {
+        console.warn('[MemoOverlay] Failed to reset file system storage queue');
+      }
+      
+      // 等待文件系统释放资源
+      await new Promise(resolve => setTimeout(resolve, 500));
+      
+      // 刷新数据
+      await loadData(true);
+    } catch (error) {
+      console.error('[MemoOverlay] Error resetting storage queue:', error);
     } finally {
       if (isMountedRef.current) {
         setLoading(false);
@@ -687,7 +743,7 @@ const MemoOverlay: React.FC<MemoOverlayProps> = ({ isVisible, onClose, character
     </View>
   );
 
-  // Render the settings tab
+  // 修改 renderSettingsTab 方法以添加文件系统存储相关设置
   const renderSettingsTab = () => (
     <View style={styles.tabContent}>
       <Text style={styles.tabTitle}>记忆增强设置</Text>
@@ -714,6 +770,53 @@ const MemoOverlay: React.FC<MemoOverlayProps> = ({ isVisible, onClose, character
           />
         </TouchableOpacity>
       </View>
+
+      {/* 新增: 切换队列系统 */}
+      <View style={styles.settingItem}>
+        <View style={styles.settingLabel}>
+          <Text style={styles.settingTitle}>启用文件操作队列</Text>
+          <Text style={styles.settingDescription}>
+            启用队列可防止文件冲突，但可能导致UI卡顿
+          </Text>
+        </View>
+        <TouchableOpacity
+          style={[
+            styles.toggle,
+            queueSystemEnabled ? styles.toggleActive : styles.toggleInactive
+          ]}
+          onPress={() => {
+            const newValue = !queueSystemEnabled;
+            setQueueSystemEnabled(newValue);
+            TableMemory.setUseQueueSystem(newValue);
+          }}
+        >
+          <View
+            style={[
+              styles.toggleThumb,
+              queueSystemEnabled ? styles.toggleThumbActive : styles.toggleThumbInactive
+            ]}
+          />
+        </TouchableOpacity>
+      </View>
+
+      {/* 文件系统存储维护选项 */}
+      <Text style={styles.sectionTitle}>文件系统存储维护</Text>
+
+      <TouchableOpacity
+        style={styles.maintenanceButton}
+        onPress={handleResetStorageQueue}
+      >
+        <MaterialIcons name="sync" size={20} color="#ccc" />
+        <Text style={styles.maintenanceButtonText}>重置文件系统操作队列</Text>
+      </TouchableOpacity>
+
+      <TouchableOpacity
+        style={styles.maintenanceButton}
+        onPress={() => loadData(true)}
+      >
+        <MaterialIcons name="refresh" size={20} color="#ccc" />
+        <Text style={styles.maintenanceButtonText}>刷新所有数据</Text>
+      </TouchableOpacity>
 
       {selectedTableId && (
         <>

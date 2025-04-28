@@ -45,7 +45,10 @@ export class SheetManager {
     resolve: (value: any) => void;
     reject: (error: any) => void;
   }> = [];
-  
+
+  // 新增：数据库初始化状态标志，防止重复初始化
+  private static dbInitialized = false;
+
   // 添加处理过的表格集合，防止重复处理
   private static processedSheets: Set<string> = new Set();
   
@@ -60,6 +63,16 @@ export class SheetManager {
     try {
       console.log('[TableMemory] 初始化表格管理器...');
       
+      // 新增：只初始化一次数据库
+      if (!this.dbInitialized) {
+        // 初始化文件系统存储服务
+        if (typeof StorageService?.initialize === 'function') {
+          await StorageService.initialize();
+          console.log('[TableMemory] StorageService (文件系统) 初始化完成');
+        }
+        this.dbInitialized = true;
+      }
+
       this.initialized = true;
       console.log('[TableMemory] 表格管理器初始化完成');
     } catch (error) {
@@ -72,6 +85,11 @@ export class SheetManager {
    * 安全执行操作，防止并发冲突
    */
   private static async safelyExecute<T>(operation: () => Promise<T>): Promise<T> {
+    // 新增：确保数据库已初始化
+    if (!this.dbInitialized) {
+      await this.initialize();
+    }
+
     // 创建Promise并立即返回，将实际执行放入队列
     return new Promise<T>((resolve, reject) => {
       // 将操作和解析/拒绝函数添加到队列
@@ -83,7 +101,8 @@ export class SheetManager {
       
       // 如果没有操作正在进行，启动队列处理
       if (!this.operationInProgress) {
-        this.processOperationQueue();
+        // 使用setTimeout确保异步执行队列处理
+        setTimeout(() => this.processOperationQueue(), 0);
       }
     });
   }
@@ -100,10 +119,10 @@ export class SheetManager {
     // 标记正在处理
     this.operationInProgress = true;
     
-    // 获取队列中的第一项
-    const item = this.operationQueue.shift()!;
-    
     try {
+      // 获取队列中的第一项
+      const item = this.operationQueue.shift()!;
+      
       // 执行操作
       const result = await item.operation();
       
@@ -111,13 +130,22 @@ export class SheetManager {
       item.resolve(result);
     } catch (error) {
       console.error('[TableMemory] 表格管理操作失败:', error);
-      // 操作失败，拒绝Promise
-      item.reject(error);
+      
+      // 新增：如果操作失败，清空队列并重置状态，防止死锁
+      if (this.operationQueue.length > 0) {
+        console.warn('[TableMemory] 操作失败，清空队列以防止死锁');
+        while (this.operationQueue.length > 0) {
+          const failedItem = this.operationQueue.shift();
+          if (failedItem) {
+            failedItem.reject(error);
+          }
+        }
+      }
     } finally {
       // 标记操作已完成
       this.operationInProgress = false;
       
-      // 处理队列中的下一项
+      // 处理队列中的下一项 - 添加延迟确保事件循环继续
       if (this.operationQueue.length > 0) {
         setTimeout(() => this.processOperationQueue(), 0);
       }
@@ -487,221 +515,69 @@ export class SheetManager {
       throw error;
     }
   }
-
   /**
-   * 批量处理多个表格
-   * @param sheets 表格列表
-   * @param chatContent 对话内容
-   * @param options 处理选项
-   * @returns 已更新的表格ID列表
+   * 批量执行表格操作
+   * @param actions 表格操作数组
+   * @returns 已更新的表格ID数组
    */
-  static async processSheetsInBatch(
-    sheets: Sheet[],
-    chatContent: string,
-    options: {
-      userName?: string;
-      aiName?: string;
-      isMultiRound?: boolean;
-      alreadyUpdatedSheets?: string[]; // 新增: 已通过其他方式更新的表格ID列表
-    } = {}
+  static async batchTableActions(
+    actions: Array<{
+      action: 'insert' | 'update' | 'delete';
+      sheetId: string;
+      rowData?: Record<number, string>;
+      rowIndex?: number;
+    }>
   ): Promise<string[]> {
+    // 使用safelyExecute保证队列安全
     return this.safelyExecute(async () => {
-      try {
-        if (sheets.length === 0) {
-          console.log('[TableMemory] 没有表格需要批量处理');
-          return [];
-        }
-
-        // 过滤掉已经更新过的表格
-        if (options.alreadyUpdatedSheets && options.alreadyUpdatedSheets.length > 0) {
-          const sheetsToProcess = sheets.filter(sheet => !options.alreadyUpdatedSheets?.includes(sheet.uid));
-          if (sheetsToProcess.length === 0) {
-            console.log('[TableMemory] 所有表格已通过其他方式更新，跳过批处理');
-            return [];
-          }
-          sheets = sheetsToProcess;
-        }
-
-        console.log(`[TableMemory] 批量处理 ${sheets.length} 个表格`);
-        
-        // 准备所有表格的文本表示，用于统一批处理
-        const sheetTexts: Record<string, string> = {};
-        const sheetIdToNameMap: Record<string, string> = {};
-        sheets.forEach(sheet => {
-          const tableText = `表格名称: ${sheet.name}\n${toText(sheet)}`;
-          sheetTexts[sheet.uid] = tableText;
-          sheetIdToNameMap[sheet.uid] = sheet.name;
-        });
-        
-        // 构建批处理请求
-        const batchPrompt = `我需要你同时更新多个相关表格。请根据对话内容，同时关注所有表格之间的关系，确保信息在各表格间保持一致。
-
-以下是所有需要更新的表格:
-${Object.entries(sheetTexts).map(([id, text], index) => `
----- 表格 ${index + 1} ----
-${text}
-`).join('\n')}
-
-对话内容:
-${chatContent || '对话内容为空，请基于当前表格内容进行更新或优化。'}
-
-请使用JSON格式返回对这些表格的更新操作。格式如下:
-{
-  "tableActions": [
-    {
-      "action": "insert",
-      "sheetId": "表格ID",
-      "sheetName": "表格名称", 
-      "rowData": {"0": "第一列的值", "1": "第二列的值"}
-    },
-    {
-      "action": "update",
-      "sheetId": "表格ID",
-      "sheetName": "表格名称",
-      "rowIndex": 1,
-      "rowData": {"0": "更新的值", "1": "更新的值"}
-    }
-  ]
-}
-
-可以使用的表格ID和名称对应关系:
-${Object.entries(sheetIdToNameMap).map(([id, name]) => `"${name}": "${id}"`).join('\n')}
-
-请确保只使用这些有效的表格ID或名称，操作类型为"insert"/"update"/"delete"。`;
-
-        // 获取LLM实例
-        console.log('[TableMemory] 执行批量表格处理');
-        
-        const llm = await this.getLLM();
-        if (!llm) {
-          throw new Error('LLM实例不可用');
-        }
-        
-        // 调用LLM获取批处理响应
-        const response = await llm.generateResponse([
-          { role: 'user', content: '你是一个专业的表格管理助手，能够精确分析对话并更新多个表格。' },
-          { role: 'user', content: batchPrompt }
-        ]);
-        
-        // 解析响应
-        const llmResponse = typeof response === 'string' ? response : response.content;
-        console.log(`[TableMemory] 批处理 LLM 响应(前200字符): ${llmResponse.substring(0, 200)}...`);
-        
-        const updatedSheets: string[] = [];
-        
-        // 解析JSON操作
+      const updatedSheetSet = new Set<string>();
+      for (const action of actions) {
         try {
-          // 尝试提取JSON部分
-          const jsonMatches = llmResponse.match(/\{[\s\S]*?\}/g);
-          if (jsonMatches) {
-            let parsedJson = null;
-            // 尝试解析每个匹配项
-            for (const match of jsonMatches) {
-              try {
-                const json = JSON.parse(match);
-                if (json.tableActions && Array.isArray(json.tableActions)) {
-                  parsedJson = json;
-                  break;
-                }
-              } catch (e) {
-                // 继续尝试下一个
+          switch (action.action) {
+            case 'insert':
+              if (action.sheetId && action.rowData) {
+                await this.insertRow(action.sheetId, action.rowData);
+                updatedSheetSet.add(action.sheetId);
               }
-            }
-            
-            if (parsedJson && parsedJson.tableActions) {
-              console.log(`[TableMemory] 成功解析批处理响应，包含 ${parsedJson.tableActions.length} 个操作`);
-              
-              // 处理每个表格操作
-              for (const action of parsedJson.tableActions) {
-                // 确保 action 有有效的 sheetId
-                let targetSheetId = action.sheetId;
-                
-                // 如果提供了表格名称但没有 ID，尝试查找
-                if (!targetSheetId && action.sheetName) {
-                  // 通过名称查找表格 ID
-                  const matchingSheetEntry = Object.entries(sheetIdToNameMap).find(
-                    ([_, name]) => name === action.sheetName
-                  );
-                  
-                  if (matchingSheetEntry) {
-                    targetSheetId = matchingSheetEntry[0];
-                  }
-                }
-                
-                if (!targetSheetId) {
-                  console.warn(`[TableMemory] 操作缺少有效的表格ID或名称，跳过`);
-                  continue;
-                }
-                
-                try {
-                  // 执行操作
-                  let operationSuccess = false;
-                  
-                  switch (action.action) {
-                    case 'insert':
-                      if (action.rowData) {
-                        await this.insertRow(targetSheetId, action.rowData);
-                        operationSuccess = true;
-                      }
-                      break;
-                      
-                    case 'update':
-                      if (action.rowIndex !== undefined && action.rowData) {
-                        if (action.rowIndex === 0) {
-                          console.warn(`[TableMemory] 尝试更新标题行（行索引0），已阻止此操作`);
-                        } else {
-                          await this.updateRow(targetSheetId, action.rowIndex, action.rowData);
-                          operationSuccess = true;
-                        }
-                      }
-                      break;
-                      
-                    case 'delete':
-                      if (action.rowIndex !== undefined) {
-                        if (action.rowIndex === 0) {
-                          console.warn(`[TableMemory] 尝试删除标题行（行索引0），已阻止此操作`);
-                        } else {
-                          await this.deleteRow(targetSheetId, action.rowIndex);
-                          operationSuccess = true;
-                        }
-                      }
-                      break;
-                      
-                    default:
-                      console.warn(`[TableMemory] 未知的表格操作: ${action.action}`);
-                  }
-                  
-                  // 如果操作成功且表格ID不在已更新列表中，则添加
-                  if (operationSuccess && !updatedSheets.includes(targetSheetId)) {
-                    updatedSheets.push(targetSheetId);
-                    
-                    // 添加到处理过的表格集合
-                    this.processedSheets.add(targetSheetId);
-                  }
-                } catch (err) {
-                  console.error(`[TableMemory] 执行表格操作失败:`, err);
-                }
+              break;
+            case 'update':
+              if (
+                action.sheetId &&
+                action.rowIndex !== undefined &&
+                action.rowIndex !== 0 && // 跳过标题行
+                action.rowData
+              ) {
+                await this.updateRow(action.sheetId, action.rowIndex, action.rowData);
+                updatedSheetSet.add(action.sheetId);
               }
-            }
+              break;
+            case 'delete':
+              if (
+                action.sheetId &&
+                action.rowIndex !== undefined &&
+                action.rowIndex !== 0 // 跳过标题行
+              ) {
+                await this.deleteRow(action.sheetId, action.rowIndex);
+                updatedSheetSet.add(action.sheetId);
+              }
+              break;
+            default:
+              console.warn(`[TableMemory] 未知的批量表格操作: ${action.action}`);
           }
-        } catch (jsonError) {
-          console.error(`[TableMemory] 解析批处理响应为JSON失败:`, jsonError);
-          throw jsonError;
+        } catch (err) {
+          console.error(`[TableMemory] 批量操作失败:`, err);
         }
-        
-        return updatedSheets;
-      } catch (error) {
-        console.error(`[TableMemory] 批量处理表格失败:`, error);
-        throw error;
       }
+      return Array.from(updatedSheetSet);
     });
   }
+
   
   /**
-   * 处理对话内容更新表格 - 优化版，避免重复调用LLM
+   * 处理对话内容更新表格 - 简化版，移除批处理模式
    * @param sheets 要处理的表格列表
    * @param chatContent 对话内容
-   * @param options 处理选项
+   * @param options 处理选项批量执行表格操作
    * @returns 成功更新的表格ID列表
    */
   static async processSheets(
@@ -711,7 +587,6 @@ ${Object.entries(sheetIdToNameMap).map(([id, name]) => `"${name}": "${id}"`).joi
       isMultiRound?: boolean;
       userName?: string;
       aiName?: string;
-      firstTryBatch?: boolean; // 是否首先尝试批处理
       initialTableActions?: any[]; // 已经从LLM响应中提取的表格操作
     } = {}
   ): Promise<string[]> {
@@ -801,48 +676,11 @@ ${Object.entries(sheetIdToNameMap).map(([id, name]) => `"${name}": "${id}"`).joi
           }
         }
         
-        // 2. 如果指定首先尝试批处理，且有多个表格需要处理
-        const remainingSheets = sheets.filter(sheet => !this.processedSheets.has(sheet.uid));
-        
-        if (options.firstTryBatch && remainingSheets.length > 1) {
-          try {
-            console.log(`[TableMemory] 尝试批量处理剩余的 ${remainingSheets.length} 个表格`);
-            
-            // 使用批处理方法处理剩余表格
-            const batchUpdatedSheets = await this.processSheetsInBatch(
-              remainingSheets,
-              chatContent,
-              {
-                isMultiRound: options.isMultiRound,
-                userName: options.userName,
-                aiName: options.aiName,
-                alreadyUpdatedSheets: updatedSheets // 传递已更新表格列表
-              }
-            );
-            
-            // 将批处理成功的表格添加到结果中
-            if (batchUpdatedSheets && batchUpdatedSheets.length > 0) {
-              batchUpdatedSheets.forEach(sheetId => {
-                if (!updatedSheets.includes(sheetId)) {
-                  updatedSheets.push(sheetId);
-                }
-              });
-              
-              console.log(`[TableMemory] 批处理成功更新了 ${batchUpdatedSheets.length} 个表格`);
-            } else {
-              console.log('[TableMemory] 批处理未更新任何表格，尝试顺序处理');
-            }
-          } catch (batchError) {
-            console.error(`[TableMemory] 批处理失败:`, batchError);
-            console.log('[TableMemory] 批处理失败，回退到顺序处理模式');
-          }
-        }
-        
-        // 3. 顺序处理尚未更新的表格
+        // 2. 顺序处理所有表格（不再使用批处理模式）
         const notYetUpdated = sheets.filter(sheet => !this.processedSheets.has(sheet.uid));
         
         if (notYetUpdated.length > 0) {
-          console.log(`[TableMemory] 使用顺序处理模式处理剩余的 ${notYetUpdated.length} 个表格`);
+          console.log(`[TableMemory] 使用顺序处理模式处理 ${notYetUpdated.length} 个表格`);
           
           // 首先将所有表格的文本表示收集到一个映射中
           const allSheetTexts: Record<string, string> = {};
@@ -882,8 +720,13 @@ ${Object.entries(sheetIdToNameMap).map(([id, name]) => `"${name}": "${id}"`).joi
               } else {
                 console.log(`[TableMemory] 表格 "${sheet.name}" (ID: ${sheet.uid}) 无需更新`);
               }
+
+              // 每个表格处理后添加短暂延迟，避免连续的数据库操作导致锁冲突
+              await new Promise(resolve => setTimeout(resolve, 100));
             } catch (error) {
               console.error(`[TableMemory] 处理表格 "${sheet.name}" (ID: ${sheet.uid}) 时出错:`, error);
+              // 出错时添加稍长的延迟，让数据库有更多时间释放资源
+              await new Promise(resolve => setTimeout(resolve, 300));
             }
           }
         }
@@ -1483,7 +1326,7 @@ ${chatContent || '对话内容为空，请基于当前表格内容进行更新�
                                       }
                                     }
                                     break;
-                                    
+                                  
                                   default:
                                     console.warn(`[TableMemory] 未知的表格操作: ${action.action}`);
                                 }
@@ -1835,5 +1678,6 @@ ${chatContent || '对话内容为空，请基于当前表格内容进行更新�
                         console.error(`[TableMemory] 从模板 ${template.name} 创建表格失败:`, error);
                         throw error;
                       }
-                    }
-                  }
+
+  }
+}

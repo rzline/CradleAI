@@ -2,6 +2,7 @@
  * 表格记忆增强插件 - 主入口
  * 
  * 导出所有公共API和服务，作为插件与Mem0系统的接口。
+ * 基于文件系统JSON存储的实现。
  */
 
 import * as API from './api';
@@ -11,6 +12,7 @@ import { StorageService } from './services/storage-service';
 import { Sheet, toText } from './models/sheet';
 import { SheetTemplate } from './models/template';
 import { Cell } from './models/cell';
+import { FileSystemStorage } from './services/file-system-storage';
 
 // 插件已初始化标志
 let initialized = false;
@@ -24,8 +26,9 @@ let enabled = false;
  * @returns 是否成功初始化
  */
 export async function initialize(options: { 
-  dbPath?: string; 
+  dbPath?: string; // 现在代表基础存储目录
   defaultTemplates?: boolean;
+  useQueue?: boolean; // 新增: 是否使用队列系统
 } = {}): Promise<boolean> {
   try {
     if (initialized) {
@@ -35,8 +38,17 @@ export async function initialize(options: {
     
     console.log('[TableMemory] 正在初始化插件...');
     
-    // 初始化存储服务
-    await StorageService.initialize(options.dbPath);
+    // 修正：处理路径格式以确保兼容性
+    let storagePath = options.dbPath;
+    if (storagePath && storagePath.endsWith('.db')) {
+      storagePath = storagePath.replace(/\.db$/, '_data');
+      console.log(`[TableMemory] 修正存储路径: ${storagePath}`);
+    }
+    
+    // 初始化文件系统存储服务，默认禁用队列系统
+    await StorageService.initialize(storagePath, { 
+      useQueue: options.useQueue ?? false // 默认不使用队列 
+    });
     
     // 初始化模板管理器
     await TemplateManager.initialize();
@@ -45,7 +57,7 @@ export async function initialize(options: {
     await SheetManager.initialize();
     
     // 如果需要，添加默认模板
-    if (options.defaultTemplates) {
+    if (options.defaultTemplates !== false) {
       await createDefaultTemplates();
     }
     
@@ -222,6 +234,53 @@ export function isEnabled(): boolean {
 }
 
 /**
+ * 重置文件系统存储 - 清空缓存和队列
+ * @returns 是否成功重置
+ */
+export async function resetDatabaseConnection(): Promise<boolean> {
+  try {
+    // 重置文件系统存储
+    return await StorageService.resetDatabase();
+  } catch (error) {
+    console.error('[TableMemory] 重置文件系统存储失败:', error);
+    return false;
+  }
+}
+
+/**
+ * 检查文件系统操作队列状态
+ */
+export async function checkDatabaseLock(): Promise<{
+  isLocked: boolean;
+  queueLength: number;
+  isProcessingQueue: boolean;
+}> {
+  try {
+    // 改为调用StorageService的方法
+    return await StorageService.checkDatabaseLock();
+  } catch (error) {
+    console.error('[TableMemory] 检查文件系统状态失败:', error);
+    return {
+      isLocked: false,
+      queueLength: 0,
+      isProcessingQueue: false
+    };
+  }
+}
+
+/**
+ * 切换是否使用队列系统 (新增)
+ * @param useQueue 是否使用队列
+ */
+export function setUseQueueSystem(useQueue: boolean): void {
+  try {
+    FileSystemStorage.setUseQueueSystem(useQueue);
+  } catch (error) {
+    console.error('[TableMemory] 设置队列系统失败:', error);
+  }
+}
+
+/**
  * 获取表格文本表示
  * 兼容性导出，方便集成层使用
  */
@@ -250,5 +309,15 @@ export const {
   rebuildSheet,
   deleteSheet,
   getSheet,
-  getCharacterTablesData // 添加新导出的方法
+  getCharacterTablesData
 } = API;
+
+// 导出默认对象
+export default {
+  initialize,
+  isEnabled,
+  setEnabled,
+  resetDatabaseConnection,
+  checkDatabaseLock,
+  setUseQueueSystem // 新增
+};

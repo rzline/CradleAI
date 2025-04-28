@@ -10,11 +10,16 @@ import { TemplateManager } from './services/template-manager';
 import { 
   Sheet, 
   toText,
-  getRowCount,  // 添加这一行导入getRowCount函数
-  getColumnCount // 添加这一行导入getColumnCount函数
+  getRowCount,
+  getColumnCount
 } from './models/sheet';
 import { SheetTemplate } from './models/template';
-import { isEnabled, initialize, setEnabled } from './index';
+
+// 用于延迟 require，避免循环依赖
+function getIndexModule() {
+  // eslint-disable-next-line @typescript-eslint/no-var-requires
+  return require('./index');
+}
 
 /**
  * 处理聊天消息，更新相关表格
@@ -30,14 +35,13 @@ export async function processChat(
     userName?: string;
     aiName?: string;
     isMultiRound?: boolean;
-    processMode?: 'sequential' | 'batch'; // 处理模式 - 顺序处理或批量处理
     initialTableActions?: any[]; // 新增: 从LLM响应中已提取的表格操作
     chatContent?: string; // 新增：允许外部直接传入chatContent
   }
 ): Promise<{ updatedSheets: string[] }> {
   try {
     // 检查插件是否启用和初始化
-    if (!isEnabled()) {
+    if (!getIndexModule().isEnabled()) {
       console.log('[TableMemory] 插件未启用，跳过处理聊天消息');
       return { updatedSheets: [] };
     }
@@ -51,6 +55,14 @@ export async function processChat(
     
     console.log(`[TableMemory] processChat - Normalized IDs - safeCharacterId: "${safeCharacterId}", safeConversationId: "${safeConversationId}"`);
     
+    // 新增：检测数据库锁死并主动恢复
+    const { StorageService } = require('./services/storage-service');
+    const dbStatus = await StorageService.checkDatabaseLock?.();
+    if (dbStatus && dbStatus.isLocked && dbStatus.queueLength > 5) {
+      console.warn('[TableMemory] 检测到数据库队列阻塞，主动重置数据库连接');
+      await StorageService.resetDatabase();
+    }
+
     // 获取此角色的现有表格
     console.log(`[TableMemory] Calling SheetManager.getSheetsByCharacter with IDs: "${safeCharacterId}", "${safeConversationId}"`);
     const existingSheets = await SheetManager.getSheetsByCharacter(
@@ -136,12 +148,10 @@ export async function processChat(
           }).join('\n\n');
     }
     
-    // 优化处理流程：使用新的统一处理方法
-    const processMode = options.processMode || (sheets.length > 1 ? 'batch' : 'sequential');
+    // 使用顺序处理模式 - 不再支持批处理模式
+    console.log(`[TableMemory] 使用顺序处理模式处理 ${sheets.length} 个表格`);
     
-    console.log(`[TableMemory] 使用处理模式: ${processMode}, 表格数量: ${sheets.length}`);
-    
-    // 使用新的优化处理方法
+    // 使用顺序处理方法处理所有表格
     const updatedSheets = await SheetManager.processSheets(
       sheets,
       messageContent,
@@ -149,7 +159,6 @@ export async function processChat(
         isMultiRound: options.isMultiRound,
         userName: options.userName,
         aiName: options.aiName,
-        firstTryBatch: processMode === 'batch',
         initialTableActions: options.initialTableActions // 传递已经提取的表格操作
       }
     );
@@ -208,7 +217,7 @@ export async function getSelectedTemplates(): Promise<SheetTemplate[]> {
  */
 export async function getAllTemplates(): Promise<SheetTemplate[]> {
   try {
-    if (!isEnabled()) {
+    if (!getIndexModule().isEnabled()) {
       console.log('[TableMemory] 插件未启用，跳过获取模板');
       return [];
     }
@@ -338,7 +347,7 @@ export async function getCharacterTablesData(
 }> {
   try {
     // 检查插件是否启用和初始化
-    if (!isEnabled()) {
+    if (!getIndexModule().isEnabled()) {
       console.log('[TableMemory] 插件未启用，跳过获取表格数据');
       return { success: false, tables: [], error: '表格记忆插件未启用' };
     }
@@ -414,7 +423,7 @@ export async function getCharacterTablesData(
  */
 export async function getSheet(sheetId: string): Promise<Sheet | null> {
   try {
-    if (!isEnabled()) {
+    if (!getIndexModule().isEnabled()) {
       console.log('[TableMemory] 插件未启用，跳过获取表格');
       return null;
     }
@@ -440,7 +449,7 @@ export async function getSheetByName(
   conversationId?: string
 ): Promise<Sheet | null> {
   try {
-    if (!isEnabled()) {
+    if (!getIndexModule().isEnabled()) {
       console.log('[TableMemory] 插件未启用，跳过获取表格');
       return null;
     }
@@ -582,13 +591,35 @@ export async function deleteRow(
 }
 
 /**
+ * 批量执行表格操作
+ * @param actions 表格操作数组
+ * @returns 已更新的表格ID数组
+ */
+export async function batchTableActions(
+  actions: Array<{
+    action: 'insert' | 'update' | 'delete';
+    sheetId: string;
+    rowData?: Record<number, string>;
+    rowIndex?: number;
+  }>
+): Promise<string[]> {
+  try {
+    // 调用SheetManager的批量处理方法
+    return await SheetManager.batchTableActions(actions);
+  } catch (error) {
+    console.error('[TableMemory] 批量表格操作失败:', error);
+    return [];
+  }
+}
+
+/**
  * 删除表格
  * @param sheetId 表格ID
  * @returns 是否成功删除
  */
 export async function deleteSheet(sheetId: string): Promise<boolean> {
   try {
-    if (!isEnabled()) {
+    if (!getIndexModule().isEnabled()) {
       console.log('[TableMemory] 插件未启用，跳过删除表格');
       return false;
     }
@@ -617,11 +648,11 @@ export async function init(options: {
   enabled?: boolean;
 } = {}): Promise<boolean> {
   try {
-    const success = await initialize(options);
+    const success = await getIndexModule().initialize(options);
     
     // 设置启用状态
     if (success && options.enabled !== undefined) {
-      setEnabled(options.enabled);
+      getIndexModule().setEnabled(options.enabled);
     }
     
     return success;
@@ -689,7 +720,7 @@ export async function rebuildSheet(
 ): Promise<boolean> {
   try {
     // 检查插件是否启用
-    if (!isEnabled()) {
+    if (!getIndexModule().isEnabled()) {
       console.log('[TableMemory] 插件未启用，跳过重建表格');
       return false;
     }
@@ -747,4 +778,25 @@ export async function rebuildSheet(
     console.error('[TableMemory] 重建表格失败:', error);
     return false;
   }
+}
+
+/**
+ * 检查数据库是否处于锁定状态
+ */
+export async function checkDatabaseLock(): Promise<{
+  isLocked: boolean;
+  queueLength: number;
+  isProcessingQueue: boolean;
+}> {
+  // 调用主模块的方法
+  return getIndexModule().checkDatabaseLock();
+}
+
+/**
+ * 重置数据库连接解锁数据库
+ * @returns 是否成功
+ */
+export async function resetDatabaseConnection(): Promise<boolean> {
+  // 调用主模块的方法
+  return getIndexModule().resetDatabaseConnection();
 }

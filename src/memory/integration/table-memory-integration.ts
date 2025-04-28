@@ -13,6 +13,25 @@ import Mem0Service from '../services/Mem0Service';
 let tableMemoryEnabled = false;
 
 /**
+ * 生成唯一调用标识
+ */
+function generateCallId(prefix: string = ''): string {
+  return `${prefix}${Date.now()}_${Math.floor(Math.random() * 10000)}`;
+}
+
+/**
+ * 获取调用堆栈信息
+ */
+function getCallerStack(): string {
+  const err = new Error();
+  if (err.stack) {
+    // 只保留前5行
+    return err.stack.split('\n').slice(2, 7).join('\n');
+  }
+  return '';
+}
+
+/**
  * 初始化表格记忆插件
  * @param options 初始化选项
  * @returns 初始化是否成功
@@ -24,6 +43,18 @@ export async function initializeTableMemory(options: {
 } = {}): Promise<boolean> {
   try {
     console.log('[TableMemoryIntegration] 初始化表格记忆插件...');
+    
+    // 检查是否需要先尝试重置数据库
+    try {
+      // 这个检查方法是新增的，可能首次初始化时不存在
+      const dbStatus = await TableMemory.API.checkDatabaseLock?.();
+      if (dbStatus && dbStatus.isLocked) {
+        console.warn(`[TableMemoryIntegration] 检测到数据库可能处于锁定状态，尝试重置连接`);
+        await TableMemory.resetDatabaseConnection?.();
+      }
+    } catch (e) {
+      // 忽略错误，这个方法可能不存在
+    }
     
     const success = await TableMemory.API.init(options);
     
@@ -211,6 +242,10 @@ export async function processLLMResponseForTableMemory(
   characterId: string,
   conversationId: string
 ): Promise<{ success: boolean; updatedSheets: string[] }> {
+  const callId = generateCallId('LLMResp-');
+  const callerStack = getCallerStack();
+  console.log(`【表格插件】[processLLMResponseForTableMemory] 调用ID: ${callId}`);
+  console.log(`【表格插件】[processLLMResponseForTableMemory] 调用堆栈:\n${callerStack}`);
   if (!tableMemoryEnabled) {
     return { success: false, updatedSheets: [] };
   }
@@ -380,46 +415,14 @@ export async function processLLMResponseForTableMemory(
     
     // 执行表格操作
     const updatedSheets: string[] = [];
-    const sheetOperations = new Map<string, { insert: any[], update: any[], delete: any[] }>();
+    let hasError = false;
     
-    // 按表格ID分组操作，减少数据库访问次数
+    // 逐个执行操作，不再按表格分组
     for (const action of validActions) {
-      const sheetId = action.sheetId;
-      
-      if (!sheetOperations.has(sheetId)) {
-        sheetOperations.set(sheetId, { insert: [], update: [], delete: [] });
-      }
-      
-      const sheetOps = sheetOperations.get(sheetId)!;
-      
-      // 将操作分类放入对应的数组
-      switch (action.action) {
-        case 'insert':
-          if (action.rowData) {
-            sheetOps.insert.push(action);
-          }
-          break;
-          
-        case 'update':
-          if (action.rowIndex !== undefined && action.rowData) {
-            sheetOps.update.push(action);
-          }
-          break;
-          
-        case 'delete':
-          if (action.rowIndex !== undefined) {
-            sheetOps.delete.push(action);
-          }
-          break;
-          
-        default:
-          console.warn(`[TableMemoryIntegration] 未知的表格操作: ${action.action}`);
-      }
-    }
-    
-    // 顺序执行每个表格的操作
-    for (const [sheetId, ops] of sheetOperations.entries()) {
       try {
+        console.log(`【表格插件】[processLLMResponseForTableMemory] 即将执行表格操作: ${JSON.stringify(action)} 调用ID: ${callId}`);
+        const sheetId = action.sheetId;
+        
         // 验证表格是否存在
         const sheetExists = await TableMemory.API.getSheet(sheetId);
         if (!sheetExists) {
@@ -427,53 +430,72 @@ export async function processLLMResponseForTableMemory(
           continue;
         }
         
-        console.log(`[TableMemoryIntegration] 处理表格 ${sheetId} (${sheetExists.name}) 的操作`);
-        let sheetUpdated = false;
+        console.log(`[TableMemoryIntegration] 执行表格 ${sheetExists.name} 的 ${action.action} 操作`);
         
-        // 先执行删除操作（从后往前执行，避免索引变化）
-        if (ops.delete.length > 0) {
-          // 按行号降序排序，先删除靠后的行
-          ops.delete.sort((a, b) => b.rowIndex - a.rowIndex);
-          
-          for (const action of ops.delete) {
-            try {
-              await TableMemory.API.deleteRow(sheetId, action.rowIndex);
-              sheetUpdated = true;
-              console.log(`[TableMemoryIntegration] 成功删除表格 ${sheetExists.name} 的行 ${action.rowIndex}`);
-            } catch (error) {
-              console.error(`[TableMemoryIntegration] 删除行失败:`, error);
+        let operationSuccess = false;
+        
+        switch (action.action) {
+          case 'insert':
+            if (action.rowData) {
+              await TableMemory.API.insertRow(sheetId, action.rowData);
+              console.log(`[TableMemoryIntegration] 成功插入行到表格 ${sheetExists.name}`);
+              operationSuccess = true;
             }
-          }
+            break;
+            
+          case 'update':
+            if (action.rowIndex !== undefined && action.rowData) {
+              if (action.rowIndex === 0) {
+                console.warn(`[TableMemoryIntegration] 尝试更新标题行（行索引0），已阻止此操作`);
+              } else {
+                await TableMemory.API.updateRow(sheetId, action.rowIndex, action.rowData);
+                console.log(`[TableMemoryIntegration] 成功更新表格 ${sheetExists.name} 的行 ${action.rowIndex}`);
+                operationSuccess = true;
+              }
+            }
+            break;
+            
+          case 'delete':
+            if (action.rowIndex !== undefined) {
+              if (action.rowIndex === 0) {
+                console.warn(`[TableMemoryIntegration] 尝试删除标题行（行索引0），已阻止此操作`);
+              } else {
+                await TableMemory.API.deleteRow(sheetId, action.rowIndex);
+                console.log(`[TableMemoryIntegration] 成功删除表格 ${sheetExists.name} 的行 ${action.rowIndex}`);
+                operationSuccess = true;
+              }
+            }
+            break;
+            
+          default:
+            console.warn(`[TableMemoryIntegration] 未知的表格操作: ${action.action}`);
         }
         
-        // 执行更新操作
-        for (const action of ops.update) {
-          try {
-            await TableMemory.API.updateRow(sheetId, action.rowIndex, action.rowData);
-            sheetUpdated = true;
-            console.log(`[TableMemoryIntegration] 成功更新表格 ${sheetExists.name} 的行 ${action.rowIndex}`);
-          } catch (error) {
-            console.error(`[TableMemoryIntegration] 更新行失败:`, error);
-          }
-        }
-        
-        // 最后执行插入操作
-        for (const action of ops.insert) {
-          try {
-            await TableMemory.API.insertRow(sheetId, action.rowData);
-            sheetUpdated = true;
-            console.log(`[TableMemoryIntegration] 成功插入行到表格 ${sheetExists.name}`);
-          } catch (error) {
-            console.error(`[TableMemoryIntegration] 插入行失败:`, error);
-          }
-        }
-        
-        if (sheetUpdated && !updatedSheets.includes(sheetId)) {
+        // 如果操作成功且表格ID不在已更新列表中，则添加
+        if (operationSuccess && !updatedSheets.includes(sheetId)) {
           updatedSheets.push(sheetId);
         }
+        
+        // 每个操作之间添加短暂延迟，避免数据库锁冲突
+        await new Promise(resolve => setTimeout(resolve, 50));
+        // 打印数据库队列状态
+        try {
+          const { StorageService } = require('../plugins/table-memory/services/storage-service');
+          const dbStatus = await StorageService.checkDatabaseLock?.();
+          console.log(`【表格插件】[processLLMResponseForTableMemory] 操作后数据库队列长度: ${dbStatus?.queueLength ?? '未知'}，是否锁定: ${dbStatus?.isLocked ? '是' : '否'}`);
+        } catch (e) {}
       } catch (error) {
-        console.error(`[TableMemoryIntegration] 处理表格 ${sheetId} 操作失败:`, error);
+        console.error(`[TableMemoryIntegration] 执行表格操作失败:`, error);
+        hasError = true;
+        
+        // 操作失败时添加稍长的延迟，避免连续错误
+        await new Promise(resolve => setTimeout(resolve, 200));
       }
+    }
+    
+    // 如果有错误但仍然成功更新了一些表格，记录警告
+    if (hasError && updatedSheets.length > 0) {
+      console.warn(`[TableMemoryIntegration] 部分表格操作失败，但成功更新了 ${updatedSheets.length} 个表格`);
     }
     
     return {
@@ -481,7 +503,7 @@ export async function processLLMResponseForTableMemory(
       updatedSheets
     };
   } catch (error) {
-    console.error('[TableMemoryIntegration] 处理LLM响应时出错:', error);
+    console.error('【表格插件】[processLLMResponseForTableMemory] 处理LLM响应时出错:', error);
     return { success: false, updatedSheets: [] };
   }
 }
@@ -505,16 +527,44 @@ export async function processChat(
     chatContent?: string;
   } = {}
 ): Promise<{ success: boolean; updatedSheets: string[] }> {
+  const callId = generateCallId('Chat-');
+  const callerStack = getCallerStack();
+  console.log(`【表格插件】[processChat] 调用ID: ${callId}`);
+  console.log(`【表格插件】[processChat] 调用堆栈:\n${callerStack}`);
   if (!tableMemoryEnabled) {
     console.log('[TableMemoryIntegration] 表格记忆插件未启用，跳过处理');
     return { success: false, updatedSheets: [] };
   }
   
   try {
+    // 新增：调用前检测数据库锁死
+    try {
+      const { StorageService } = require('../plugins/table-memory/services/storage-service');
+      const dbStatus = await StorageService.checkDatabaseLock?.();
+      if (dbStatus && dbStatus.isLocked && dbStatus.queueLength > 5) {
+        console.warn('[TableMemoryIntegration] 检测到数据库队列阻塞，主动重置数据库连接');
+        await StorageService.resetDatabase();
+      }
+    } catch (e) {
+      // 忽略
+    }
+
     const safeCharacterId = String(characterId);
     const safeConversationId = conversationId ? String(conversationId) : safeCharacterId;
     
     console.log(`[TableMemoryIntegration] Processing chat with characterId: "${safeCharacterId}", conversationId: "${safeConversationId}"`);
+    
+    // 新增：检查并尝试修复数据库锁定状态 
+    try {
+      const dbStatus = await TableMemory.API.checkDatabaseLock?.();
+      if (dbStatus && dbStatus.isLocked) {
+        console.warn(`[TableMemoryIntegration] 检测到数据库可能处于锁定状态(队列长度: ${dbStatus.queueLength})，尝试重置`);
+        await TableMemory.resetDatabaseConnection?.();
+        await new Promise(resolve => setTimeout(resolve, 500)); // 给数据库一些恢复的时间
+      }
+    } catch (e) {
+      // 忽略错误，这个方法可能不存在
+    }
     
     // Check if tables exist for this character/conversation
     const existingTables = await TableMemory.API.getCharacterSheets(safeCharacterId, safeConversationId);
@@ -566,21 +616,63 @@ export async function processChat(
     console.log(`[TableMemoryIntegration] 准备处理消息内容(前50字符): ${messageContent?.substring(0, 50) ?? '[无内容]'}...`);
     
     // 将消息传递给插件的processChat方法
-    const result = await TableMemory.API.processChat(messages, {
-      characterId: safeCharacterId,
-      conversationId: safeConversationId,
-      userName: options.userName,
-      aiName: options.aiName,
-      isMultiRound: options.isMultiRound,
-      chatContent: messageContent // 显式传递 chatContent
-    });
-    
-    return {
-      success: result.updatedSheets.length > 0,
-      updatedSheets: result.updatedSheets
-    };
+    try {
+      console.log(`【表格插件】[processChat] 即将调用 TableMemory.API.processChat, 调用ID: ${callId}`);
+      const result = await TableMemory.API.processChat(messages, {
+        characterId: safeCharacterId,
+        conversationId: safeConversationId,
+        userName: options.userName,
+        aiName: options.aiName,
+        isMultiRound: options.isMultiRound,
+        chatContent: messageContent // 显式传递 chatContent
+      });
+      console.log(`【表格插件】[processChat] TableMemory.API.processChat 调用完成, 调用ID: ${callId}`);
+
+      // 新增：调用后检测数据库锁死
+      try {
+        const { StorageService } = require('../plugins/table-memory/services/storage-service');
+        const dbStatus = await StorageService.checkDatabaseLock?.();
+        if (dbStatus && dbStatus.isLocked && dbStatus.queueLength > 5) {
+          console.warn('[TableMemoryIntegration] 表格操作后检测到数据库队列阻塞，主动重置数据库连接');
+          await StorageService.resetDatabase();
+        }
+      } catch (e) {}
+
+      return {
+        success: result.updatedSheets.length > 0,
+        updatedSheets: result.updatedSheets
+      };
+    } catch (error) {
+      console.error('[TableMemoryIntegration] 处理表格失败，尝试恢复:', error);
+      
+      // 新增：尝试恢复数据库连接
+      try {
+        await TableMemory.resetDatabaseConnection?.();
+        console.log('[TableMemoryIntegration] 已尝试重置数据库连接');
+        
+        // 延迟后重试一次
+        await new Promise(resolve => setTimeout(resolve, 1000));
+        
+        const retryResult = await TableMemory.API.processChat(messages, {
+          characterId: safeCharacterId,
+          conversationId: safeConversationId,
+          userName: options.userName,
+          aiName: options.aiName,
+          isMultiRound: options.isMultiRound,
+          chatContent: messageContent
+        });
+        
+        return {
+          success: retryResult.updatedSheets.length > 0,
+          updatedSheets: retryResult.updatedSheets
+        };
+      } catch (retryError) {
+        console.error('[TableMemoryIntegration] 重试失败:', retryError);
+        return { success: false, updatedSheets: [] };
+      }
+    }
   } catch (error) {
-    console.error('[TableMemoryIntegration] 处理聊天消息时出错:', error);
+    console.error('【表格插件】[processChat] 处理聊天消息时出错:', error);
     return { success: false, updatedSheets: [] };
   }
 }
@@ -649,54 +741,46 @@ export function extendAddToVectorStore(
     filters: SearchFilters,
     isMultiRound: boolean = false
   ): Promise<any> {
-    // 首先调用原始方法
     const results = await originalMethod.call(this, messages, metadata, filters, isMultiRound);
-    
+
     // 如果表格记忆功能启用，处理表格记忆
     if (isTableMemoryEnabled()) {
       try {
-        // FIXED: Ensure consistent ID handling and prevent type mismatches
-        const characterId = filters.agentId ? String(filters.agentId) : null;
-        const conversationId = filters.runId ? String(filters.runId) : characterId;
-        
-        if (characterId && conversationId) {
-          console.log(`[TableMemoryIntegration] 处理表格记忆，角色ID: ${characterId}, 会话ID: ${conversationId}`);
-          
-          // 获取Mem0Service实例，以获取自定义称呼
-          const mem0Service = Mem0Service.getInstance();
-          const userName = metadata.userName || 
-                          (mem0Service ? mem0Service.getUserName(characterId) : '用户');
-          const aiName = metadata.aiName || 
-                        (mem0Service ? mem0Service.getAIName(characterId) : 'AI');
-          
-          // 从messages中提取出对话内容
-          const chatContent = messages.map(m => {
-            const role = m.role === 'assistant' ? aiName : (m.role === 'user' ? userName : m.role);
-            const content = typeof m.content === 'string' ? m.content : JSON.stringify(m.content);
-            return `${role}: ${content}`;
-          }).join('\n\n');
-          
-          console.log(`[TableMemoryIntegration] 提取的对话内容长度: ${chatContent.length} 字符`);
-          
-          // 异步处理表格记忆，不阻塞主流程
-          // 直接传递原始messages和提取的chatContent
-          processChat(messages, characterId, conversationId, {
-            userName,
-            aiName,
-            isMultiRound,
-            chatContent  // 显式传递提取的对话内容
-          }).catch(error => {
-            console.error("[TableMemoryIntegration] 处理表格记忆时出错:", error);
-          });
+        // 检查是否已经处理过LLM表格操作，避免重复
+        if (metadata && metadata._tableActionsProcessed) {
+          console.log('[TableMemoryIntegration] 本轮表格操作已由主流程处理，跳过 processChat');
         } else {
-          console.log('[TableMemoryIntegration] 缺少角色ID或会话ID，跳过表格记忆处理');
+          const characterId = filters.agentId ? String(filters.agentId) : null;
+          const conversationId = filters.runId ? String(filters.runId) : characterId;
+          if (characterId && conversationId) {
+            console.log(`[TableMemoryIntegration] 处理表格记忆，角色ID: ${characterId}, 会话ID: ${conversationId}`);
+            const mem0Service = Mem0Service.getInstance();
+            const userName = metadata.userName || 
+                            (mem0Service ? mem0Service.getUserName(characterId) : '用户');
+            const aiName = metadata.aiName || 
+                          (mem0Service ? mem0Service.getAIName(characterId) : 'AI');
+            const chatContent = messages.map(m => {
+              const role = m.role === 'assistant' ? aiName : (m.role === 'user' ? userName : m.role);
+              const content = typeof m.content === 'string' ? m.content : JSON.stringify(m.content);
+              return `${role}: ${content}`;
+            }).join('\n\n');
+            console.log(`[TableMemoryIntegration] 提取的对话内容长度: ${chatContent.length} 字符`);
+            processChat(messages, characterId, conversationId, {
+              userName,
+              aiName,
+              isMultiRound,
+              chatContent
+            }).catch(error => {
+              console.error("[TableMemoryIntegration] 处理表格记忆时出错:", error);
+            });
+          } else {
+            console.log('[TableMemoryIntegration] 缺少角色ID或会话ID，跳过表格记忆处理');
+          }
         }
       } catch (error) {
         console.error("[TableMemoryIntegration] 处理表格记忆时出错:", error);
       }
     }
-    
-    // 返回原始方法的结果
     return results;
   };
 }
