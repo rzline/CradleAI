@@ -33,6 +33,7 @@ interface MemoOverlayProps {
   onClose: () => void;
   characterId?: string;
   conversationId?: string;
+  customUserName?: string; // 新增
 }
 interface SimpleSheet {
   uid: string;
@@ -72,7 +73,7 @@ const DB_SIZE_ALERT_THRESHOLD = 100;
 const SETTINGS_STORAGE_KEY = 'MemoryProcessingControl:settings';
 
 // Main component
-const MemoOverlay: React.FC<MemoOverlayProps> = ({ isVisible, onClose, characterId, conversationId }) => {
+const MemoOverlay: React.FC<MemoOverlayProps> = ({ isVisible, onClose, characterId, conversationId, customUserName }) => {
   // State for tabs and loading
   const [activeTab, setActiveTab] = useState<TabType>(TabType.TABLES);
   const [loading, setLoading] = useState<boolean>(false);
@@ -310,6 +311,44 @@ const MemoOverlay: React.FC<MemoOverlayProps> = ({ isVisible, onClose, character
     }
   };
 
+  // 替换模板中的 <user> 和 用户 为 customUserName
+  const replaceUserInTemplate = useCallback(
+    (template: TableMemory.SheetTemplate): TableMemory.SheetTemplate => {
+      if (!customUserName) return template;
+      // 需要替换的字段
+      const fieldsToReplace = [
+        'name', 'type', 'note', 'initPrompt', 'insertPrompt', 'deletePrompt', 'updatePrompt'
+      ];
+      const replaced: any = { ...template };
+      fieldsToReplace.forEach(field => {
+        if (typeof replaced[field] === 'string') {
+          replaced[field] = replaced[field]
+            .replace(/<user>/g, customUserName)
+            .replace(/用户/g, customUserName);
+        }
+      });
+      // columns 也可能包含
+      if (Array.isArray(replaced.columns)) {
+        replaced.columns = replaced.columns.map((col: any) => {
+          const colCopy = { ...col };
+          if (typeof colCopy.value === 'string') {
+            colCopy.value = colCopy.value
+              .replace(/<user>/g, customUserName)
+              .replace(/用户/g, customUserName);
+          }
+          if (typeof colCopy.columnNote === 'string') {
+            colCopy.columnNote = colCopy.columnNote
+              .replace(/<user>/g, customUserName)
+              .replace(/用户/g, customUserName);
+          }
+          return colCopy;
+        });
+      }
+      return replaced;
+    },
+    [customUserName]
+  );
+
   // Handle template selection
   const handleTemplateSelection = async (templateId: string, selected: boolean) => {
     try {
@@ -366,9 +405,12 @@ const MemoOverlay: React.FC<MemoOverlayProps> = ({ isVisible, onClose, character
         return;
       }
 
+      // === 新增：对模板做 customUserName 替换 ===
+      const replacedTemplates = validTemplates.map(replaceUserInTemplate);
+
       // 使用文件系统优化后的API创建表格
       const createdTableIds = await TableMemory.createSheetsFromTemplates(
-        validTemplates, // 传递完整模板对象而非ID，避免额外的文件访问
+        replacedTemplates, // 用替换后的模板
         safeCharacterId,
         safeConversationId
       );

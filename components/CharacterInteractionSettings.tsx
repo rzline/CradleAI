@@ -14,7 +14,9 @@ import {
   ScrollView,
   Dimensions,
   TextInput,
+  StatusBar
 } from 'react-native';
+import { BlurView } from 'expo-blur';
 import { Character } from '@/shared/types';
 import { useCharacters } from '@/constants/CharactersContext';
 import { theme } from '@/constants/theme';
@@ -31,8 +33,9 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import DateTimePicker from '@react-native-community/datetimepicker';
 import { registerForPushNotificationsAsync } from '@/services/notification-service';
 import Animated, { FadeInDown, FadeOut } from 'react-native-reanimated';
+import * as FileSystem from 'expo-file-system'; // 新增
 
-const { width } = Dimensions.get('window');
+const { height, width } = Dimensions.get('window');
 const CARD_WIDTH = width - 32;
 
 interface CharacterInteractionSettingsProps {
@@ -57,6 +60,13 @@ const formatDate = (timestamp: number): string => {
   return new Date(timestamp).toLocaleString();
 };
 
+// Tab enum for better type safety
+enum TabType {
+  GENERAL = 'general',
+  MEMORY = 'memory',
+  SCHEDULE = 'schedule'
+}
+
 const CharacterInteractionSettings: React.FC<CharacterInteractionSettingsProps> = ({
   isVisible,
   onClose
@@ -65,7 +75,7 @@ const CharacterInteractionSettings: React.FC<CharacterInteractionSettingsProps> 
   const { characters, updateCharacter } = useCharacters();
   const [expandedCharacterId, setExpandedCharacterId] = useState<string | null>(null);
   const [loading, setLoading] = useState<string | null>(null);
-  const [activeTab, setActiveTab] = useState<'general' | 'memory' | 'schedule'>('general');
+  const [activeTab, setActiveTab] = useState<TabType>(TabType.GENERAL);
   const [searchQuery, setSearchQuery] = useState('');
   
   // Memory management states
@@ -306,25 +316,42 @@ const CharacterInteractionSettings: React.FC<CharacterInteractionSettingsProps> 
     try {
       setIsLoadingMemory(true);
       setSelectedCharacter(character);
-      
+  
       const storageKey = `nodest_${character.id}_circle_memory`;
-      const memoryData = await AsyncStorage.getItem(storageKey);
-      
+  
+      // 优先尝试通过 FileSystem 读取
+      let memoryData: string | null = null;
+      const fsDir = FileSystem.documentDirectory + 'nodest_characters/';
+      const fsPath = fsDir + storageKey + '.json';
+      try {
+        const fileInfo = await FileSystem.getInfoAsync(fsPath);
+        if (fileInfo.exists) {
+          memoryData = await FileSystem.readAsStringAsync(fsPath, { encoding: FileSystem.EncodingType.UTF8 });
+        }
+      } catch (e) {
+        // ignore, fallback to AsyncStorage
+      }
+  
+      // 如果 FileSystem 没有，降级用 AsyncStorage
+      if (!memoryData) {
+        memoryData = await AsyncStorage.getItem(storageKey);
+      }
+  
       if (memoryData) {
         const memories = JSON.parse(memoryData);
         setCircleMemories(memories);
-        
+  
         // Calculate memory stats
         let totalSize = getStringByteSize(memoryData);
         let oldestDate = null;
         let newestDate = null;
-        
+  
         if (memories.length > 0) {
           // Find oldest and newest entries
           oldestDate = Math.min(...memories.map((m: any) => m.timestamp));
           newestDate = Math.max(...memories.map((m: any) => m.timestamp));
         }
-        
+  
         setMemoryStats({
           count: memories.length,
           totalSize,
@@ -340,7 +367,7 @@ const CharacterInteractionSettings: React.FC<CharacterInteractionSettingsProps> 
           newestDate: null
         });
       }
-      
+  
       setIsMemoryModalVisible(true);
     } catch (error) {
       console.error('加载角色朋友圈记忆失败:', error);
@@ -349,7 +376,7 @@ const CharacterInteractionSettings: React.FC<CharacterInteractionSettingsProps> 
       setIsLoadingMemory(false);
     }
   };
-
+  
   // Delete a specific memory entry
   const deleteMemoryEntry = async (index: number) => {
     if (!selectedCharacter) return;
@@ -359,17 +386,29 @@ const CharacterInteractionSettings: React.FC<CharacterInteractionSettingsProps> 
       
       // Prepare storage key
       const storageKey = `nodest_${selectedCharacter.id}_circle_memory`;
-      
+
       // Create a new array without the deleted entry
       const updatedMemories = [...circleMemories];
       updatedMemories.splice(index, 1);
-      
-      // Save updated memories
+
+      // Save updated memories to AsyncStorage
       await AsyncStorage.setItem(storageKey, JSON.stringify(updatedMemories));
-      
+
+      // Also save to FileSystem if file exists
+      const fsDir = FileSystem.documentDirectory + 'nodest_characters/';
+      const fsPath = fsDir + storageKey + '.json';
+      try {
+        const fileInfo = await FileSystem.getInfoAsync(fsPath);
+        if (fileInfo.exists) {
+          await FileSystem.writeAsStringAsync(fsPath, JSON.stringify(updatedMemories), { encoding: FileSystem.EncodingType.UTF8 });
+        }
+      } catch (e) {
+        // ignore
+      }
+
       // Update state
       setCircleMemories(updatedMemories);
-      
+
       // Update stats
       const memoriesJson = JSON.stringify(updatedMemories);
       setMemoryStats({
@@ -611,12 +650,8 @@ const CharacterInteractionSettings: React.FC<CharacterInteractionSettingsProps> 
         animationType="slide"
         onRequestClose={() => setIsScheduleModalVisible(false)}
       >
-        <View style={styles.modalContainer}>
-          <Animated.View 
-            style={styles.scheduleModalContent}
-            entering={FadeInDown.duration(300)}
-            exiting={FadeOut.duration(200)}
-          >
+        <View style={styles.modalOverlay}>
+          <BlurView intensity={30} tint="dark" style={styles.blurContainer}>
             <View style={styles.modalHeader}>
               <Text style={styles.scheduleModalTitle}>
                 {selectedCharacterForSchedule.name} 的发布时间
@@ -626,7 +661,7 @@ const CharacterInteractionSettings: React.FC<CharacterInteractionSettingsProps> 
                 style={styles.closeButton}
                 disabled={isLoading}
               >
-                <Ionicons name="close" size={24} color={theme.colors.text} />
+                <Ionicons name="close" size={24} color="#fff" />
               </TouchableOpacity>
             </View>
             
@@ -637,7 +672,7 @@ const CharacterInteractionSettings: React.FC<CharacterInteractionSettingsProps> 
             
             {isLoading && (
               <View style={styles.scheduleLoading}>
-                <ActivityIndicator size="small" color={theme.colors.primary} />
+                <ActivityIndicator size="small" color="#ff9f1c" />
                 <Text style={styles.scheduleLoadingText}>处理中...</Text>
               </View>
             )}
@@ -652,7 +687,7 @@ const CharacterInteractionSettings: React.FC<CharacterInteractionSettingsProps> 
                   <MaterialCommunityIcons 
                     name="clock-outline" 
                     size={48} 
-                    color={theme.colors.textSecondary} 
+                    color="#999" 
                   />
                   <Text style={styles.noTimesText}>没有设置定时发布</Text>
                   <Text style={styles.noTimesSubText}>
@@ -667,7 +702,7 @@ const CharacterInteractionSettings: React.FC<CharacterInteractionSettingsProps> 
               onPress={addScheduledTime}
               disabled={isLoading}
             >
-              <AntDesign name="plus" size={18} color={theme.colors.black} />
+              <AntDesign name="plus" size={18} color="#000" />
               <Text style={styles.addTimeText}>添加新时间</Text>
             </TouchableOpacity>
             
@@ -680,7 +715,7 @@ const CharacterInteractionSettings: React.FC<CharacterInteractionSettingsProps> 
                 onChange={handleTimeChange}
               />
             )}
-          </Animated.View>
+          </BlurView>
         </View>
       </Modal>
     );
@@ -733,9 +768,9 @@ const CharacterInteractionSettings: React.FC<CharacterInteractionSettingsProps> 
             disabled={memoryDeleteLoading === `entry-${index}`}
           >
             {memoryDeleteLoading === `entry-${index}` ? (
-              <ActivityIndicator size="small" color={theme.colors.danger} />
+              <ActivityIndicator size="small" color="#ff6b6b" />
             ) : (
-              <MaterialIcons name="delete" size={20} color={theme.colors.danger} />
+              <MaterialIcons name="delete" size={20} color="#ff6b6b" />
             )}
           </TouchableOpacity>
         </View>
@@ -772,12 +807,8 @@ const CharacterInteractionSettings: React.FC<CharacterInteractionSettingsProps> 
         animationType="slide"
         onRequestClose={() => setIsMemoryModalVisible(false)}
       >
-        <View style={styles.modalContainer}>
-          <Animated.View 
-            style={styles.memoryModalContent}
-            entering={FadeInDown.duration(300)}
-            exiting={FadeOut.duration(200)}
-          >
+        <View style={styles.modalOverlay}>
+          <BlurView intensity={30} tint="dark" style={styles.blurContainer}>
             <View style={styles.modalHeader}>
               <View style={styles.modalTitleContainer}>
                 <Image 
@@ -790,7 +821,7 @@ const CharacterInteractionSettings: React.FC<CharacterInteractionSettingsProps> 
                 onPress={() => setIsMemoryModalVisible(false)} 
                 style={styles.closeButton}
               >
-                <Ionicons name="close" size={24} color={theme.colors.text} />
+                <Ionicons name="close" size={28} color="#fff" />
               </TouchableOpacity>
             </View>
             
@@ -799,24 +830,24 @@ const CharacterInteractionSettings: React.FC<CharacterInteractionSettingsProps> 
               <Text style={styles.memoryStatsTitle}>记忆统计</Text>
               <View style={styles.memoryStatsGrid}>
                 <View style={styles.memoryStatItem}>
-                  <MaterialIcons name="memory" size={20} color={theme.colors.accent} />
+                  <MaterialIcons name="memory" size={20} color="#ff9f1c" />
                   <Text style={styles.memoryStatLabel}>记忆条目</Text>
                   <Text style={styles.memoryStatValue}>{memoryStats.count}</Text>
                 </View>
                 <View style={styles.memoryStatItem}>
-                  <FontAwesome name="database" size={18} color={theme.colors.accent} />
+                  <FontAwesome name="database" size={18} color="#ff9f1c" />
                   <Text style={styles.memoryStatLabel}>存储大小</Text>
                   <Text style={styles.memoryStatValue}>{formatBytes(memoryStats.totalSize)}</Text>
                 </View>
                 <View style={styles.memoryStatItem}>
-                  <MaterialCommunityIcons name="calendar-start" size={18} color={theme.colors.accent} />
+                  <MaterialCommunityIcons name="calendar-start" size={18} color="#ff9f1c" />
                   <Text style={styles.memoryStatLabel}>最早记忆</Text>
                   <Text style={styles.memoryStatValue}>
                     {memoryStats.oldestDate ? formatDate(memoryStats.oldestDate) : '无记忆'}
                   </Text>
                 </View>
                 <View style={styles.memoryStatItem}>
-                  <MaterialCommunityIcons name="calendar-end" size={18} color={theme.colors.accent} />
+                  <MaterialCommunityIcons name="calendar-end" size={18} color="#ff9f1c" />
                   <Text style={styles.memoryStatLabel}>最新记忆</Text>
                   <Text style={styles.memoryStatValue}>
                     {memoryStats.newestDate ? formatDate(memoryStats.newestDate) : '无记忆'}
@@ -832,10 +863,10 @@ const CharacterInteractionSettings: React.FC<CharacterInteractionSettingsProps> 
                   disabled={memoryDeleteLoading === 'all'}
                 >
                   {memoryDeleteLoading === 'all' ? (
-                    <ActivityIndicator size="small" color={theme.colors.white} />
+                    <ActivityIndicator size="small" color="#fff" />
                   ) : (
                     <>
-                      <MaterialIcons name="delete-sweep" size={18} color={theme.colors.white} />
+                      <MaterialIcons name="delete-sweep" size={18} color="#fff" />
                       <Text style={styles.clearAllButtonText}>清除所有记忆</Text>
                     </>
                   )}
@@ -846,7 +877,7 @@ const CharacterInteractionSettings: React.FC<CharacterInteractionSettingsProps> 
             {/* Memory entries list */}
             {isLoadingMemory ? (
               <View style={styles.loadingContainer}>
-                <ActivityIndicator size="large" color={theme.colors.primary} />
+                <ActivityIndicator size="large" color="#ff9f1c" />
                 <Text style={styles.loadingText}>加载记忆中...</Text>
               </View>
             ) : circleMemories.length === 0 ? (
@@ -854,7 +885,7 @@ const CharacterInteractionSettings: React.FC<CharacterInteractionSettingsProps> 
                 <MaterialCommunityIcons 
                   name="thought-bubble-outline" 
                   size={48} 
-                  color={theme.colors.textSecondary} 
+                  color="#999" 
                 />
                 <Text style={styles.emptyText}>没有朋友圈记忆</Text>
                 <Text style={styles.emptySubtext}>
@@ -869,7 +900,7 @@ const CharacterInteractionSettings: React.FC<CharacterInteractionSettingsProps> 
                 contentContainerStyle={styles.memoryListContainer}
               />
             )}
-          </Animated.View>
+          </BlurView>
         </View>
       </Modal>
     );
@@ -909,18 +940,16 @@ const CharacterInteractionSettings: React.FC<CharacterInteractionSettingsProps> 
               <Picker
                 selectedValue={character.circlePostFrequency || 'medium'}
                 style={styles.pickerAndroid}
-                dropdownIconColor={theme.colors.white}
+                dropdownIconColor="#fff"
                 onValueChange={(value) => handleFrequencyChange(character, 'circlePostFrequency', value as 'low' | 'medium' | 'high')}
               >
-                <Picker.Item label="低" value="low" color={theme.colors.black}  />
-                <Picker.Item label="中" value="medium" color={theme.colors.black} />
-                <Picker.Item label="高" value="high" color={theme.colors.black} />
+                <Picker.Item label="低" value="low" color="#000"  />
+                <Picker.Item label="中" value="medium" color="#000" />
+                <Picker.Item label="高" value="high" color="#000" />
               </Picker>
             </View>
           )}
         </View>
-        
-
         
         <View style={styles.settingRow}>
           <Text style={styles.settingLabel}>互动频率</Text>
@@ -942,12 +971,12 @@ const CharacterInteractionSettings: React.FC<CharacterInteractionSettingsProps> 
               <Picker
                 selectedValue={character.circleInteractionFrequency || 'medium'}
                 style={styles.pickerAndroid}
-                dropdownIconColor={theme.colors.white}
+                dropdownIconColor="#fff"
                 onValueChange={(value) => handleFrequencyChange(character, 'circleInteractionFrequency', value as 'low' | 'medium' | 'high')}
               >
-                <Picker.Item label="低" value="low" color={theme.colors.black} />
-                <Picker.Item label="中" value="medium" color={theme.colors.black} />
-                <Picker.Item label="高" value="high" color={theme.colors.black} />
+                <Picker.Item label="低" value="low" color="#000" />
+                <Picker.Item label="中" value="medium" color="#000" />
+                <Picker.Item label="高" value="high" color="#000" />
               </Picker>
             </View>
           )}
@@ -957,7 +986,7 @@ const CharacterInteractionSettings: React.FC<CharacterInteractionSettingsProps> 
         <View style={styles.scheduledPostsSection}>
           <View style={styles.sectionHeader}>
             <View style={styles.sectionTitleContainer}>
-              <MaterialCommunityIcons name="clock-outline" size={20} color={theme.colors.accent} />
+              <MaterialCommunityIcons name="clock-outline" size={20} color="#ff9f1c" />
               <Text style={styles.sectionTitle}>定时发布</Text>
             </View>
             <Text style={styles.timesCount}>
@@ -974,7 +1003,7 @@ const CharacterInteractionSettings: React.FC<CharacterInteractionSettingsProps> 
                   <MaterialCommunityIcons 
                     name="clock-outline" 
                     size={14} 
-                    color={theme.colors.accent} 
+                    color="#ff9f1c" 
                   />
                   <Text style={styles.previewTimeText}>{formatTimeForDisplay(time)}</Text>
                 </View>
@@ -991,7 +1020,7 @@ const CharacterInteractionSettings: React.FC<CharacterInteractionSettingsProps> 
             style={styles.scheduleButton}
             onPress={() => openScheduleModal(character)}
           >
-            <MaterialCommunityIcons name="calendar-clock" size={16} color={theme.colors.black} />
+            <MaterialCommunityIcons name="calendar-clock" size={16} color="#000" />
             <Text style={styles.scheduleButtonText}>
               {characterTimes.length > 0 ? '管理时间' : '设置时间'}
             </Text>
@@ -1001,7 +1030,7 @@ const CharacterInteractionSettings: React.FC<CharacterInteractionSettingsProps> 
         {/* Memory management section */}
         <View style={styles.memorySection}>
           <View style={styles.memorySectionHeader}>
-            <MaterialCommunityIcons name="memory" size={20} color={theme.colors.accent} />
+            <MaterialCommunityIcons name="memory" size={20} color="#ff9f1c" />
             <Text style={styles.memoryTitle}>朋友圈社交记忆管理</Text>
           </View>
           
@@ -1011,7 +1040,7 @@ const CharacterInteractionSettings: React.FC<CharacterInteractionSettingsProps> 
               onPress={() => checkMemorySize(character)}
               disabled={loading === character.id}
             >
-              <MaterialCommunityIcons name="memory" size={18} color={theme.colors.buttonText} />
+              <MaterialCommunityIcons name="memory" size={18} color="#000" />
               <Text style={styles.memoryButtonText}>检查大小</Text>
             </TouchableOpacity>
             
@@ -1020,11 +1049,10 @@ const CharacterInteractionSettings: React.FC<CharacterInteractionSettingsProps> 
               onPress={() => loadCircleMemory(character)}
               disabled={loading === character.id || isLoadingMemory}
             >
-              <MaterialIcons name="settings" size={18} color={theme.colors.buttonText} />
+              <MaterialIcons name="settings" size={18} color="#000" />
               <Text style={styles.memoryButtonText}>管理记忆</Text>
             </TouchableOpacity>
           </View>
-          
         </View>
       </Animated.View>
     );
@@ -1038,7 +1066,7 @@ const CharacterInteractionSettings: React.FC<CharacterInteractionSettingsProps> 
         entering={FadeInDown.duration(300)}
       >
         <View style={styles.notificationSectionHeader}>
-          <MaterialCommunityIcons name="bell-outline" size={20} color={theme.colors.accent} />
+          <MaterialCommunityIcons name="bell-outline" size={20} color="#ff9f1c" />
           <Text style={styles.sectionTitle}>通知设置</Text>
         </View>
         
@@ -1053,8 +1081,8 @@ const CharacterInteractionSettings: React.FC<CharacterInteractionSettingsProps> 
           <Switch
             value={notificationsEnabled}
             onValueChange={handleNotificationToggle}
-            trackColor={{ false: '#767577', true: theme.colors.primaryTransparent }}
-            thumbColor={notificationsEnabled ? theme.colors.primary : '#f4f3f4'}
+            trackColor={{ false: '#767577', true: 'rgba(255, 159, 28, 0.7)' }}
+            thumbColor={notificationsEnabled ? '#ff9f1c' : '#f4f3f4'}
           />
         </View>
       </Animated.View>
@@ -1084,7 +1112,7 @@ const CharacterInteractionSettings: React.FC<CharacterInteractionSettingsProps> 
           
           <View style={styles.togglesContainer}>
             {isLoading ? (
-              <ActivityIndicator size="small" color={theme.colors.primary} />
+              <ActivityIndicator size="small" color="#ff9f1c" />
             ) : (
               <>
                 <View style={styles.toggleItem}>
@@ -1092,8 +1120,8 @@ const CharacterInteractionSettings: React.FC<CharacterInteractionSettingsProps> 
                   <Switch
                     value={item.circleInteraction === true}
                     onValueChange={() => handleCircleInteractionToggle(item)}
-                    trackColor={{ false: '#767577', true: theme.colors.primaryTransparent }}
-                    thumbColor={item.circleInteraction ? theme.colors.primary : '#f4f3f4'}
+                    trackColor={{ false: '#767577', true: 'rgba(255, 159, 28, 0.7)' }}
+                    thumbColor={item.circleInteraction ? '#ff9f1c' : '#f4f3f4'}
                   />
                 </View>
                 
@@ -1102,8 +1130,8 @@ const CharacterInteractionSettings: React.FC<CharacterInteractionSettingsProps> 
                   <Switch
                     value={item.relationshipEnabled === true}
                     onValueChange={() => handleRelationshipToggle(item)}
-                    trackColor={{ false: '#767577', true: theme.colors.primaryTransparent }}
-                    thumbColor={item.relationshipEnabled ? theme.colors.primary : '#f4f3f4'}
+                    trackColor={{ false: '#767577', true: 'rgba(255, 159, 28, 0.7)' }}
+                    thumbColor={item.relationshipEnabled ? '#ff9f1c' : '#f4f3f4'}
                   />
                 </View>
                 
@@ -1115,7 +1143,7 @@ const CharacterInteractionSettings: React.FC<CharacterInteractionSettingsProps> 
                     <MaterialIcons 
                       name={isExpanded ? "expand-less" : "expand-more"} 
                       size={24} 
-                      color={theme.colors.text} 
+                      color="#fff" 
                     />
                   </TouchableOpacity>
                 )}
@@ -1159,7 +1187,7 @@ const CharacterInteractionSettings: React.FC<CharacterInteractionSettingsProps> 
                     style={styles.memoryCharacterButton}
                     onPress={() => loadCircleMemory(character)}
                   >
-                    <MaterialIcons name="settings" size={16} color={theme.colors.buttonText} />
+                    <MaterialIcons name="settings" size={16} color="#000" />
                     <Text style={styles.memoryCharacterButtonText}>管理记忆</Text>
                   </TouchableOpacity>
                 </View>
@@ -1171,7 +1199,7 @@ const CharacterInteractionSettings: React.FC<CharacterInteractionSettingsProps> 
             <MaterialCommunityIcons 
               name="account-alert-outline" 
               size={48} 
-              color={theme.colors.textSecondary} 
+              color="#999" 
             />
             <Text style={styles.emptyText}>没有启用朋友圈的角色</Text>
             <Text style={styles.emptySubtext}>
@@ -1196,7 +1224,7 @@ const CharacterInteractionSettings: React.FC<CharacterInteractionSettingsProps> 
 
         <View style={styles.scheduleGlobalSection}>
           <View style={styles.scheduleGlobalHeader}>
-            <MaterialCommunityIcons name="bell-ring-outline" size={20} color={theme.colors.accent} />
+            <MaterialCommunityIcons name="bell-ring-outline" size={20} color="#ff9f1c" />
             <Text style={styles.scheduleGlobalTitle}>通知设置</Text>
           </View>
           
@@ -1211,8 +1239,8 @@ const CharacterInteractionSettings: React.FC<CharacterInteractionSettingsProps> 
             <Switch
               value={notificationsEnabled}
               onValueChange={handleNotificationToggle}
-              trackColor={{ false: '#767577', true: theme.colors.primaryTransparent }}
-              thumbColor={notificationsEnabled ? theme.colors.primary : '#f4f3f4'}
+              trackColor={{ false: '#767577', true: 'rgba(255, 159, 28, 0.7)' }}
+              thumbColor={notificationsEnabled ? '#ff9f1c' : '#f4f3f4'}
             />
           </View>
         </View>
@@ -1248,7 +1276,7 @@ const CharacterInteractionSettings: React.FC<CharacterInteractionSettingsProps> 
                                 <MaterialCommunityIcons 
                                   name="clock-outline" 
                                   size={14} 
-                                  color={theme.colors.accent} 
+                                  color="#ff9f1c" 
                                 />
                                 <Text style={styles.scheduleTimeChipText}>{formatTimeForDisplay(time)}</Text>
                               </View>
@@ -1256,7 +1284,7 @@ const CharacterInteractionSettings: React.FC<CharacterInteractionSettingsProps> 
                                 onPress={() => removeScheduledTime(character.id, time)}
                                 style={styles.scheduleTimeDeleteButton}
                               >
-                                <Ionicons name="close-circle" size={16} color={theme.colors.danger} />
+                                <Ionicons name="close-circle" size={16} color="#ff6b6b" />
                               </TouchableOpacity>
                             </View>
                           ))}
@@ -1270,7 +1298,7 @@ const CharacterInteractionSettings: React.FC<CharacterInteractionSettingsProps> 
                       style={styles.scheduleManageButton}
                       onPress={() => openScheduleModal(character)}
                     >
-                      <MaterialCommunityIcons name="clock-edit-outline" size={16} color={theme.colors.buttonText} />
+                      <MaterialCommunityIcons name="clock-edit-outline" size={16} color="#000" />
                       <Text style={styles.scheduleManageButtonText}>
                         {characterTimes.length > 0 ? '管理时间' : '设置时间'}
                       </Text>
@@ -1285,7 +1313,7 @@ const CharacterInteractionSettings: React.FC<CharacterInteractionSettingsProps> 
             <MaterialCommunityIcons 
               name="clock-alert-outline" 
               size={48} 
-              color={theme.colors.textSecondary} 
+              color="#999" 
             />
             <Text style={styles.emptyText}>没有启用朋友圈的角色</Text>
             <Text style={styles.emptySubtext}>
@@ -1297,61 +1325,124 @@ const CharacterInteractionSettings: React.FC<CharacterInteractionSettingsProps> 
     );
   };
 
+  // Search box for filtering characters
+  const renderSearchBox = () => (
+    <View style={styles.searchContainer}>
+      <Ionicons name="search" size={20} color="#999" style={styles.searchIcon} />
+      <TextInput
+        style={styles.searchInput}
+        placeholder="搜索角色..."
+        placeholderTextColor="#999"
+        value={searchQuery}
+        onChangeText={setSearchQuery}
+      />
+      {searchQuery.length > 0 && (
+        <TouchableOpacity style={styles.clearSearch} onPress={() => setSearchQuery('')}>
+          <Ionicons name="close-circle" size={20} color="#999" />
+        </TouchableOpacity>
+      )}
+    </View>
+  );
+
   return (
     <Modal
       visible={isVisible}
       transparent={true}
       animationType="fade"
       onRequestClose={onClose}
+      statusBarTranslucent
     >
-      <View style={styles.modalContainer}>
-        <Animated.View 
-          style={styles.modalContent}
-          entering={FadeInDown.duration(300)}
-        >
-          <View style={styles.modalHeader}>
-            <Text style={styles.modalTitle}>角色互动设置</Text>
+      <View style={styles.fullScreenContainer}>
+        <BlurView intensity={30} tint="dark" style={styles.fullScreenBlurView}>
+          <View style={styles.header}>
+            <Text style={styles.title}>角色互动设置</Text>
             <TouchableOpacity onPress={onClose} style={styles.closeButton}>
-              <Ionicons name="close" size={24} color={theme.colors.text} />
+              <Ionicons name="close" size={28} color="#fff" />
             </TouchableOpacity>
           </View>
           
-          {/* General settings tab */}
-          {activeTab === 'general' && (
-            <>
-              {/* Notifications section */}
-              {renderNotificationSettings()}
-
-              <FlatList
-                data={filteredCharacters}
-                renderItem={renderCharacterItem}
-                keyExtractor={(item) => item.id}
-                contentContainerStyle={styles.listContainer}
-                ListEmptyComponent={
-                  searchQuery.length > 0 ? (
-                    <View style={styles.emptyContainer}>
-                      <Feather name="search" size={48} color={theme.colors.textSecondary} />
-                      <Text style={styles.emptyText}>没有找到匹配的角色</Text>
-                      <Text style={styles.emptySubtext}>尝试使用不同的搜索词</Text>
-                    </View>
-                  ) : (
-                    <View style={styles.emptyContainer}>
-                      <MaterialCommunityIcons name="account-off-outline" size={48} color={theme.colors.textSecondary} />
-                      <Text style={styles.emptyText}>暂无角色</Text>
-                      <Text style={styles.emptySubtext}>请添加角色以启用互动功能</Text>
-                    </View>
-                  )
-                }
+          <View style={styles.tabs}>
+            <TouchableOpacity
+              style={[styles.tab, activeTab === TabType.GENERAL && styles.activeTab]}
+              onPress={() => setActiveTab(TabType.GENERAL)}
+            >
+              <Ionicons
+                name="settings-outline"
+                size={20}
+                color={activeTab === TabType.GENERAL ? '#ff9f1c' : '#ccc'}
               />
-            </>
-          )}
+              <Text style={[styles.tabText, activeTab === TabType.GENERAL && styles.activeTabText]}>
+                角色设置
+              </Text>
+            </TouchableOpacity>
+            <TouchableOpacity
+              style={[styles.tab, activeTab === TabType.MEMORY && styles.activeTab]}
+              onPress={() => setActiveTab(TabType.MEMORY)}
+            >
+              <MaterialCommunityIcons
+                name="brain"
+                size={20}
+                color={activeTab === TabType.MEMORY ? '#ff9f1c' : '#ccc'}
+              />
+              <Text style={[styles.tabText, activeTab === TabType.MEMORY && styles.activeTabText]}>
+                记忆管理
+              </Text>
+            </TouchableOpacity>
+            <TouchableOpacity
+              style={[styles.tab, activeTab === TabType.SCHEDULE && styles.activeTab]}
+              onPress={() => setActiveTab(TabType.SCHEDULE)}
+            >
+              <MaterialCommunityIcons
+                name="calendar-clock"
+                size={20}
+                color={activeTab === TabType.SCHEDULE ? '#ff9f1c' : '#ccc'}
+              />
+              <Text style={[styles.tabText, activeTab === TabType.SCHEDULE && styles.activeTabText]}>
+                计划发布
+              </Text>
+            </TouchableOpacity>
+          </View>
           
-          {/* Memory management tab */}
-          {activeTab === 'memory' && renderMemoryTab()}
-          
-          {/* Schedule management tab */}
-          {activeTab === 'schedule' && renderScheduleTab()}
-        </Animated.View>
+          <View style={styles.content}>
+            {/* General settings tab */}
+            {activeTab === TabType.GENERAL && (
+              <>
+                {renderSearchBox()}
+                
+                {/* Notifications section */}
+                {renderNotificationSettings()}
+
+                <FlatList
+                  data={filteredCharacters}
+                  renderItem={renderCharacterItem}
+                  keyExtractor={(item) => item.id}
+                  contentContainerStyle={styles.listContainer}
+                  ListEmptyComponent={
+                    searchQuery.length > 0 ? (
+                      <View style={styles.emptyContainer}>
+                        <Feather name="search" size={48} color="#999" />
+                        <Text style={styles.emptyText}>没有找到匹配的角色</Text>
+                        <Text style={styles.emptySubtext}>尝试使用不同的搜索词</Text>
+                      </View>
+                    ) : (
+                      <View style={styles.emptyContainer}>
+                        <MaterialCommunityIcons name="account-off-outline" size={48} color="#999" />
+                        <Text style={styles.emptyText}>暂无角色</Text>
+                        <Text style={styles.emptySubtext}>请添加角色以启用互动功能</Text>
+                      </View>
+                    )
+                  }
+                />
+              </>
+            )}
+            
+            {/* Memory management tab */}
+            {activeTab === TabType.MEMORY && renderMemoryTab()}
+            
+            {/* Schedule management tab */}
+            {activeTab === TabType.SCHEDULE && renderScheduleTab()}
+          </View>
+        </BlurView>
       </View>
       
       {/* Circle Memory Management Modal */}
@@ -1364,85 +1455,123 @@ const CharacterInteractionSettings: React.FC<CharacterInteractionSettingsProps> 
 };
 
 const styles = StyleSheet.create({
-  // Modal container styles
-  modalContainer: {
+  fullScreenContainer: {
     flex: 1,
-    justifyContent: 'center',
-    alignItems: 'center',
-    backgroundColor: 'rgba(0,0,0,0.5)',
+    backgroundColor: 'rgba(0,0,0,0.7)',
   },
-  modalContent: {
-    width: '90%',
-    maxHeight: '85%',
-    backgroundColor: theme.colors.cardBackground,
-    borderRadius: theme.borderRadius.md,
+  fullScreenBlurView: {
+    flex: 1,
+    borderRadius: 0,
+    width: '100%',
+    height: '100%',
     overflow: 'hidden',
   },
-  modalHeader: {
+  blurContainer: {
+    width: '90%',
+    maxHeight: '85%',
+    borderRadius: 20,
+    overflow: 'hidden',
+    alignSelf: 'center',
+  },
+  modalOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(0, 0, 0, 0.7)',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  header: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
-    paddingVertical: 16,
-    paddingHorizontal: 20,
-    backgroundColor: theme.colors.backgroundSecondary,
+    // Top safe area padding
+    paddingTop: Platform.select({
+      ios: 44,
+      android: StatusBar.currentHeight || 24,
+      default: 24,
+    }),
+    paddingBottom: 8,
+    paddingHorizontal: 16,
     borderBottomWidth: 1,
-    borderBottomColor: theme.colors.border,
+    borderBottomColor: 'rgba(255, 255, 255, 0.1)',
   },
-  modalTitle: {
-    fontSize: 20,
+  title: {
+    fontSize: 18,
     fontWeight: 'bold',
-    color: theme.colors.text,
+    color: '#fff',
   },
   closeButton: {
     padding: 5,
   },
   
-  // Tab bar styles
-  tabBar: {
+  // Tab bar styles aligned with MemoOverlay
+  tabs: {
     flexDirection: 'row',
-    backgroundColor: theme.colors.background,
-    paddingTop: 8,
     borderBottomWidth: 1,
-    borderBottomColor: theme.colors.border,
+    borderBottomColor: 'rgba(255, 255, 255, 0.1)',
   },
   tab: {
     flex: 1,
+    padding: 12,
+    flexDirection: 'row',
+    justifyContent: 'center',
     alignItems: 'center',
-    paddingVertical: 10,
-    paddingHorizontal: 5,
+    borderBottomWidth: 2,
+    borderBottomColor: 'transparent',
   },
   activeTab: {
-    borderBottomWidth: 2,
-    borderBottomColor: theme.colors.primary,
+    borderBottomColor: '#ff9f1c',
   },
   tabText: {
-    fontSize: 12,
-    color: theme.colors.textSecondary,
-    marginTop: 4,
+    color: '#ccc',
+    marginLeft: 8,
+    fontSize: 14,
   },
   activeTabText: {
-    color: theme.colors.primary,
-    fontWeight: '500',
+    color: '#ff9f1c',
+    fontWeight: 'bold',
   },
-  tabContent: {
+  content: {
     flex: 1,
-    backgroundColor: theme.colors.background,
   },
   
-
+  // Search container
+  searchContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: 'rgba(60, 60, 60, 0.6)',
+    borderRadius: 10,
+    margin: 16,
+    paddingHorizontal: 12,
+    height: 44,
+  },
+  searchIcon: {
+    marginRight: 8,
+  },
+  searchInput: {
+    flex: 1,
+    color: '#fff',
+    fontSize: 16,
+    height: 44,
+  },
+  clearSearch: {
+    padding: 4,
+  },
   
   // List container style
   listContainer: {
     padding: 16,
+    paddingTop: 0,
     paddingBottom: 40,
   },
   
   // Character card styles
   characterCard: {
-    backgroundColor: theme.colors.backgroundSecondary,
+    backgroundColor: 'rgba(60, 60, 60, 0.6)',
     marginBottom: 12,
-    borderRadius: theme.borderRadius.md,
+    borderRadius: 10,
     overflow: 'hidden',
+    borderWidth: 1,
+    borderColor: 'rgba(255, 255, 255, 0.05)',
   },
   characterHeader: {
     flexDirection: 'row',
@@ -1467,7 +1596,7 @@ const styles = StyleSheet.create({
   characterName: {
     fontSize: 16,
     fontWeight: '500',
-    color: theme.colors.text,
+    color: '#fff',
   },
   togglesContainer: {
     flexDirection: 'row',
@@ -1479,7 +1608,7 @@ const styles = StyleSheet.create({
   },
   toggleLabel: {
     fontSize: 12,
-    color: theme.colors.textSecondary,
+    color: '#ccc',
     marginBottom: 4,
   },
   settingsButton: {
@@ -1490,14 +1619,14 @@ const styles = StyleSheet.create({
   // Expanded settings styles
   expandedSettings: {
     padding: 16,
-    backgroundColor: theme.colors.background,
+    backgroundColor: 'rgba(40, 40, 40, 0.8)',
     borderTopWidth: 1,
-    borderTopColor: theme.colors.border,
+    borderTopColor: 'rgba(255, 255, 255, 0.1)',
   },
   settingsLabel: {
     fontSize: 16,
     fontWeight: '500',
-    color: theme.colors.text,
+    color: '#fff',
     marginBottom: 12,
   },
   settingRow: {
@@ -1508,26 +1637,26 @@ const styles = StyleSheet.create({
   },
   settingLabel: {
     fontSize: 14,
-    color: theme.colors.text,
+    color: '#fff',
     flex: 1,
   },
   pickerContainer: {
     width: 150,
     backgroundColor: 'rgba(60, 60, 70, 0.5)',
-    borderRadius: theme.borderRadius.sm,
+    borderRadius: 8,
     overflow: 'hidden',
   },
   picker: {
     width: 150,
-    color: theme.colors.black,
+    color: '#000',
   },
   pickerItem: {
-    color: theme.colors.black,
+    color: '#000',
     fontSize: 14,
   },
   pickerContainerAndroid: {
     backgroundColor: 'rgba(60, 60, 70, 0.5)',
-    borderRadius: theme.borderRadius.sm,
+    borderRadius: 8,
     overflow: 'hidden',
     width: 150,
     height: 40,
@@ -1535,7 +1664,7 @@ const styles = StyleSheet.create({
   },
   pickerAndroid: {
     width: 150,
-    color: theme.colors.white,
+    color: '#fff',
     fontSize: 2,
     height: 80,
   },
@@ -1543,7 +1672,7 @@ const styles = StyleSheet.create({
   // Scheduled posts section styles
   scheduledPostsSection: {
     backgroundColor: 'rgba(50, 50, 60, 0.4)',
-    borderRadius: theme.borderRadius.md,
+    borderRadius: 10,
     padding: 12,
     marginVertical: 16,
   },
@@ -1560,12 +1689,12 @@ const styles = StyleSheet.create({
   sectionTitle: {
     fontSize: 14,
     fontWeight: '500',
-    color: theme.colors.text,
+    color: '#fff',
     marginLeft: 6,
   },
   timesCount: {
     fontSize: 12,
-    color: theme.colors.textSecondary,
+    color: '#ccc',
   },
   schedulePreview: {
     flexDirection: 'row',
@@ -1583,7 +1712,7 @@ const styles = StyleSheet.create({
     marginBottom: 6,
   },
   previewTimeText: {
-    color: theme.colors.text,
+    color: '#fff',
     fontSize: 12,
     marginLeft: 4,
   },
@@ -1595,30 +1724,28 @@ const styles = StyleSheet.create({
     marginRight: 8,
   },
   previewMoreTimesText: {
-    color: theme.colors.textSecondary,
+    color: '#ccc',
     fontSize: 12,
   },
   scheduleButton: {
-    backgroundColor: theme.colors.primary,
+    backgroundColor: '#ff9f1c',
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
     paddingVertical: 8,
-    borderRadius: theme.borderRadius.sm,
+    borderRadius: 8,
   },
   scheduleButtonText: {
-    color: theme.colors.black,
+    color: '#000',
     fontSize: 14,
     fontWeight: '500',
     marginLeft: 6,
   },
   
-
-  
   // Memory management styles
   memorySection: {
     backgroundColor: 'rgba(50, 50, 60, 0.4)',
-    borderRadius: theme.borderRadius.md,
+    borderRadius: 10,
     padding: 12,
     marginTop: 8,
   },
@@ -1628,7 +1755,7 @@ const styles = StyleSheet.create({
     marginBottom: 8,
   },
   memoryTitle: {
-    color: theme.colors.text,
+    color: '#fff',
     fontSize: 14,
     fontWeight: '500',
     marginLeft: 6,
@@ -1639,46 +1766,41 @@ const styles = StyleSheet.create({
     marginBottom: 12,
   },
   memoryButton: {
-    backgroundColor: theme.colors.primary,
+    backgroundColor: '#ff9f1c',
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
     paddingVertical: 8,
     paddingHorizontal: 12,
-    borderRadius: theme.borderRadius.sm,
+    borderRadius: 8,
     flex: 1,
     marginRight: 8,
   },
   manageButton: {
-    backgroundColor: theme.colors.accent,
+    backgroundColor: '#3c9aff',
     marginRight: 0,
   },
   memoryButtonText: {
-    color: theme.colors.black,
+    color: '#000',
     fontSize: 14,
     marginLeft: 6,
-  },
-  memoryDescriptionContainer: {
-    flexDirection: 'row',
-    alignItems: 'flex-start',
-    backgroundColor: 'rgba(40, 40, 50, 0.6)',
-    borderRadius: theme.borderRadius.sm,
-    padding: 8,
   },
   
   // Notification section styles
   notificationSection: {
-    backgroundColor: theme.colors.backgroundSecondary,
-    borderRadius: theme.borderRadius.md,
+    backgroundColor: 'rgba(60, 60, 60, 0.6)',
+    borderRadius: 10,
     padding: 16,
     marginBottom: 16,
     marginHorizontal: 16,
+    borderWidth: 1,
+    borderColor: 'rgba(255, 255, 255, 0.05)',
   },
   notificationSectionHeader: {
     flexDirection: 'row',
     alignItems: 'center',
     marginBottom: 12,
-    marginTop: 12,
+    marginTop: 4,
   },
   notificationRow: {
     flexDirection: 'row',
@@ -1692,21 +1814,29 @@ const styles = StyleSheet.create({
   notificationLabel: {
     fontSize: 15,
     fontWeight: '500',
-    color: theme.colors.text,
+    color: '#fff',
     marginBottom: 4,
   },
   notificationDescription: {
     fontSize: 13,
-    color: theme.colors.textSecondary,
+    color: '#ccc',
   },
   
   // Memory modal styles
-  memoryModalContent: {
-    width: '90%',
-    maxHeight: '85%',
-    backgroundColor: theme.colors.cardBackground,
-    borderRadius: theme.borderRadius.md,
-    overflow: 'hidden',
+  modalHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    paddingVertical: 16,
+    paddingHorizontal: 20,
+    backgroundColor: 'rgba(30, 30, 30, 0.8)',
+    borderBottomWidth: 1,
+    borderBottomColor: 'rgba(255, 255, 255, 0.1)',
+  },
+  modalTitle: {
+    fontSize: 18,
+    fontWeight: 'bold',
+    color: '#fff',
   },
   modalTitleContainer: {
     flexDirection: 'row',
@@ -1720,13 +1850,13 @@ const styles = StyleSheet.create({
   },
   memoryStatsSection: {
     padding: 16,
-    backgroundColor: theme.colors.backgroundSecondary,
+    backgroundColor: 'rgba(50, 50, 60, 0.6)',
     marginBottom: 12,
   },
   memoryStatsTitle: {
     fontSize: 16,
     fontWeight: '500',
-    color: theme.colors.text,
+    color: '#fff',
     marginBottom: 12,
   },
   memoryStatsGrid: {
@@ -1742,35 +1872,37 @@ const styles = StyleSheet.create({
   },
   memoryStatLabel: {
     fontSize: 12,
-    color: theme.colors.textSecondary,
+    color: '#ccc',
     marginTop: 4,
     marginBottom: 4,
   },
   memoryStatValue: {
     fontSize: 14,
     fontWeight: '500',
-    color: theme.colors.text,
+    color: '#fff',
     textAlign: 'center',
   },
   clearAllButton: {
-    backgroundColor: theme.colors.danger,
+    backgroundColor: '#ff6b6b',
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
     paddingVertical: 10,
-    borderRadius: theme.borderRadius.sm,
+    borderRadius: 8,
   },
   clearAllButtonText: {
-    color: theme.colors.white,
+    color: '#fff',
     marginLeft: 6,
     fontSize: 14,
     fontWeight: '500',
   },
   memoryItem: {
-    backgroundColor: theme.colors.backgroundSecondary,
+    backgroundColor: 'rgba(60, 60, 60, 0.6)',
     marginBottom: 12,
-    borderRadius: theme.borderRadius.sm,
+    borderRadius: 10,
     overflow: 'hidden',
+    borderWidth: 1,
+    borderColor: 'rgba(255, 255, 255, 0.05)',
   },
   memoryHeader: {
     flexDirection: 'row',
@@ -1783,7 +1915,7 @@ const styles = StyleSheet.create({
     flex: 1,
   },
   memoryDate: {
-    color: theme.colors.text,
+    color: '#fff',
     fontSize: 12,
     marginBottom: 2,
   },
@@ -1793,12 +1925,12 @@ const styles = StyleSheet.create({
     alignItems: 'center',
   },
   memoryType: {
-    color: theme.colors.accent,
+    color: '#ff9f1c',
     fontSize: 12,
     fontWeight: '500',
   },
   memorySize: {
-    color: theme.colors.textSecondary,
+    color: '#ccc',
     fontSize: 11,
   },
   deleteMemoryButton: {
@@ -1811,23 +1943,23 @@ const styles = StyleSheet.create({
     maxHeight: 100,
   },
   memoryContentText: {
-    color: theme.colors.text,
+    color: '#fff',
     fontSize: 13,
   },
   memoryResponse: {
     marginTop: 8,
     borderLeftWidth: 2,
-    borderLeftColor: theme.colors.accent,
+    borderLeftColor: '#ff9f1c',
     paddingLeft: 8,
   },
   memoryResponseLabel: {
-    color: theme.colors.accent,
+    color: '#ff9f1c',
     fontSize: 12,
     fontWeight: '500',
     marginBottom: 2,
   },
   memoryResponseText: {
-    color: theme.colors.textSecondary,
+    color: '#ccc',
     fontSize: 12,
     fontStyle: 'italic',
   },
@@ -1838,34 +1970,37 @@ const styles = StyleSheet.create({
   // Schedule modal styles
   scheduleModalContent: {
     width: '90%',
-    backgroundColor: theme.colors.cardBackground,
-    borderRadius: theme.borderRadius.md,
+    backgroundColor: 'rgba(30, 30, 30, 0.95)',
+    borderRadius: 10,
     maxHeight: '80%',
     overflow: 'hidden',
   },
   scheduleModalTitle: {
     fontSize: 18,
     fontWeight: 'bold',
-    color: theme.colors.text,
+    color: '#fff',
   },
   scheduleDescription: {
-    color: theme.colors.textSecondary,
+    color: '#ccc',
     fontSize: 14,
     padding: 16,
     paddingTop: 0,
     lineHeight: 20,
   },
   timesList: {
-    maxHeight: 300, // Ensure scrollable with many times
+    maxHeight: 300,
   },
   timeItem: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
-    backgroundColor: theme.colors.backgroundSecondary,
+    backgroundColor: 'rgba(60, 60, 60, 0.6)',
     padding: 12,
-    borderRadius: theme.borderRadius.sm,
+    borderRadius: 8,
+    marginHorizontal: 16,
     marginBottom: 8,
+    borderWidth: 1,
+    borderColor: 'rgba(255, 255, 255, 0.05)',
   },
   timeDisplay: {
     flexDirection: 'row',
@@ -1873,14 +2008,14 @@ const styles = StyleSheet.create({
     flex: 1,
   },
   timeText: {
-    color: theme.colors.text,
+    color: '#fff',
     fontSize: 16,
     marginLeft: 8,
   },
   removeTimeButton: {
-    padding: 8,  // Increased touch target size
+    padding: 8,
     marginLeft: 8,
-    backgroundColor: 'rgba(255, 59, 48, 0.1)', // Subtle background for the button
+    backgroundColor: 'rgba(255, 59, 48, 0.1)',
     borderRadius: 20,
   },
   scheduleLoading: {
@@ -1890,22 +2025,22 @@ const styles = StyleSheet.create({
     paddingVertical: 8,
   },
   scheduleLoadingText: {
-    color: theme.colors.textSecondary,
+    color: '#ccc',
     marginLeft: 8,
     fontSize: 14,
   },
   addTimeButton: {
-    backgroundColor: theme.colors.primary,
+    backgroundColor: '#ff9f1c',
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
     padding: 12,
-    borderRadius: theme.borderRadius.sm,
+    borderRadius: 8,
     margin: 16,
     marginTop: 0,
   },
   addTimeText: {
-    color: theme.colors.black,
+    color: '#000',
     marginLeft: 8,
     fontSize: 16,
   },
@@ -1915,36 +2050,41 @@ const styles = StyleSheet.create({
     padding: 20,
   },
   noTimesText: {
-    color: theme.colors.text,
+    color: '#fff',
     fontSize: 16,
     fontWeight: '500',
     marginTop: 12,
   },
   noTimesSubText: {
-    color: theme.colors.textSecondary,
+    color: '#ccc',
     fontSize: 14,
     marginTop: 8,
     textAlign: 'center',
   },
   
   // Memory tab content styles
+  tabContent: {
+    flex: 1,
+  },
   memoryTabContent: {
     padding: 16,
   },
   memoryOverview: {
-    backgroundColor: theme.colors.backgroundSecondary,
-    borderRadius: theme.borderRadius.md,
+    backgroundColor: 'rgba(60, 60, 60, 0.6)',
+    borderRadius: 10,
     padding: 16,
     marginBottom: 20,
+    borderWidth: 1,
+    borderColor: 'rgba(255, 255, 255, 0.05)',
   },
   memoryOverviewTitle: {
     fontSize: 18,
     fontWeight: 'bold',
-    color: theme.colors.text,
+    color: '#fff',
     marginBottom: 8,
   },
   memoryOverviewDescription: {
-    color: theme.colors.textSecondary,
+    color: '#ccc',
     fontSize: 14,
     lineHeight: 20,
   },
@@ -1954,16 +2094,18 @@ const styles = StyleSheet.create({
   memoryCharactersTitle: {
     fontSize: 16,
     fontWeight: '500',
-    color: theme.colors.text,
+    color: '#fff',
     marginBottom: 12,
   },
   memoryCharacterItem: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: theme.colors.backgroundSecondary,
+    backgroundColor: 'rgba(60, 60, 60, 0.6)',
     padding: 12,
-    borderRadius: theme.borderRadius.md,
+    borderRadius: 10,
     marginBottom: 12,
+    borderWidth: 1,
+    borderColor: 'rgba(255, 255, 255, 0.05)',
   },
   memoryCharacterAvatar: {
     width: 50,
@@ -1975,22 +2117,22 @@ const styles = StyleSheet.create({
     flex: 1,
   },
   memoryCharacterName: {
-    color: theme.colors.text,
+    color: '#fff',
     fontSize: 16,
     fontWeight: '500',
     marginBottom: 6,
   },
   memoryCharacterButton: {
-    backgroundColor: theme.colors.accent,
+    backgroundColor: '#ff9f1c',
     flexDirection: 'row',
     alignItems: 'center',
     paddingVertical: 6,
     paddingHorizontal: 12,
-    borderRadius: theme.borderRadius.sm,
+    borderRadius: 8,
     alignSelf: 'flex-start',
   },
   memoryCharacterButtonText: {
-    color: theme.colors.black,
+    color: '#000',
     fontSize: 12,
     marginLeft: 4,
   },
@@ -2005,27 +2147,31 @@ const styles = StyleSheet.create({
     padding: 16,
   },
   scheduleOverview: {
-    backgroundColor: theme.colors.backgroundSecondary,
-    borderRadius: theme.borderRadius.md,
+    backgroundColor: 'rgba(60, 60, 60, 0.6)',
+    borderRadius: 10,
     padding: 16,
     marginBottom: 20,
+    borderWidth: 1,
+    borderColor: 'rgba(255, 255, 255, 0.05)',
   },
   scheduleOverviewTitle: {
     fontSize: 18,
     fontWeight: 'bold',
-    color: theme.colors.text,
+    color: '#fff',
     marginBottom: 8,
   },
   scheduleOverviewDescription: {
-    color: theme.colors.textSecondary,
+    color: '#ccc',
     fontSize: 14,
     lineHeight: 20,
   },
   scheduleGlobalSection: {
-    backgroundColor: theme.colors.backgroundSecondary,
-    borderRadius: theme.borderRadius.md,
+    backgroundColor: 'rgba(60, 60, 60, 0.6)',
+    borderRadius: 10,
     padding: 16,
     marginBottom: 20,
+    borderWidth: 1,
+    borderColor: 'rgba(255, 255, 255, 0.05)',
   },
   scheduleGlobalHeader: {
     flexDirection: 'row',
@@ -2035,7 +2181,7 @@ const styles = StyleSheet.create({
   scheduleGlobalTitle: {
     fontSize: 16,
     fontWeight: '500',
-    color: theme.colors.text,
+    color: '#fff',
     marginLeft: 8,
   },
   scheduleCharactersList: {
@@ -2044,14 +2190,16 @@ const styles = StyleSheet.create({
   scheduleCharactersTitle: {
     fontSize: 16,
     fontWeight: '500',
-    color: theme.colors.text,
+    color: '#fff',
     marginBottom: 12,
   },
   scheduleCharacterItem: {
-    backgroundColor: theme.colors.backgroundSecondary,
-    borderRadius: theme.borderRadius.md,
+    backgroundColor: 'rgba(60, 60, 60, 0.6)',
+    borderRadius: 10,
     padding: 12,
     marginBottom: 12,
+    borderWidth: 1,
+    borderColor: 'rgba(255, 255, 255, 0.05)',
   },
   scheduleCharacterHeader: {
     flexDirection: 'row',
@@ -2068,22 +2216,22 @@ const styles = StyleSheet.create({
     flex: 1,
   },
   scheduleCharacterName: {
-    color: theme.colors.text,
+    color: '#fff',
     fontSize: 16,
     fontWeight: '500',
   },
   scheduleCharacterFrequency: {
-    color: theme.colors.textSecondary,
+    color: '#ccc',
     fontSize: 12,
     marginTop: 2,
   },
   scheduleCharacterTimes: {
     padding: 12,
     backgroundColor: 'rgba(40, 40, 50, 0.6)',
-    borderRadius: theme.borderRadius.sm,
+    borderRadius: 8,
   },
   scheduleCharacterTimesTitle: {
-    color: theme.colors.text,
+    color: '#fff',
     fontSize: 14,
     marginBottom: 8,
   },
@@ -2092,6 +2240,12 @@ const styles = StyleSheet.create({
     flexWrap: 'wrap',
     marginBottom: 12,
   },
+  scheduleTimeChipContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginRight: 8,
+    marginBottom: 8,
+  },
   scheduleTimeChip: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -2099,40 +2253,32 @@ const styles = StyleSheet.create({
     borderRadius: 16,
     paddingVertical: 4,
     paddingHorizontal: 10,
-    marginRight: 8,
-    marginBottom: 8,
   },
   scheduleTimeChipText: {
-    color: theme.colors.text,
+    color: '#fff',
     fontSize: 12,
     marginLeft: 4,
-  },
-  scheduleTimeChipContainer: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    marginRight: 8,
-    marginBottom: 8,
   },
   scheduleTimeDeleteButton: {
     marginLeft: 4,
     padding: 2,
   },
   scheduleNoTimesText: {
-    color: theme.colors.textSecondary,
+    color: '#ccc',
     fontSize: 14,
     marginBottom: 12,
     fontStyle: 'italic',
   },
   scheduleManageButton: {
-    backgroundColor: theme.colors.primary,
+    backgroundColor: '#ff9f1c',
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
     paddingVertical: 8,
-    borderRadius: theme.borderRadius.sm,
+    borderRadius: 8,
   },
   scheduleManageButtonText: {
-    color: theme.colors.buttonText,
+    color: '#000',
     fontSize: 14,
     fontWeight: '500',
     marginLeft: 6,
@@ -2142,25 +2288,8 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     padding: 40,
   },
-  emptySubtext: {
-    color: theme.colors.textSecondary,
-    fontSize: 14,
-    marginTop: 8,
-    textAlign: 'center',
-  },
   
-  // Add or update these missing styles
-  loadingContainer: {
-    flex: 1,
-    justifyContent: 'center',
-    alignItems: 'center',
-    padding: 20,
-  },
-  loadingText: {
-    color: theme.colors.text,
-    fontSize: 16,
-    marginTop: 12,
-  },
+  // General empty state styles
   emptyContainer: {
     flex: 1,
     justifyContent: 'center',
@@ -2168,11 +2297,30 @@ const styles = StyleSheet.create({
     padding: 40,
   },
   emptyText: {
-    color: theme.colors.text,
+    color: '#fff',
     fontSize: 18,
     fontWeight: '500',
     marginTop: 12,
   },
+  emptySubtext: {
+    color: '#ccc',
+    fontSize: 14,
+    marginTop: 8,
+    textAlign: 'center',
+  },
+  
+  // Loading state
+  loadingContainer: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+    padding: 20,
+  },
+  loadingText: {
+    color: '#fff',
+    fontSize: 16,
+    marginTop: 12,
+  }
 });
 
 export default CharacterInteractionSettings;

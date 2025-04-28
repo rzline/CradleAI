@@ -170,11 +170,16 @@ const ApiSettings = () => {
             isValid: info.isValid
           });
 
-          // 从设置读取云服务状态，确保UI显示正确
-          const cloudServiceEnabled = user?.settings?.chat?.useCloudService || false;
-          setUseCloudService(cloudServiceEnabled);
-          
-          if (cloudServiceEnabled) {
+          // 自动启用云服务开关（只要已激活且有效）
+          if (info.isValid) {
+            setUseCloudService(true);
+          } else {
+            // 从设置读取云服务状态，确保UI显示正确
+            const cloudServiceEnabled = user?.settings?.chat?.useCloudService || false;
+            setUseCloudService(cloudServiceEnabled);
+          }
+
+          if (user?.settings?.chat?.useCloudService || info.isValid) {
             // 如果云服务已启用，尝试从CloudServiceProvider获取当前首选模型
             try {
               const currentModel = CloudServiceProvider.getPreferredModel();

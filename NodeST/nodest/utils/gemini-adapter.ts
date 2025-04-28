@@ -82,9 +82,6 @@ export class GeminiAdapter {
         this.updateCloudServiceStatus();
         
         // Initialize with primary key and any additional keys
-        if (!apiKey && !this.useCloudService) {
-            throw new Error("API key cannot be empty when cloud service is not enabled");
-        }
         
         if (apiKey) {
             // Add the primary key

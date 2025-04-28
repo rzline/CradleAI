@@ -628,8 +628,7 @@ const handleCreateCharacter = async () => {
                   <Image source={{ uri: avatarUri }} style={styles.avatarPreview} />
                 ) : (
                   <>
-                    <Ionicons name="person-circle-outline" size={40} color="#aaa" />
-                    <Text style={styles.imageButtonText}>添加头像</Text>
+                    <Ionicons name="person-circle-outline" size={115} color="#aaa" />
                   </>
                 )}
               </TouchableOpacity>
@@ -666,7 +665,7 @@ const handleCreateCharacter = async () => {
             style={styles.openTagSelectorButton}
             onPress={() => setArtistSelectorVisible(true)}
           >
-            <Ionicons name="color-palette-outline" size={20} color="#fff" />
+            <Ionicons name="color-palette-outline" size={20} color="black" />
             <Text style={styles.openTagSelectorText}>
               选择画师风格（可选）
             </Text>
@@ -728,7 +727,7 @@ const handleCreateCharacter = async () => {
             style={styles.openTagSelectorButton}
             onPress={() => setTagSelectorVisible(true)}
           >
-            <Ionicons name="pricetag-outline" size={20} color="#fff" />
+            <Ionicons name="pricetag-outline" size={20} color="black" />
             <Text style={styles.openTagSelectorText}>浏览标签并添加</Text>
           </TouchableOpacity>
         </View>
@@ -1613,6 +1612,7 @@ const styles = StyleSheet.create({
     resizeMode: 'cover',
   },
   avatarPreview: {
+    flex:1,
     width: '100%',
     height: '100%',
     borderRadius: 60,
@@ -1705,7 +1705,7 @@ const styles = StyleSheet.create({
     marginVertical: 8,
   },
   openTagSelectorText: {
-    color: '#fff',
+    color: 'black',
     marginLeft: 8,
   },
   modalOverlay: {
@@ -2062,7 +2062,7 @@ const styles = StyleSheet.create({
     paddingTop: Platform.OS === 'ios' ? 44 : 16,
   },
   tagSelectorTitle: {
-    color: '#fff',
+    color: 'black',
     fontSize: 18,
     fontWeight: 'bold',
   },

@@ -568,6 +568,7 @@ const CreateChar: React.FC<CreateCharProps> = ({
   const [negativeTags, setNegativeTags] = useState<string[]>([]);
   const [tagSelectorVisible, setTagSelectorVisible] = useState(false);
   const [selectedArtistPrompt, setSelectedArtistPrompt] = useState<string | null>(null);
+  const [artistSelectorVisible, setArtistSelectorVisible] = useState(false);
 
   // Add state for voice related properties
   const [voiceGender, setVoiceGender] = useState<'male' | 'female'>('male');
@@ -1077,13 +1078,36 @@ const CreateChar: React.FC<CreateCharProps> = ({
           选择的标签将保存为角色的外观描述数据，但不会自动生成图像
         </Text>
       </View>
-      
-      {/* Add artist reference selector */}
-      <ArtistReferenceSelector 
-        selectedGender={character.gender as 'male' | 'female' | 'other'}
-        onSelectArtist={setSelectedArtistPrompt}
-        selectedArtistPrompt={selectedArtistPrompt}
-      />
+
+      {/* 已选画师风格区域 */}
+      {selectedArtistPrompt ? (
+        <View style={styles.selectedArtistPromptContainer}>
+          <Text style={styles.selectedArtistPromptLabel}>已选画师风格：</Text>
+          <View style={styles.selectedArtistPromptRow}>
+            <Text style={styles.selectedArtistPromptText} numberOfLines={1}>
+              {selectedArtistPrompt}
+            </Text>
+            <TouchableOpacity
+              style={styles.clearArtistPromptButton}
+              onPress={() => setSelectedArtistPrompt(null)}
+            >
+              <Ionicons name="close-circle" size={18} color="#aaa" />
+              <Text style={styles.clearArtistPromptText}>清除</Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+      ) : null}
+
+      {/* ArtistReferenceSelector 入口按钮 */}
+      <TouchableOpacity
+        style={styles.openTagSelectorButton}
+        onPress={() => setArtistSelectorVisible(true)}
+      >
+        <Ionicons name="color-palette-outline" size={20} color="#fff" />
+        <Text style={styles.openTagSelectorText}>
+          选择画师风格（可选）
+        </Text>
+      </TouchableOpacity>
       
       {/* Tag selection summary */}
       <View style={styles.tagSummaryContainer}>
@@ -1144,6 +1168,34 @@ const CreateChar: React.FC<CreateCharProps> = ({
         <Ionicons name="pricetag-outline" size={20} color="#fff" />
         <Text style={styles.openTagSelectorText}>浏览标签并添加</Text>
       </TouchableOpacity>
+
+      {/* ArtistReferenceSelector Modal */}
+      <Modal
+        visible={artistSelectorVisible}
+        transparent={false}
+        animationType="slide"
+        onRequestClose={() => setArtistSelectorVisible(false)}
+      >
+        <View style={{ flex: 1, backgroundColor: '#222' }}>
+          <View style={styles.tagSelectorHeader}>
+            <Text style={styles.tagSelectorTitle}>选择画师风格</Text>
+            <TouchableOpacity 
+              style={styles.tagSelectorCloseButton}
+              onPress={() => setArtistSelectorVisible(false)}
+            >
+              <Ionicons name="close" size={24} color="#fff" />
+            </TouchableOpacity>
+          </View>
+          <ArtistReferenceSelector
+            selectedGender={character.gender as 'male' | 'female' | 'other'}
+            onSelectArtist={prompt => {
+              setSelectedArtistPrompt(prompt || null);
+              setArtistSelectorVisible(false);
+            }}
+            selectedArtistPrompt={selectedArtistPrompt}
+          />
+        </View>
+      </Modal>
     </View>
   );
 
@@ -1758,6 +1810,44 @@ const CreateChar: React.FC<CreateCharProps> = ({
       marginLeft: 4,
       fontSize: 12,
     },
+    // ...existing code...
+selectedArtistPromptContainer: {
+  backgroundColor: '#333',
+  borderRadius: 8,
+  padding: 10,
+  marginBottom: 8,
+  marginTop: 4,
+},
+selectedArtistPromptLabel: {
+  color: theme.colors.textSecondary,
+  fontSize: 13,
+  marginBottom: 4,
+},
+selectedArtistPromptRow: {
+  flexDirection: 'row',
+  alignItems: 'center',
+  justifyContent: 'space-between',
+},
+selectedArtistPromptText: {
+  color: '#FFD700',
+  fontSize: 14,
+  flex: 1,
+  marginRight: 8,
+},
+clearArtistPromptButton: {
+  flexDirection: 'row',
+  alignItems: 'center',
+  paddingHorizontal: 6,
+  paddingVertical: 2,
+  borderRadius: 6,
+  backgroundColor: 'rgba(255,255,255,0.08)',
+},
+clearArtistPromptText: {
+  color: '#aaa',
+  fontSize: 12,
+  marginLeft: 2,
+},
+// ...existing code...
   });
 
   // For embedded usage in tabs, we'll now use the sidebar pattern similar to CradleCreateForm

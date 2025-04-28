@@ -2563,6 +2563,7 @@ const getBackgroundImage = () => {
                 onClose={toggleMemoOverlay}
                 characterId={characterIdForMemo}
                 conversationId={conversationIdForMemo}
+                customUserName={characterToUse?.customUserName} // 新增传递
               />            
               
               {/* Save Manager */}

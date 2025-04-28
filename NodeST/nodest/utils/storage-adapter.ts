@@ -353,25 +353,41 @@ export class StorageAdapter {
   static async getCircleMemories(characterId: string, limit?: number): Promise<CircleMemory[]> {
     try {
       console.log(`[StorageAdapter] Retrieving circle memories for character: ${characterId}, limit: ${limit || 'none'}`);
-      
       const storageKey = `nodest_${characterId}_circle_memory`;
-      const memoryData = await AsyncStorage.getItem(storageKey);
-      
+
+      // 优先从文件系统读取
+      let memoryData: string | null = null;
+      const fsDir = FileSystem.documentDirectory + 'nodest_characters/';
+      const fsPath = fsDir + storageKey + '.json';
+      try {
+        const fileInfo = await FileSystem.getInfoAsync(fsPath);
+        if (fileInfo.exists) {
+          memoryData = await FileSystem.readAsStringAsync(fsPath);
+        }
+      } catch (e) {
+        // ignore, fallback to AsyncStorage
+      }
+
+      // 如果文件系统没有，降级用 AsyncStorage
+      if (!memoryData) {
+        memoryData = await AsyncStorage.getItem(storageKey);
+      }
+
       if (!memoryData) {
         console.log(`[StorageAdapter] No circle memories found for character: ${characterId}`);
         return [];
       }
-      
+
       const memories: CircleMemory[] = JSON.parse(memoryData);
-      
+
       // Sort by timestamp (newest first)
       const sortedMemories = memories.sort((a, b) => b.timestamp - a.timestamp);
-      
+
       // Apply limit if specified
       const limitedMemories = limit ? sortedMemories.slice(0, limit) : sortedMemories;
-      
+
       console.log(`[StorageAdapter] Retrieved ${limitedMemories.length} circle memories for character: ${characterId}`);
-      
+
       return limitedMemories;
     } catch (error) {
       console.error(`[StorageAdapter] Error retrieving circle memories for character: ${characterId}`, error);

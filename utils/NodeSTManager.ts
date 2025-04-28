@@ -796,24 +796,17 @@ console.log(`[NodeSTManager] Setting search enabled to: ${enabled}`); // Add log
     try {
         console.log('[NodeSTManager] Resetting chat history for conversation:', conversationId);      
 
-        
-        // Call NodeST's reset method
+        // Call NodeST's reset method (no API key required)
         return await this.nodeST.resetChatHistory(conversationId);
     } catch (error) {
         console.error('[NodeSTManager] Error resetting chat history:', error);
         return false;
     }
   }
-
   // Update static method to ensure API key is passed
   static async resetChatHistory(conversationId: string): Promise<boolean> {
     const instance = new NodeSTManagerClass();
-    
-    // Ensure the static API key is used if available
-    if (NodeSTManagerClass.apiKey) {
-      instance.updateApiSettings(NodeSTManagerClass.apiKey, NodeSTManagerClass.apiSettings);
-    }
-    
+    // No API key required for reset
     return await instance.resetChatHistory(conversationId);
   }
 

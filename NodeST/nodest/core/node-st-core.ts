@@ -2313,7 +2313,6 @@ export class NodeSTCore {
             return false;
         }
     }
-
     /**
      * Delete all data associated with a specific conversation ID
      * Does not require an API key since it's only performing deletion operations

@@ -73,7 +73,16 @@ const DiaryBook: React.FC<DiaryBookProps> = ({ character, onClose }) => {
 
         const savedSettings = await DiaryService.getDiarySettings(character.id);
         if (savedSettings) {
-          setSettings(savedSettings);
+          setSettings(prev => ({
+            ...prev,
+            ...savedSettings,
+            enabled: savedSettings.enabled !== undefined ? savedSettings.enabled : true // 保证默认启用
+          }));
+        } else {
+          setSettings(prev => ({
+            ...prev,
+            enabled: true // 没有保存时也默认启用
+          }));
         }
 
         try {
