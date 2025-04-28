@@ -1348,24 +1348,30 @@ useEffect(() => {
           characterMessages.length === 0 &&
           !firstMessageSentRef.current[characterId]
         ) {
-          const char = characters.find(c => c.id === characterId);
-          let firstMes = '';
-          try {
-            if (char?.jsonData) {
-              const characterData = JSON.parse(char.jsonData);
-              firstMes = characterData.roleCard?.first_mes || '';
+          // 新增：发送前再次检查界面messages是否为空
+          if (messages.length > 0) {
+            console.log(`[first_mes] [param effect] 当前界面已有消息，不发送first_mes到${characterId}`);
+          } else {
+            const char = characters.find(c => c.id === characterId);
+            let firstMes = '';
+            try {
+              if (char?.jsonData) {
+                const characterData = JSON.parse(char.jsonData);
+                firstMes = characterData.roleCard?.first_mes || '';
+              }
+            } catch (e) {
+              firstMes = '';
             }
-          } catch (e) {
-            firstMes = '';
-          }
-          if (firstMes) {
-            addMessage(characterId, {
-              id: `first-create-${Date.now()}`,
-              text: firstMes,
-              sender: 'bot',
-              timestamp: Date.now()
-            });
-            firstMessageSentRef.current[characterId] = true;
+            if (firstMes) {
+              console.log(`[first_mes] [param effect] 发送first_mes到${characterId}:`, firstMes);
+              addMessage(characterId, {
+                id: `first-create-${Date.now()}`,
+                text: firstMes,
+                sender: 'bot',
+                timestamp: Date.now()
+              });
+              firstMessageSentRef.current[characterId] = true;
+            }
           }
         } else if (characterMessages.length > 0) {
           firstMessageSentRef.current[characterId] = true;
@@ -1388,23 +1394,30 @@ useEffect(() => {
       messages.length === 0 &&
       !firstMesSentRef.current[selectedConversationId]
     ) {
-      let firstMes = '';
-      try {
-        if (characterToUse.jsonData) {
-          const characterData = JSON.parse(characterToUse.jsonData);
-          firstMes = characterData.roleCard?.first_mes || '';
+      // 修正：此处messages.length === 0，但实际上setMessages是异步的，可能出现messages为空但实际getMessages(selectedConversationId)已有消息
+      const actualMessages = getMessages(selectedConversationId);
+      if (actualMessages && actualMessages.length > 0) {
+        console.log(`[first_mes] [messages effect] getMessages(${selectedConversationId})已有${actualMessages.length}条消息，不发送first_mes`);
+      } else {
+        let firstMes = '';
+        try {
+          if (characterToUse.jsonData) {
+            const characterData = JSON.parse(characterToUse.jsonData);
+            firstMes = characterData.roleCard?.first_mes || '';
+          }
+        } catch (e) {
+          firstMes = '';
         }
-      } catch (e) {
-        firstMes = '';
-      }
-      if (firstMes) {
-        addMessage(selectedConversationId, {
-          id: `first-auto-${Date.now()}`,
-          text: firstMes,
-          sender: 'bot',
-          timestamp: Date.now()
-        });
-        firstMesSentRef.current[selectedConversationId] = true;
+        if (firstMes) {
+          console.log(`[first_mes] [messages effect] 发送first_mes到${selectedConversationId}:`, firstMes);
+          addMessage(selectedConversationId, {
+            id: `first-auto-${Date.now()}`,
+            text: firstMes,
+            sender: 'bot',
+            timestamp: Date.now()
+          });
+          firstMesSentRef.current[selectedConversationId] = true;
+        }
       }
     }
     // 如果消息不为空，标记已发送
@@ -1485,21 +1498,27 @@ const getBackgroundImage = () => {
       firstMesSentRef.current[selectedConversationId] = true;
       setTimeout(() => {
         if (characterToUse?.jsonData) {
-          try {
-            const characterData = JSON.parse(characterToUse.jsonData);
-            if (characterData.roleCard?.first_mes) {
-              addMessage(selectedConversationId, {
-                id: `first-reset-${Date.now()}`,
-                text: characterData.roleCard.first_mes,
-                sender: 'bot',
-                timestamp: Date.now()
-              });
-              // 已经设置为 true，无需再次设置
-              lastMessageTimeRef.current = Date.now();
-              setupAutoMessageTimer();
+          // 新增：发送前再次检查界面messages是否为空
+          if (messages.length > 0) {
+            console.log(`[first_mes] [reset] 当前界面已有消息，不发送first_mes到${selectedConversationId}`);
+          } else {
+            try {
+              const characterData = JSON.parse(characterToUse.jsonData);
+              if (characterData.roleCard?.first_mes) {
+                console.log(`[first_mes] [reset] 发送first_mes到${selectedConversationId}:`, characterData.roleCard.first_mes);
+                addMessage(selectedConversationId, {
+                  id: `first-reset-${Date.now()}`,
+                  text: characterData.roleCard.first_mes,
+                  sender: 'bot',
+                  timestamp: Date.now()
+                });
+                // 已经设置为 true，无需再次设置
+                lastMessageTimeRef.current = Date.now();
+                setupAutoMessageTimer();
+              }
+            } catch (e) {
+              console.error('Error adding first message after reset:', e);
             }
-          } catch (e) {
-            console.error('Error adding first message after reset:', e);
           }
         }
       }, 300);
@@ -2278,7 +2297,7 @@ const getBackgroundImage = () => {
         </View>
       )}
              
-      {/* <TouchableOpacity  //新增：测试按钮，重置初始化状态
+      <TouchableOpacity  //新增：测试按钮，重置初始化状态
         style={{
           position: 'absolute',
           top: 40,
@@ -2293,7 +2312,7 @@ const getBackgroundImage = () => {
         onPress={handleResetDefaultCharacterInit}
       >
         <Text style={{ color: '#333', fontWeight: 'bold' }}>重置默认角色初始化</Text>
-      </TouchableOpacity> */}
+      </TouchableOpacity>
 
       <MemoryProvider config={memoryConfig}>
         <Mem0Initializer />

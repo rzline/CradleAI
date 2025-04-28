@@ -92,7 +92,7 @@ const Profile: React.FC = () => {
         />
         
         <ListItem
-          title="模型费用计算器"
+          title="模型预算"
           leftIcon="calculator-outline"
           chevron={true}
           onPress={() => router.push('../pages/token-planner')}
