@@ -355,10 +355,10 @@ const ChatDialog: React.FC<ExtendedChatDialogProps> = ({
               onPress={() => handleOpenFullscreenImage(imageId)}
             >
               <Image
-                source={{ uri: imageInfo.thumbnailPath }}
+                source={{ uri: imageInfo.originalPath }}
                 style={styles.messageImage}
                 resizeMode="contain"
-                onError={(e) => console.error(`Error loading image: ${e.nativeEvent.error}`, imageInfo.thumbnailPath)}
+                onError={(e) => console.error(`Error loading image: ${e.nativeEvent.error}`, imageInfo.originalPath)}
               />
             </TouchableOpacity>
             <Text style={styles.imageCaption}>{alt}</Text>
@@ -406,15 +406,15 @@ const ChatDialog: React.FC<ExtendedChatDialogProps> = ({
             if (imageInfo) {
               return (
                 <TouchableOpacity 
-                  key={idx}
+                  key={img.id + '-' + idx}
                   style={styles.imageWrapper}
                   onPress={() => handleOpenFullscreenImage(img.id)}
                 >
                   <Image
-                    source={{ uri: imageInfo.thumbnailPath }}
+                    source={{ uri: imageInfo.originalPath }}
                     style={styles.messageImage}
                     resizeMode="contain"
-                    onError={(e) => console.error(`Error loading image: ${e.nativeEvent.error}`, imageInfo.thumbnailPath)}
+                    onError={(e) => console.error(`Error loading image: ${e.nativeEvent.error}`, imageInfo.originalPath)}
                   />
                   <Text style={styles.imageCaption}>{img.alt}</Text>
                 </TouchableOpacity>
@@ -719,13 +719,8 @@ const ChatDialog: React.FC<ExtendedChatDialogProps> = ({
       const imageInfo = ImageManager.getImageInfo(imageId);
       
       if (imageInfo) {
-        setFullscreenImage(imageInfo.thumbnailPath);
-        setImageLoading(true);
-        
-        setTimeout(() => {
-          setFullscreenImage(imageInfo.originalPath);
-          setImageLoading(false);
-        }, 100);
+        setFullscreenImage(imageInfo.originalPath);
+        setImageLoading(false);
       } else {
         setFullscreenImage(null);
         Alert.alert('错误', '无法加载图片');
@@ -928,14 +923,9 @@ const ChatDialog: React.FC<ExtendedChatDialogProps> = ({
     );
   }, [messages, selectedCharacter, ratedMessages, audioStates, user]);
 
-  const keyExtractor = useCallback((item: Message) => {
-    if (!item.id) {
-      return `missing-id-${item.sender}-${item.timestamp || Date.now()}-${Math.random().toString(36).substring(2, 9)}`;
-    }
-    if (item.metadata?.isAutoMessageResponse) {
-      return item.id;
-    }
-    return `${item.id}-${item.sender}${item.metadata?.regenerated ? '-regen' : ''}`;
+  const keyExtractor = useCallback((item: Message, index: number) => {
+    // 保证 key 唯一性：id + sender + timestamp + index
+    return `${item.id}-${item.sender}-${item.timestamp || ''}-${index}`;
   }, []);
 
   return (

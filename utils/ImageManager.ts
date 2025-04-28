@@ -264,6 +264,7 @@ export class ImageManager {
       }
     })();
     
+    // 返回的 info.originalPath 就是本地 PNG 文件路径，可直接用于 <Image source={{ uri: ... }} />
     return info;
   }
   

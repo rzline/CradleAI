@@ -2404,17 +2404,4 @@ private async executeGenerateContent(contents: ChatMessage[], modelId: string, c
         // 4. 调用实例方法生成内容
         return await adapter.generateContent(messages, options?.characterId);
     }
-
-
-
-
-
-
-
-
-
-
-
-
-
 }

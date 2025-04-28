@@ -12,12 +12,21 @@ import {
   FlatList,
   ActivityIndicator,
   Platform,
-  StatusBar
+  StatusBar,
+  Switch,
+  Share
 } from 'react-native';
 import { BlurView } from 'expo-blur';
-import { Ionicons, MaterialIcons } from '@expo/vector-icons';
+import { Ionicons, MaterialIcons, MaterialCommunityIcons } from '@expo/vector-icons';
 import * as TableMemory from '@/src/memory/plugins/table-memory';
 import { initializeTableMemory, isTableMemoryEnabled, setTableMemoryEnabled } from '@/src/memory/integration/table-memory-integration';
+import { useMemoryContext } from '@/src/memory/providers/MemoryProvider';
+import Mem0Service from '@/src/memory/services/Mem0Service';
+import * as DocumentPicker from 'expo-document-picker';
+import * as FileSystem from 'expo-file-system';
+import * as Sharing from 'expo-sharing';
+import AsyncStorage from '@react-native-async-storage/async-storage';
+import Slider from '@react-native-community/slider';
 
 interface MemoOverlayProps {
   isVisible: boolean;
@@ -35,12 +44,32 @@ interface SimpleSheet {
   createdAt: string;
   updatedAt: string;
 }
+
+// Define interface for memory facts
+interface MemoryFact {
+  id: string;
+  memory: string;
+  score?: number;
+  createdAt?: string;
+  updatedAt?: string;
+  metadata?: any;
+  agentId?: string;
+  userId?: string;
+  runId?: string;
+}
+
 // Define tabs for the UI
 enum TabType {
   TEMPLATES = 'templates',
   TABLES = 'tables',
-  SETTINGS = 'settings'
+  SETTINGS = 'settings',
+  FACTS = 'facts' // Added new tab for memory facts
 }
+
+// Constants for DB size warnings
+const DB_SIZE_WARNING_THRESHOLD = 50;
+const DB_SIZE_ALERT_THRESHOLD = 100;
+const SETTINGS_STORAGE_KEY = 'MemoryProcessingControl:settings';
 
 // Main component
 const MemoOverlay: React.FC<MemoOverlayProps> = ({ isVisible, onClose, characterId, conversationId }) => {
@@ -66,6 +95,28 @@ const MemoOverlay: React.FC<MemoOverlayProps> = ({ isVisible, onClose, character
   // 新增：角色表格数据
   const [characterTablesData, setCharacterTablesData] = useState<Awaited<ReturnType<typeof TableMemory.getCharacterTablesData>> | null>(null);
 
+  // Memory state and settings from MemoryProcessingControl
+  const { setMemoryProcessingInterval, getMemoryProcessingInterval } = useMemoryContext();
+  const [currentInterval, setCurrentInterval] = useState(10);
+  const [memoryEnabled, setMemoryEnabled] = useState(true);
+  const [memoryFacts, setMemoryFacts] = useState<MemoryFact[]>([]);
+  const [isLoadingFacts, setIsLoadingFacts] = useState(false);
+  const [factSearchQuery, setFactSearchQuery] = useState('');
+  const [editingMemory, setEditingMemory] = useState<MemoryFact | null>(null);
+  const [editingContent, setEditingContent] = useState('');
+  const [isCreatingNew, setIsCreatingNew] = useState(false);
+  const [newMemoryContent, setNewMemoryContent] = useState('');
+  const [dbStats, setDbStats] = useState<{totalCount: number, dbSize: number, dbSizeMB: string}>({
+    totalCount: 0,
+    dbSize: 0,
+    dbSizeMB: '0'
+  });
+  const [characterMemoryCount, setCharacterMemoryCount] = useState(0);
+  const [isRefreshing, setIsRefreshing] = useState(false);
+  const [expandedMemoryId, setExpandedMemoryId] = useState<string | null>(null);
+  const [isExporting, setIsExporting] = useState(false);
+  const [isImporting, setIsImporting] = useState(false);
+
   // Reference to track if component is mounted
   const isMountedRef = useRef<boolean>(false);
 
@@ -86,6 +137,66 @@ const MemoOverlay: React.FC<MemoOverlayProps> = ({ isVisible, onClose, character
       loadData(true); // Force refresh when becoming visible
     }
   }, [isVisible, initialized, characterId, conversationId]);
+
+  // Initialize memory settings from MemoryProcessingControl
+  useEffect(() => {
+    if (isVisible) {
+      const interval = getMemoryProcessingInterval();
+      setCurrentInterval(interval);
+      const mem0Service = Mem0Service.getInstance();
+      const enabled = mem0Service.isMemoryEnabled?.() ?? true;
+      setMemoryEnabled(enabled);
+    }
+  }, [isVisible, getMemoryProcessingInterval]);
+
+  // Effect for memory enabled state
+  useEffect(() => {
+    if (initialized && isVisible) {
+      const mem0Service = Mem0Service.getInstance();
+      if (mem0Service.setMemoryEnabled) {
+        mem0Service.setMemoryEnabled(memoryEnabled);
+        console.log(`[MemoOverlay] Memory recording ${memoryEnabled ? 'enabled' : 'disabled'}`);
+      }
+    }
+  }, [memoryEnabled, initialized, isVisible]);
+
+  // Load memory settings from AsyncStorage
+  useEffect(() => {
+    if (isVisible) {
+      (async () => {
+        try {
+          const saved = await AsyncStorage.getItem(SETTINGS_STORAGE_KEY);
+          if (saved) {
+            const parsed = JSON.parse(saved);
+            if (typeof parsed.currentInterval === 'number') setCurrentInterval(parsed.currentInterval);
+            if (typeof parsed.memoryEnabled === 'boolean') setMemoryEnabled(parsed.memoryEnabled);
+          }
+        } catch (e) {
+          console.warn('[MemoOverlay] 读取本地设置失败', e);
+        }
+      })();
+    }
+  }, [isVisible]);
+
+  // Save memory settings to AsyncStorage
+  useEffect(() => {
+    if (initialized && isVisible) {
+      AsyncStorage.setItem(
+        SETTINGS_STORAGE_KEY,
+        JSON.stringify({ currentInterval, memoryEnabled })
+      ).catch(e => {
+        console.warn('[MemoOverlay] 保存本地设置失败', e);
+      });
+    }
+  }, [currentInterval, memoryEnabled, initialized, isVisible]);
+
+  // Load memory facts and stats when Facts tab is active
+  useEffect(() => {
+    if (isVisible && activeTab === TabType.FACTS && characterId) {
+      fetchMemoryFacts();
+      fetchDbStats();
+    }
+  }, [isVisible, activeTab, characterId]);
 
   // Initialize plugin
   const initializePluginAsync = async () => {
@@ -521,6 +632,424 @@ const MemoOverlay: React.FC<MemoOverlayProps> = ({ isVisible, onClose, character
     }
   };
 
+  // Memory facts related functions - moved from MemoryProcessingControl
+  const fetchDbStats = useCallback(async () => {
+    const mem0Service = Mem0Service.getInstance();
+    
+    try {
+      const stats = await mem0Service.getVectorDbStats();
+      setDbStats(stats);
+      
+      if (characterId) {
+        try {
+          const memories = await mem0Service.getCharacterMemories(characterId);
+          setCharacterMemoryCount(memories.length);
+          console.log(`[MemoOverlay] 统计面板获取到 ${memories.length} 条记忆，与记忆面板保持一致`);
+        } catch (error) {
+          console.error('[MemoOverlay] 获取角色记忆统计失败:', error);
+          setCharacterMemoryCount(0);
+        }
+      }
+    } catch (error) {
+      console.error('[MemoOverlay] Error fetching database stats:', error);
+    }
+  }, [characterId]);
+
+  const dbSizeWarningMessage = React.useMemo(() => {
+    const sizeMB = parseFloat(dbStats.dbSizeMB);
+    if (sizeMB >= DB_SIZE_ALERT_THRESHOLD) {
+      return `警告: 向量数据库已达到 ${dbStats.dbSizeMB}MB，建议清理不必要的记忆!`;
+    } else if (sizeMB >= DB_SIZE_WARNING_THRESHOLD) {
+      return `提示: 向量数据库大小为 ${dbStats.dbSizeMB}MB，接近建议上限`;
+    }
+    return '';
+  }, [dbStats.dbSizeMB]);
+
+  const fetchMemoryFacts = useCallback(async () => {
+    if (!characterId) {
+      console.warn('[MemoOverlay] No character ID provided for memory facts');
+      return;
+    }
+
+    try {
+      setIsLoadingFacts(true);
+      const mem0Service = Mem0Service.getInstance();
+
+      let memories: MemoryFact[] = [];
+
+      // 只用getCharacterMemories直接读取数据库
+      if (mem0Service.getCharacterMemories && characterId) {
+        try {
+          const rawMemories = await mem0Service.getCharacterMemories(characterId, 200);
+          // 兼容性修正：确保memory字段存在
+          memories = (rawMemories || []).map((mem: any) => {
+            let memoryContent = mem.memory;
+            if (!memoryContent && mem.metadata?.data) memoryContent = mem.metadata.data;
+            if (!memoryContent && mem.payload?.data) memoryContent = mem.payload.data;
+            if (!memoryContent && mem.payload?.memory) memoryContent = mem.payload.memory;
+            return {
+              ...mem,
+              memory: memoryContent || '',
+            };
+          }).filter(mem => !!mem.memory);
+
+          setCharacterMemoryCount(memories.length);
+          console.log(`[MemoOverlay] 统计面板获取到 ${memories.length} 条记忆，与记忆面板保持一致`);
+        } catch (error) {
+          console.error('[MemoOverlay] 获取角色记忆统计失败:', error);
+          setCharacterMemoryCount(0);
+        }
+      }
+
+      // 本地搜索过滤
+      if (factSearchQuery && memories.length > 0) {
+        const query = factSearchQuery.toLowerCase();
+        memories = memories.filter((item: MemoryFact) => {
+          const content = item?.memory || '';
+          return content.toLowerCase().includes(query);
+        });
+      }
+
+      memories.sort((a, b) => {
+        const dateA = a.updatedAt || a.createdAt || '';
+        const dateB = b.updatedAt || b.createdAt || '';
+        return dateB.localeCompare(dateA);
+      });
+
+      setMemoryFacts(memories);
+    } catch (error) {
+      console.error('[MemoOverlay] Error fetching memory facts:', error);
+    } finally {
+      setIsLoadingFacts(false);
+    }
+  }, [characterId, factSearchQuery]);
+
+  const handleRefresh = useCallback(async () => {
+    setIsRefreshing(true);
+    await fetchMemoryFacts();
+    await fetchDbStats();
+    setIsRefreshing(false);
+  }, [fetchMemoryFacts, fetchDbStats]);
+
+  const handleIntervalChange = (value: number) => {
+    const roundedValue = Math.round(value);
+    setCurrentInterval(roundedValue);
+    setMemoryProcessingInterval(roundedValue);
+    const mem0Service = Mem0Service.getInstance();
+    if (mem0Service.setProcessingInterval) {
+      mem0Service.setProcessingInterval(roundedValue);
+      console.log(`[MemoOverlay] Memory processing interval set to ${roundedValue}`);
+    }
+  };
+
+  const handleSearchQueryChange = (text: string) => {
+    setFactSearchQuery(text);
+  };
+
+  const handleSearchSubmit = () => {
+    fetchMemoryFacts();
+  };
+
+  const handleAddMemory = () => {
+    setIsCreatingNew(true);
+    setNewMemoryContent('');
+  };
+
+  const handleSaveNewMemory = async () => {
+    if (!newMemoryContent.trim()) {
+      Alert.alert('错误', '记忆内容不能为空');
+      return;
+    }
+
+    if (!characterId) {
+      Alert.alert('错误', '未选择角色');
+      return;
+    }
+
+    try {
+      setIsCreatingNew(false); 
+      Alert.alert('处理中', '正在创建记忆...');
+      
+      const mem0Service = Mem0Service.getInstance();
+      if (!mem0Service.isEmbeddingAvailable) {
+        throw new Error('嵌入服务不可用，请确保在设置中配置了有效的智谱API密钥');
+      }
+      
+      const result = await mem0Service.createMemory(
+        newMemoryContent, 
+        characterId, 
+        conversationId
+      );
+
+      if (result) {
+        Alert.alert('成功', '成功创建新记忆');
+        setNewMemoryContent('');
+        await handleRefresh();
+      } else {
+        throw new Error('创建记忆失败，请检查嵌入服务配置');
+      }
+    } catch (error) {
+      const errorMessage = error instanceof Error ? error.message : String(error);
+      console.error('[MemoOverlay] Error creating memory:', error);
+      
+      let alertMessage = '创建记忆失败';
+      
+      if (errorMessage.includes('嵌入服务不可用') || 
+          errorMessage.includes('API密钥') || 
+          errorMessage.includes('嵌入')) {
+        alertMessage = '创建记忆失败：嵌入服务不可用。请在设置中配置有效的智谱API密钥。';
+      } else {
+        alertMessage = `创建记忆失败：${errorMessage}`;
+      }
+      
+      Alert.alert('错误', alertMessage, [
+        { 
+          text: '重试', 
+          onPress: () => setIsCreatingNew(true) 
+        },
+        { 
+          text: '确定' 
+        }
+      ]);
+    }
+  };
+
+  const handleEditMemory = (memory: MemoryFact) => {
+    setEditingMemory(memory);
+    setEditingContent(memory.memory);
+  };
+
+  const handleSaveEditedMemory = async () => {
+    if (!editingMemory || !editingContent.trim()) {
+      Alert.alert('错误', '记忆内容不能为空');
+      return;
+    }
+
+    try {
+      const mem0Service = Mem0Service.getInstance();
+      const result = await mem0Service.updateMemory(
+        editingMemory.id,
+        editingContent
+      );
+
+      if (result) {
+        Alert.alert('成功', '记忆更新成功');
+        setEditingMemory(null);
+        setEditingContent('');
+        await handleRefresh();
+      } else {
+        Alert.alert('错误', '更新记忆失败');
+      }
+    } catch (error) {
+      console.error('[MemoOverlay] Error updating memory:', error);
+      Alert.alert('错误', '更新记忆失败');
+    }
+  };
+
+  const handleDeleteMemory = (memory: MemoryFact) => {
+    Alert.alert(
+      '确认删除',
+      '确定要删除此记忆吗？此操作不可逆。',
+      [
+        { text: '取消', style: 'cancel' },
+        {
+          text: '删除',
+          style: 'destructive',
+          onPress: async () => {
+            try {
+              const mem0Service = Mem0Service.getInstance();
+              const result = await mem0Service.deleteMemory(memory.id);
+              
+              if (result) {
+                setMemoryFacts(prev => prev.filter(item => item.id !== memory.id));
+                Alert.alert('成功', '记忆已删除');
+                await fetchDbStats();
+              } else {
+                Alert.alert('错误', '删除记忆失败');
+              }
+            } catch (error) {
+              console.error('[MemoOverlay] Error deleting memory:', error);
+              Alert.alert('错误', '删除记忆失败');
+            }
+          }
+        }
+      ]
+    );
+  };
+
+  const toggleMemoryExpansion = (id: string) => {
+    setExpandedMemoryId(expandedMemoryId === id ? null : id);
+  };
+
+  const handleExportMemories = async () => {
+    if (!characterId) {
+      Alert.alert('错误', '未选择角色，无法导出记忆');
+      return;
+    }
+
+    try {
+      setIsExporting(true);
+      
+      const mem0Service = Mem0Service.getInstance();
+      const memories = await mem0Service.getCharacterMemories(characterId, 1000);
+      
+      if (!memories || memories.length === 0) {
+        Alert.alert('提示', '该角色没有可导出的记忆数据');
+        setIsExporting(false);
+        return;
+      }
+
+      const exportData = {
+        version: '1.0',
+        exportDate: new Date().toISOString(),
+        characterId: characterId,
+        memoryCount: memories.length,
+        memories: memories
+      };
+      
+      const jsonString = JSON.stringify(exportData, null, 2);
+      const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
+      const fileName = `memory_${characterId}_${timestamp}.json`;
+      
+      const tempFilePath = FileSystem.cacheDirectory + fileName;
+      await FileSystem.writeAsStringAsync(tempFilePath, jsonString);
+      
+      const canShare = await Sharing.isAvailableAsync();
+      
+      if (canShare) {
+        await Sharing.shareAsync(tempFilePath, {
+          mimeType: 'application/json',
+          dialogTitle: '导出记忆数据',
+          UTI: 'public.json'
+        });
+        console.log(`[MemoOverlay] 成功导出 ${memories.length} 条记忆数据`);
+      } else {
+        await Share.share({
+          title: '记忆数据导出',
+          message: `已导出 ${memories.length} 条记忆数据`,
+          url: tempFilePath
+        });
+      }
+      
+      Alert.alert('成功', `已导出 ${memories.length} 条记忆数据`);
+    } catch (error) {
+      console.error('[MemoOverlay] 导出记忆失败:', error);
+      Alert.alert('导出失败', '无法导出记忆数据，请稍后再试');
+    } finally {
+      setIsExporting(false);
+    }
+  };
+
+  const handleImportMemories = async () => {
+    if (!characterId) {
+      Alert.alert('错误', '未选择角色，无法导入记忆');
+      return;
+    }
+
+    try {
+      setIsImporting(true);
+      
+      const result = await DocumentPicker.getDocumentAsync({
+        type: 'application/json',
+        copyToCacheDirectory: true
+      });
+      
+      if (result.canceled || !result.assets || result.assets.length === 0) {
+        console.log('[MemoOverlay] 用户取消了文件选择');
+        setIsImporting(false);
+        return;
+      }
+      
+      const fileUri = result.assets[0].uri;
+      const fileContent = await FileSystem.readAsStringAsync(fileUri);
+      
+      const importData = JSON.parse(fileContent);
+      
+      if (!importData.version || !importData.memories || !Array.isArray(importData.memories)) {
+        throw new Error('导入文件格式无效');
+      }
+      
+      const confirmMsg = importData.characterId === characterId 
+        ? `确定要导入 ${importData.memories.length} 条记忆到当前角色吗？` 
+        : `原数据属于角色 ${importData.characterId}，与当前角色 ${characterId} 不匹配。是否仍要导入 ${importData.memories.length} 条记忆？`;
+      
+      Alert.alert(
+        '确认导入',
+        confirmMsg,
+        [
+          {
+            text: '取消',
+            style: 'cancel',
+            onPress: () => setIsImporting(false)
+          },
+          {
+            text: '导入',
+            onPress: async () => {
+              await processImport(importData.memories, characterId);
+            }
+          }
+        ]
+      );
+      
+    } catch (error) {
+      console.error('[MemoOverlay] 导入记忆失败:', error);
+      Alert.alert('导入失败', '无法导入记忆数据，文件可能已损坏或格式不正确');
+      setIsImporting(false);
+    }
+  };
+  
+  const processImport = async (memories: MemoryFact[], targetCharId: string) => {
+    try {
+      const mem0Service = Mem0Service.getInstance();
+      let successCount = 0;
+      let errorCount = 0;
+      
+      Alert.alert('导入中', '正在导入记忆数据，请稍候...');
+      
+      for (const memory of memories) {
+        try {
+          const content = memory.memory;
+          if (content && content.trim()) {
+            await mem0Service.createMemory(
+              content,
+              targetCharId,
+              memory.runId || 'imported-memory'
+            );
+            successCount++;
+          }
+        } catch (err) {
+          console.error('[MemoOverlay] 导入单条记忆失败:', err);
+          errorCount++;
+        }
+      }
+      
+      await handleRefresh();
+      
+      Alert.alert(
+        '导入完成', 
+        `成功导入 ${successCount} 条记忆` + 
+        (errorCount > 0 ? `，${errorCount} 条记忆导入失败` : '')
+      );
+      
+    } catch (error) {
+      console.error('[MemoOverlay] 批量导入记忆失败:', error);
+      Alert.alert('导入失败', '处理导入数据时出错');
+    } finally {
+      setIsImporting(false);
+    }
+  };
+
+  // Format timestamp for display in memory items
+  const formatTimestamp = (timestamp?: string) => {
+    if (!timestamp) return '未知时间';
+    try {
+      const date = new Date(timestamp);
+      return date.toLocaleString();
+    } catch (e) {
+      return timestamp;
+    }
+  };
+
   // Render the template list with enhanced multi-selection UI
   const renderTemplateTab = () => (
     <View style={styles.tabContent}>
@@ -743,60 +1272,329 @@ const MemoOverlay: React.FC<MemoOverlayProps> = ({ isVisible, onClose, character
     </View>
   );
 
-  // 修改 renderSettingsTab 方法以添加文件系统存储相关设置
-  const renderSettingsTab = () => (
-    <View style={styles.tabContent}>
-      <Text style={styles.tabTitle}>记忆增强设置</Text>
 
-      <View style={styles.settingItem}>
-        <View style={styles.settingLabel}>
-          <Text style={styles.settingTitle}>启用表格记忆</Text>
-          <Text style={styles.settingDescription}>
-            启用表格记忆增强以存储结构化数据
-          </Text>
-        </View>
-        <TouchableOpacity
-          style={[
-            styles.toggle,
-            pluginEnabled ? styles.toggleActive : styles.toggleInactive
-          ]}
-          onPress={() => handleTogglePluginEnabled(!pluginEnabled)}
-        >
-          <View
-            style={[
-              styles.toggleThumb,
-              pluginEnabled ? styles.toggleThumbActive : styles.toggleThumbInactive
-            ]}
+
+  // Render the Facts tab (from MemoryProcessingControl)
+  const renderFactsTab = () => (
+    <View style={styles.tabContent}>
+      <View style={styles.memoriesHeader}>
+        <View style={styles.searchContainer}>
+          <TextInput
+            style={styles.searchInput}
+            placeholder="搜索记忆内容..."
+            placeholderTextColor="#999"
+            value={factSearchQuery}
+            onChangeText={handleSearchQueryChange}
+            onSubmitEditing={handleSearchSubmit}
+            returnKeyType="search"
           />
-        </TouchableOpacity>
+          <TouchableOpacity style={styles.searchButton} onPress={handleSearchSubmit}>
+            <Ionicons name="search" size={20} color="#fff" />
+          </TouchableOpacity>
+        </View>
+        
+        <View style={styles.memoryActionsHeader}>
+          <TouchableOpacity 
+            style={styles.refreshButton} 
+            onPress={handleRefresh}
+            disabled={isRefreshing || isLoadingFacts}
+          >
+            {isRefreshing ? (
+              <ActivityIndicator size="small" color="#ff9f1c" />
+            ) : (
+              <Ionicons name="refresh" size={24} color="#fff" />
+            )}
+          </TouchableOpacity>
+          
+          <TouchableOpacity 
+            style={styles.addButton} 
+            onPress={handleAddMemory}
+          >
+            <Ionicons name="add" size={24} color="#fff" />
+          </TouchableOpacity>
+        </View>
       </View>
 
-      {/* 新增: 切换队列系统 */}
-      <View style={styles.settingItem}>
-        <View style={styles.settingLabel}>
-          <Text style={styles.settingTitle}>启用文件操作队列</Text>
-          <Text style={styles.settingDescription}>
-            启用队列可防止文件冲突，但可能导致UI卡顿
-          </Text>
+      {isLoadingFacts ? (
+        <View style={styles.loadingContainer}>
+          <ActivityIndicator size="large" color="#ff9f1c" />
+          <Text style={styles.loadingText}>加载记忆中...</Text>
         </View>
-        <TouchableOpacity
-          style={[
-            styles.toggle,
-            queueSystemEnabled ? styles.toggleActive : styles.toggleInactive
-          ]}
-          onPress={() => {
-            const newValue = !queueSystemEnabled;
-            setQueueSystemEnabled(newValue);
-            TableMemory.setUseQueueSystem(newValue);
-          }}
-        >
-          <View
+      ) : memoryFacts.length === 0 ? (
+        <View style={styles.emptyState}>
+          <Text style={styles.emptyText}>
+            {characterId ? `未找到该角色的记忆` : '请选择角色查看记忆'}
+          </Text>
+          <TouchableOpacity 
+            style={styles.createMemoryButton}
+            onPress={handleAddMemory}
+          >
+            <Text style={styles.createMemoryButtonText}>创建新记忆</Text>
+          </TouchableOpacity>
+        </View>
+      ) : (
+        <ScrollView style={styles.memoriesList}>
+          {memoryFacts.map(memory => {
+            if (!memory || !memory.id) return null;
+            
+            const isExpanded = expandedMemoryId === memory.id;
+            const memoryContent = memory.memory || 
+                                memory.metadata?.data || 
+                                '(内容为空或格式错误)';
+            
+            return (
+              <View 
+                style={[
+                  styles.memoryItem, 
+                  isExpanded && styles.expandedMemoryItem
+                ]}
+                key={memory.id}
+              >
+                <TouchableOpacity 
+                  style={styles.memoryHeader}
+                  onPress={() => toggleMemoryExpansion(memory.id)}
+                >
+                  <View style={styles.memoryIconContainer}>
+                    <MaterialCommunityIcons 
+                      name="brain" 
+                      size={18} 
+                      color="#ff9f1c" 
+                    />
+                  </View>
+                  
+                  <View style={styles.memoryContent}>
+                    <Text 
+                      style={styles.memoryText}
+                      numberOfLines={isExpanded ? undefined : 2}
+                    >
+                      {memoryContent}
+                    </Text>
+                  </View>
+                  
+                  <Ionicons 
+                    name={isExpanded ? "chevron-up" : "chevron-down"} 
+                    size={20} 
+                    color="#aaa" 
+                  />
+                </TouchableOpacity>
+                
+                {isExpanded && (
+                  <View style={styles.memoryDetails}>
+                    <View style={styles.memoryMetadata}>
+                      <Text style={styles.metadataLabel}>创建时间:</Text>
+                      <Text style={styles.metadataValue}>
+                        {formatTimestamp(memory.createdAt)}
+                      </Text>
+                    </View>
+                    
+                    {memory.updatedAt && (
+                      <View style={styles.memoryMetadata}>
+                        <Text style={styles.metadataLabel}>更新时间:</Text>
+                        <Text style={styles.metadataValue}>
+                          {formatTimestamp(memory.updatedAt)}
+                        </Text>
+                      </View>
+                    )}
+                    
+                    {memory.agentId && (
+                      <View style={styles.memoryMetadata}>
+                        <Text style={styles.metadataLabel}>角色ID:</Text>
+                        <Text style={styles.metadataValue}>{memory.agentId}</Text>
+                      </View>
+                    )}
+                    
+                    {memory.runId && (
+                      <View style={styles.memoryMetadata}>
+                        <Text style={styles.metadataLabel}>会话ID:</Text>
+                        <Text style={styles.metadataValue}>{memory.runId}</Text>
+                      </View>
+                    )}
+                    
+                    {memory.metadata?.aiResponse && (
+                      <View style={styles.memoryMetadata}>
+                        <Text style={styles.metadataLabel}>AI响应:</Text>
+                        <Text style={styles.metadataValue}>{memory.metadata.aiResponse}</Text>
+                      </View>
+                    )}
+                    
+                    <View style={styles.memoryActions}>
+                      <TouchableOpacity 
+                        style={[styles.memoryAction, styles.editAction]} 
+                        onPress={() => handleEditMemory(memory)}
+                      >
+                        <Ionicons name="pencil" size={16} color="#fff" />
+                        <Text style={styles.actionText}>编辑</Text>
+                      </TouchableOpacity>
+                      
+                      <TouchableOpacity 
+                        style={[styles.memoryAction, styles.deleteAction]} 
+                        onPress={() => handleDeleteMemory(memory)}
+                      >
+                        <Ionicons name="trash" size={16} color="#fff" />
+                        <Text style={styles.actionText}>删除</Text>
+                      </TouchableOpacity>
+                    </View>
+                  </View>
+                )}
+              </View>
+            );
+          })}
+        </ScrollView>
+      )}
+      
+      {/* Memory stats and database info */}
+      {characterMemoryCount > 0 && !isLoadingFacts && (
+        <View style={styles.statsFooter}>
+          <Text style={styles.statsText}>共 {characterMemoryCount} 条记忆</Text>
+          {dbStats.totalCount > 0 && (
+            <Text style={styles.statsText}>
+              数据库大小: {dbStats.dbSizeMB}MB
+            </Text>
+          )}
+        </View>
+      )}
+      
+      {/* Import/Export buttons */}
+      {characterId && (
+        <View style={styles.backupButtonsContainer}>
+          <TouchableOpacity 
+            style={[styles.backupButton, styles.exportButton]} 
+            onPress={handleExportMemories}
+            disabled={isExporting || characterMemoryCount === 0}
+          >
+            {isExporting ? (
+              <ActivityIndicator size="small" color="#fff" />
+            ) : (
+              <>
+                <Ionicons name="cloud-download-outline" size={18} color="#fff" />
+                <Text style={styles.backupButtonText}>导出记忆</Text>
+              </>
+            )}
+          </TouchableOpacity>
+          
+          <TouchableOpacity 
+            style={[styles.backupButton, styles.importButton]} 
+            onPress={handleImportMemories}
+            disabled={isImporting}
+          >
+            {isImporting ? (
+              <ActivityIndicator size="small" color="#fff" />
+            ) : (
+              <>
+                <Ionicons name="cloud-upload-outline" size={18} color="#fff" />
+                <Text style={styles.backupButtonText}>导入记忆</Text>
+              </>
+            )}
+          </TouchableOpacity>
+        </View>
+      )}
+    </View>
+  );
+
+  // Render the settings tab with combined settings from both components
+  const renderSettingsTab = () => (
+    <ScrollView style={styles.settingsScrollView}>
+      <View style={styles.settingSection}>
+        <Text style={styles.settingSectionTitle}>表格记忆插件</Text>
+
+        <View style={styles.settingItem}>
+          <View style={styles.settingLabel}>
+            <Text style={styles.settingTitle}>启用表格记忆</Text>
+            <Text style={styles.settingDescription}>
+              启用表格记忆增强以存储结构化数据
+            </Text>
+          </View>
+          <TouchableOpacity
             style={[
-              styles.toggleThumb,
-              queueSystemEnabled ? styles.toggleThumbActive : styles.toggleThumbInactive
+              styles.toggle,
+              pluginEnabled ? styles.toggleActive : styles.toggleInactive
             ]}
+            onPress={() => handleTogglePluginEnabled(!pluginEnabled)}
+          >
+            <View
+              style={[
+                styles.toggleThumb,
+                pluginEnabled ? styles.toggleThumbActive : styles.toggleThumbInactive
+              ]}
+            />
+          </TouchableOpacity>
+        </View>
+
+        {/* 新增: 切换队列系统 */}
+        <View style={styles.settingItem}>
+          <View style={styles.settingLabel}>
+            <Text style={styles.settingTitle}>启用文件操作队列</Text>
+            <Text style={styles.settingDescription}>
+              启用队列可防止文件冲突，但可能导致UI卡顿
+            </Text>
+          </View>
+          <TouchableOpacity
+            style={[
+              styles.toggle,
+              queueSystemEnabled ? styles.toggleActive : styles.toggleInactive
+            ]}
+            onPress={() => {
+              const newValue = !queueSystemEnabled;
+              setQueueSystemEnabled(newValue);
+              TableMemory.setUseQueueSystem(newValue);
+            }}
+          >
+            <View
+              style={[
+                styles.toggleThumb,
+                queueSystemEnabled ? styles.toggleThumbActive : styles.toggleThumbInactive
+              ]}
+            />
+          </TouchableOpacity>
+        </View>
+      </View>
+
+      {/* Memory settings from MemoryProcessingControl */}
+      <View style={styles.settingSection}>
+        <Text style={styles.settingSectionTitle}>向量记忆系统</Text>
+        <View style={styles.settingItem}>
+          <View style={styles.settingLabel}>
+            <Text style={styles.settingTitle}>启用记忆功能</Text>
+            <Text style={styles.settingDescription}>
+              {memoryEnabled ? '记忆系统已启用，将自动记录对话内容' : '记忆系统已禁用，不会记录新的对话'}
+            </Text>
+          </View>
+          <Switch
+            value={memoryEnabled}
+            onValueChange={setMemoryEnabled}
+            trackColor={{ false: '#767577', true: 'rgba(255, 159, 28, 0.7)' }}
+            thumbColor={memoryEnabled ? '#ff9f1c' : '#f4f3f4'}
           />
-        </TouchableOpacity>
+        </View>
+        
+        <View style={styles.settingSection}>
+          <Text style={styles.settingSectionTitle}>记忆处理间隔</Text>
+          <Text style={styles.settingDescription}>
+            每隔多少轮用户消息处理一次记忆（1-20轮）
+          </Text>
+          
+          <View style={styles.sliderContainer}>
+            <Text style={styles.sliderValue}>1</Text>
+            <Slider
+              style={styles.slider}
+              minimumValue={1}
+              maximumValue={20}
+              step={1}
+              value={currentInterval}
+              onValueChange={handleIntervalChange}
+              minimumTrackTintColor="#ff9f1c"
+              maximumTrackTintColor="#767577"
+              thumbTintColor="#ff9f1c"
+            />
+            <Text style={styles.sliderValue}>20</Text>
+          </View>
+          
+          <View style={styles.currentValueContainer}>
+            <Text style={styles.currentValueLabel}>当前设置:</Text>
+            <Text style={styles.currentValue}>{currentInterval} 轮</Text>        
+          </View>
+        </View>
+        
       </View>
 
       {/* 文件系统存储维护选项 */}
@@ -847,7 +1645,7 @@ const MemoOverlay: React.FC<MemoOverlayProps> = ({ isVisible, onClose, character
           </TouchableOpacity>
         </>
       )}
-    </View>
+    </ScrollView>
   );
 
   // Modal for editing cell value (中文化)
@@ -889,6 +1687,84 @@ const MemoOverlay: React.FC<MemoOverlayProps> = ({ isVisible, onClose, character
     </Modal>
   );
 
+  // Modal for editing memory
+  const renderMemoryEditModal = () => (
+    <Modal
+      visible={!!editingMemory}
+      transparent={true}
+      animationType="fade"
+      onRequestClose={() => setEditingMemory(null)}
+    >
+      <View style={styles.modalOverlay}>
+        <View style={styles.cellEditContainer}>
+          <Text style={styles.cellEditTitle}>编辑记忆</Text>
+          <TextInput
+            style={styles.cellEditInput}
+            value={editingContent}
+            onChangeText={setEditingContent}
+            multiline
+            autoFocus
+            placeholder="编辑记忆内容..."
+            placeholderTextColor="#999"
+          />
+          <View style={styles.cellEditActions}>
+            <TouchableOpacity
+              style={[styles.cellEditButton, styles.cellEditCancelButton]}
+              onPress={() => setEditingMemory(null)}
+            >
+              <Text style={styles.cellEditButtonText}>取消</Text>
+            </TouchableOpacity>
+            <TouchableOpacity
+              style={[styles.cellEditButton, styles.cellEditSaveButton]}
+              onPress={handleSaveEditedMemory}
+            >
+              <Text style={styles.cellEditButtonText}>保存</Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+      </View>
+    </Modal>
+  );
+
+  // Modal for creating new memory
+  const renderNewMemoryModal = () => (
+    <Modal
+      visible={isCreatingNew}
+      transparent={true}
+      animationType="fade"
+      onRequestClose={() => setIsCreatingNew(false)}
+    >
+      <View style={styles.modalOverlay}>
+        <View style={styles.cellEditContainer}>
+          <Text style={styles.cellEditTitle}>新建记忆</Text>
+          <TextInput
+            style={styles.cellEditInput}
+            value={newMemoryContent}
+            onChangeText={setNewMemoryContent}
+            multiline
+            autoFocus
+            placeholder="输入新记忆内容..."
+            placeholderTextColor="#999"
+          />
+          <View style={styles.cellEditActions}>
+            <TouchableOpacity
+              style={[styles.cellEditButton, styles.cellEditCancelButton]}
+              onPress={() => setIsCreatingNew(false)}
+            >
+              <Text style={styles.cellEditButtonText}>取消</Text>
+            </TouchableOpacity>
+            <TouchableOpacity
+              style={[styles.cellEditButton, styles.cellEditSaveButton]}
+              onPress={handleSaveNewMemory}
+            >
+              <Text style={styles.cellEditButtonText}>创建</Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+      </View>
+    </Modal>
+  );
+
   return (
     <Modal
       transparent
@@ -900,7 +1776,7 @@ const MemoOverlay: React.FC<MemoOverlayProps> = ({ isVisible, onClose, character
       <View style={styles.fullScreenContainer}>
         <BlurView intensity={30} tint="dark" style={styles.fullScreenBlurView}>
           <View style={styles.header}>
-            <Text style={styles.title}>表格记忆</Text>
+            <Text style={styles.title}>记忆增强系统</Text>
             <TouchableOpacity onPress={onClose} style={styles.closeButton}>
               <Ionicons name="close" size={28} color="#fff" />
             </TouchableOpacity>
@@ -945,6 +1821,22 @@ const MemoOverlay: React.FC<MemoOverlayProps> = ({ isVisible, onClose, character
               </Text>
             </TouchableOpacity>
             <TouchableOpacity
+              style={[styles.tab, activeTab === TabType.FACTS && styles.activeTab]}
+              onPress={() => setActiveTab(TabType.FACTS)}
+            >
+              <MaterialCommunityIcons
+                name="brain"
+                size={20}
+                color={activeTab === TabType.FACTS ? '#ff9f1c' : '#ccc'}
+              />
+              <Text style={[styles.tabText, activeTab === TabType.FACTS && styles.activeTabText]}>
+                事实
+                {characterMemoryCount > 0 && (
+                  <Text style={styles.tabBadge}> ({characterMemoryCount})</Text>
+                )}
+              </Text>
+            </TouchableOpacity>
+            <TouchableOpacity
               style={[styles.tab, activeTab === TabType.SETTINGS && styles.activeTab]}
               onPress={() => setActiveTab(TabType.SETTINGS)}
             >
@@ -961,9 +1853,21 @@ const MemoOverlay: React.FC<MemoOverlayProps> = ({ isVisible, onClose, character
           <View style={styles.content}>
             {activeTab === TabType.TEMPLATES && renderTemplateTab()}
             {activeTab === TabType.TABLES && renderTablesTab()}
+            {activeTab === TabType.FACTS && renderFactsTab()}
             {activeTab === TabType.SETTINGS && renderSettingsTab()}
           </View>
+          {dbSizeWarningMessage && activeTab === TabType.FACTS && (
+            <View style={[
+              styles.dbSizeWarning, 
+              parseFloat(dbStats.dbSizeMB) >= DB_SIZE_ALERT_THRESHOLD ? styles.dbSizeAlert : {}
+            ]}>
+              <Ionicons name="warning" size={18} color="white" />
+              <Text style={styles.dbSizeWarningText}>{dbSizeWarningMessage}</Text>
+            </View>
+          )}
           {renderCellEditModal()}
+          {renderMemoryEditModal()}
+          {renderNewMemoryModal()}
         </BlurView>
       </View>
     </Modal>
@@ -973,81 +1877,340 @@ const MemoOverlay: React.FC<MemoOverlayProps> = ({ isVisible, onClose, character
 const { height, width } = Dimensions.get('window');
 
 const styles = StyleSheet.create({
-  container: {
+  memoriesHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginBottom: 12,
+  },
+  searchContainer: {
+    flex: 1,
+    flexDirection: 'row',
+    backgroundColor: 'rgba(60, 60, 60, 0.6)',
+    borderRadius: 10,
+    overflow: 'hidden',
+  },
+  searchInput: {
+    flex: 1,
+    height: 44,
+    paddingHorizontal: 12,
+    color: '#fff',
+    fontSize: 15,
+    backgroundColor: 'transparent',
+  },
+  searchButton: {
+    backgroundColor: 'rgba(255, 159, 28, 0.2)',
+    paddingHorizontal: 12,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  memoryActionsHeader: {
+    flexDirection: 'row',
+    marginLeft: 8,
+  },
+  refreshButton: {
+    width: 44,
+    height: 44,
+    backgroundColor: 'rgba(60, 60, 60, 0.6)',
+    borderRadius: 10,
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginRight: 8,
+  },
+  addButton: {
+    width: 44,
+    height: 44,
+    backgroundColor: 'rgba(255, 159, 28, 0.2)',
+    borderRadius: 10,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  memoriesList: {
+    flex: 1,
+  },
+  memoryItem: {
+    backgroundColor: 'rgba(60, 60, 60, 0.6)',
+    borderRadius: 10,
+    marginBottom: 12,
+    overflow: 'hidden',
+    borderWidth: 1,
+    borderColor: 'rgba(255, 255, 255, 0.05)',
+  },
+  expandedMemoryItem: {
+    backgroundColor: 'rgba(70, 70, 70, 0.8)',
+  },
+  memoryHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    padding: 12,
+  },
+  memoryIconContainer: {
+    marginRight: 12,
+  },
+  memoryContent: {
+    flex: 1,
+  },
+  memoryText: {
+    color: '#fff',
+    fontSize: 14,
+  },
+  memoryDetails: {
+    padding: 12,
+    paddingTop: 0,
+    borderTopWidth: 1,
+    borderTopColor: 'rgba(255, 255, 255, 0.05)',
+  },
+  memoryMetadata: {
+    flexDirection: 'row',
+    marginTop: 12,
+  },
+  metadataLabel: {
+    width: 80,
+    fontSize: 13,
+    color: '#aaa',
+  },
+  metadataValue: {
+    flex: 1,
+    fontSize: 13,
+    color: '#ddd',
+  },
+  memoryActions: {
+    flexDirection: 'row',
+    justifyContent: 'flex-end',
+    marginTop: 15,
+  },
+  memoryAction: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingVertical: 8,
+    paddingHorizontal: 12,
+    borderRadius: 8,
+    marginLeft: 8,
+  },
+  editAction: {
+    backgroundColor: 'rgba(255, 159, 28, 0.2)',
+  },
+  deleteAction: {
+    backgroundColor: '#e74c3c',
+  },
+  actionText: {
+    color: '#fff',
+    marginLeft: 5,
+    fontSize: 13,
+    fontWeight: 'bold',
+  },
+  loadingContainer: {
     flex: 1,
     justifyContent: 'center',
     alignItems: 'center',
-    backgroundColor: 'rgba(0, 0, 0, 0.6)',
   },
-  blurView: {
-    width: '90%',
-    height: height * 0.8,
-    borderRadius: 20,
-    overflow: 'hidden',
+  loadingText: {
+    color: '#ddd',
+    marginTop: 12,
   },
-  header: {
+  createMemoryButton: {
+    backgroundColor: '#ff9f1c',
+    paddingVertical: 10,
+    paddingHorizontal: 16,
+    borderRadius: 8,
+    marginTop: 16,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+  },
+  createMemoryButtonText: {
+    color: '#fff',
+    fontWeight: 'bold',
+  },
+  statsFooter: {
     flexDirection: 'row',
     justifyContent: 'space-between',
-    alignItems: 'center',
-    // 顶部安全距离
-    paddingTop: Platform.select({
-      ios: 44,
-      android: StatusBar.currentHeight || 24,
-      default: 24,
-    }),
-    paddingBottom: 8,
-    paddingHorizontal: 16,
-    borderBottomWidth: 1,
-    borderBottomColor: 'rgba(255, 255, 255, 0.1)',
+    paddingTop: 12,
+    borderTopWidth: 1,
+    borderTopColor: 'rgba(255, 255, 255, 0.1)',
+    marginTop: 12,
   },
-  title: {
-    fontSize: 18,
+  statsText: {
+    color: '#ccc',
+    fontSize: 13,
+  },
+  backupButtonsContainer: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    marginTop: 16,
+  },
+  backupButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    padding: 12,
+    borderRadius: 8,
+    flex: 0.48,
+    backgroundColor: '#ff9f1c',
+  },
+  exportButton: {
+    backgroundColor: '#ff9f1c',
+  },
+  importButton: {
+    backgroundColor: 'rgba(255, 159, 28, 0.2)',
+  },
+  backupButtonText: {
+    color: '#fff',
+    fontSize: 14,
     fontWeight: 'bold',
+    marginLeft: 8,
+  },
+  dbSizeWarning: {
+    backgroundColor: 'rgba(255, 159, 28, 0.9)',
+    padding: 10,
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
+  dbSizeAlert: {
+    backgroundColor: 'rgba(231, 76, 60, 0.9)',
+  },
+  dbSizeWarningText: {
+    color: 'white',
+    marginLeft: 8,
+    flex: 1,
+  },
+  settingsScrollView: {
+    flex: 1,
+    padding: 16,
+  },
+  settingSection: {
+    backgroundColor: 'rgba(60, 60, 60, 0.6)',
+    borderRadius: 10,
+    padding: 15,
+    marginBottom: 16,
+  },
+  settingItem: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    marginBottom: 10,
+  },
+  settingSectionTitle: {
+    color: '#ff9f1c',
+    fontSize: 16,
+    fontWeight: 'bold',
+    marginBottom: 12,
+  },
+  statHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginBottom: 16,
+  },
+  statItem: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    marginBottom: 12,
+  },
+  statValue: {
+    color: '#fff',
+    fontSize: 14,
+    fontWeight: 'bold',
+  },
+  dbSizeWarningBox: {
+    backgroundColor: 'rgba(255, 159, 28, 0.1)',
+    borderRadius: 8,
+    padding: 12,
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginTop: 8,
+  },
+  dbSizeWarningBoxText: {
+    color: '#ff9f1c',
+    fontSize: 13,
+    marginLeft: 8,
+    flex: 1,
+  },
+  sliderContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginBottom: 16,
+  },
+  slider: {
+    flex: 1,
+    height: 40,
+  },
+  sliderValue: {
+    width: 30,
+    textAlign: 'center',
+    color: '#aaa',
+  },
+  currentValueContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginBottom: 20,
+  },
+  currentValueLabel: {
+    fontSize: 15,
     color: '#fff',
   },
-  closeButton: {
-    padding: 5,
+  currentValue: {
+    fontSize: 20,
+    color: '#ff9f1c',
+    fontWeight: 'bold',
+    marginLeft: 8,
   },
-  loadingOverlay: {
-    ...StyleSheet.absoluteFillObject,
+  modalOverlay: {
+    flex: 1,
     backgroundColor: 'rgba(0, 0, 0, 0.7)',
     justifyContent: 'center',
     alignItems: 'center',
-    zIndex: 10,
+    padding: 20,
   },
-  loadingText: {
-    color: '#fff',
-    marginTop: 10,
-    fontSize: 16,
-  },
-  tabs: {
-    flexDirection: 'row',
-    borderBottomWidth: 1,
-    borderBottomColor: 'rgba(255, 255, 255, 0.1)',
-  },
-  tab: {
+  fullScreenContainer: {
     flex: 1,
-    padding: 12,
+    backgroundColor: 'rgba(0,0,0,0.7)',
+  },
+  fullScreenBlurView: {
+    flex: 1,
+    borderRadius: 0,
+    width: '100%',
+    height: '100%',
+    overflow: 'hidden',
+  },
+  tableTagsContainer: {
     flexDirection: 'row',
-    justifyContent: 'center',
+    flexWrap: 'wrap',
     alignItems: 'center',
-    borderBottomWidth: 2,
-    borderBottomColor: 'transparent',
+    marginBottom: 12,
+    gap: 8,
   },
-  activeTab: {
-    borderBottomColor: '#ff9f1c',
+  tableTag: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: 'rgba(60, 60, 60, 0.6)',
+    borderRadius: 16,
+    paddingHorizontal: 14,
+    paddingVertical: 6,
+    marginRight: 8,
+    marginBottom: 6,
   },
-  tabText: {
-    color: '#ccc',
-    marginLeft: 8,
+  tableTagSelected: {
+    backgroundColor: '#ff9f1c',
+  },
+  tableTagText: {
+    color: '#fff',
     fontSize: 14,
-  },
-  activeTabText: {
-    color: '#ff9f1c',
     fontWeight: 'bold',
+    marginRight: 4,
   },
-  content: {
+  tableTagTextSelected: {
+    color: '#fff',
+  },
+  tableTagDelete: {
+    marginLeft: 4,
+  },
+  tableDataContainerFull: {
     flex: 1,
+    paddingLeft: 0,
+    width: '100%',
+  },
+  buttonIcon: {
+    marginRight: 8,
   },
   tabContent: {
     flex: 1,
@@ -1208,12 +2371,6 @@ const styles = StyleSheet.create({
   },
 
   // Cell edit modal
-  modalOverlay: {
-    flex: 1,
-    backgroundColor: 'rgba(0, 0, 0, 0.7)',
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
   cellEditContainer: {
     backgroundColor: '#333',
     borderRadius: 10,
@@ -1287,15 +2444,6 @@ const styles = StyleSheet.create({
   },
 
   // Settings
-  settingItem: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    padding: 12,
-    backgroundColor: 'rgba(60, 60, 60, 0.6)',
-    borderRadius: 8,
-    marginBottom: 10,
-  },
   settingLabel: {
     flex: 1,
   },
@@ -1352,6 +2500,7 @@ const styles = StyleSheet.create({
 
   // Empty states
   emptyState: {
+    flex: 1,
     padding: 20,
     alignItems: 'center',
     justifyContent: 'center',
@@ -1388,9 +2537,6 @@ const styles = StyleSheet.create({
     justifyContent: 'space-between',
     alignItems: 'center',
     marginBottom: 16,
-  },
-  refreshButton: {
-    padding: 8,
   },
   selectedCount: {
     color: '#ff9f1c',
@@ -1450,56 +2596,85 @@ const styles = StyleSheet.create({
     marginLeft: 8,
     fontSize: 13,
   },
-  // 全屏化
-  fullScreenContainer: {
+  container: {
     flex: 1,
-    backgroundColor: 'rgba(0,0,0,0.7)',
+    justifyContent: 'center',
+    alignItems: 'center',
+    backgroundColor: 'rgba(0, 0, 0, 0.6)',
   },
-  fullScreenBlurView: {
-    flex: 1,
-    borderRadius: 0,
-    width: '100%',
-    height: '100%',
+  blurView: {
+    width: '90%',
+    height: height * 0.8,
+    borderRadius: 20,
     overflow: 'hidden',
   },
-  // Tag样式
-  tableTagsContainer: {
+  header: {
     flexDirection: 'row',
-    flexWrap: 'wrap',
+    justifyContent: 'space-between',
     alignItems: 'center',
-    marginBottom: 12,
-    gap: 8,
+    // 顶部安全距离
+    paddingTop: Platform.select({
+      ios: 44,
+      android: StatusBar.currentHeight || 24,
+      default: 24,
+    }),
+    paddingBottom: 8,
+    paddingHorizontal: 16,
+    borderBottomWidth: 1,
+    borderBottomColor: 'rgba(255, 255, 255, 0.1)',
   },
-  tableTag: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: 'rgba(60, 60, 60, 0.6)',
-    borderRadius: 16,
-    paddingHorizontal: 14,
-    paddingVertical: 6,
-    marginRight: 8,
-    marginBottom: 6,
-  },
-  tableTagSelected: {
-    backgroundColor: '#ff9f1c',
-  },
-  tableTagText: {
-    color: '#fff',
-    fontSize: 14,
+  title: {
+    fontSize: 18,
     fontWeight: 'bold',
-    marginRight: 4,
-  },
-  tableTagTextSelected: {
     color: '#fff',
   },
-  tableTagDelete: {
-    marginLeft: 4,
+  closeButton: {
+    padding: 5,
   },
-  // 表格内容全宽
-  tableDataContainerFull: {
+  loadingOverlay: {
+    ...StyleSheet.absoluteFillObject,
+    backgroundColor: 'rgba(0, 0, 0, 0.7)',
+    justifyContent: 'center',
+    alignItems: 'center',
+    zIndex: 10,
+  },
+
+  tabs: {
+    flexDirection: 'row',
+    borderBottomWidth: 1,
+    borderBottomColor: 'rgba(255, 255, 255, 0.1)',
+  },
+  tab: {
     flex: 1,
-    paddingLeft: 0,
-    width: '100%',
+    padding: 12,
+    flexDirection: 'row',
+    justifyContent: 'center',
+    alignItems: 'center',
+    borderBottomWidth: 2,
+    borderBottomColor: 'transparent',
+  },
+  activeTab: {
+    borderBottomColor: '#ff9f1c',
+  },
+  tabText: {
+    color: '#ccc',
+    marginLeft: 8,
+    fontSize: 14,
+  },
+  activeTabText: {
+    color: '#ff9f1c',
+    fontWeight: 'bold',
+  },
+  content: {
+    flex: 1,
+  },
+  
+  // New style for button text
+  buttonText: {
+    color: '#fff',
+    fontSize: 15,
+    fontWeight: 'bold',
+    marginLeft: 8,
   },
 });
 

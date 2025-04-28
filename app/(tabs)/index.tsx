@@ -23,8 +23,6 @@ import Sidebar from '@/components/Sidebar';
 import SettingsSidebar from '@/components/SettingsSidebar';
 import MemoOverlay from '@/components/MemoOverlay';  // Import for memory enhancement plugin UI
 import SaveManager from '@/components/SaveManager'; // Import the SaveManager component
-import NovelAITestModal from '@/components/NovelAITestModal'; // 导入 NovelAI 测试组件
-import VNDBTestModal from '@/src/components/VNDBTestModal'; // 导入 VNDB 测试组件
 import TTSEnhancerModal from '@/components/TTSEnhancerModal'; // Import the new modal component
 import GroupDialog from '@/components/GroupDialog';
 import GroupInput from '@/components/GroupInput';
@@ -1154,72 +1152,6 @@ useEffect(() => {
     }).start();
   };
 
-  // 修改处理图像的函数
-  const handleImageGenerated = async (imageUrl: string, taskId?: string) => {
-    // If in preview mode, exit first
-    exitPreviewMode();
-
-    if (!selectedConversationId) {
-      console.warn('未选择对话，无法添加图片消息');
-      return;
-    }
-
-    console.log('接收到生成的图片URL:', imageUrl.substring(0, 50) + '...');
-    
-    // 如果提供了任务ID，检查是否正在处理该任务
-    if (taskId && processingTaskIds.current.has(taskId)) {
-      console.log(`任务 ${taskId} 正在处理中，跳过重复处理`);
-      return;
-    }
-    
-    // 如果已经处理过这个URL，避免重复添加
-    if (processedImageUrls.has(imageUrl)) {
-      console.log('图片URL已经被处理过，跳过:', imageUrl.substring(0, 50) + '...');
-      return;
-    }
-    
-    try {
-      // 如果提供了任务ID，标记为正在处理
-      if (taskId) {
-        processingTaskIds.current.add(taskId);
-      }
-      
-      // 创建图像消息
-      let imageMessage: string;
-      
-      // 直接使用图像URL
-      if (imageUrl.startsWith('http')) {
-        // 如果是HTTP URL，使用基本的markdown图片语法
-        imageMessage = `![NovelAI生成的图像](${imageUrl})`;
-      } else if (imageUrl.length > 200000) {
-        // 如果是非常大的data URL，提供警告
-        imageMessage = `[NovelAI生成了一张图像，但数据量太大无法直接显示。点击查看](${imageUrl})`;
-      } else {
-        // 普通data URL
-        imageMessage = `![NovelAI生成的图像](${imageUrl})`;
-      }
-      
-      // 添加消息
-      console.log('添加NovelAI图片到对话', selectedConversationId);
-      await handleSendMessage(imageMessage, 'bot');
-      
-      // 将URL添加到已处理集合中
-      setProcessedImageUrls(prev => new Set([...prev, imageUrl]));
-      
-      // 如果任务处理完成，从处理中集合移除
-      if (taskId) {
-        processingTaskIds.current.delete(taskId);
-      }
-    } catch (error) {
-      console.error('添加图片消息失败:', error);
-      // 确保即使出错也从处理中集合移除任务
-      if (taskId) {
-        processingTaskIds.current.delete(taskId);
-      }
-    }
-  };
-
-
 
   const handleAvatarPress = () => {
     // If in preview mode, ask user if they want to exit before navigating
@@ -2297,7 +2229,7 @@ const getBackgroundImage = () => {
         </View>
       )}
              
-      <TouchableOpacity  //新增：测试按钮，重置初始化状态
+      {/* <TouchableOpacity  //新增：测试按钮，重置初始化状态
         style={{
           position: 'absolute',
           top: 40,
@@ -2312,7 +2244,7 @@ const getBackgroundImage = () => {
         onPress={handleResetDefaultCharacterInit}
       >
         <Text style={{ color: '#333', fontWeight: 'bold' }}>重置默认角色初始化</Text>
-      </TouchableOpacity>
+      </TouchableOpacity> */}
 
       <MemoryProvider config={memoryConfig}>
         <Mem0Initializer />
@@ -2631,20 +2563,7 @@ const getBackgroundImage = () => {
                 onClose={toggleMemoOverlay}
                 characterId={characterIdForMemo}
                 conversationId={conversationIdForMemo}
-              />
-              
-              {/* VNDB测试模态框 */}
-              <VNDBTestModal
-                visible={isVNDBTestVisible}
-                onClose={() => setIsVNDBTestVisible(false)}
-              />
-
-              {/* NovelAI测试模态框 */}
-              <NovelAITestModal
-                visible={isNovelAITestVisible}
-                onClose={() => setIsNovelAITestVisible(false)}
-                onImageGenerated={handleImageGenerated}
-              />
+              />            
               
               {/* Save Manager */}
               {characterToUse && (

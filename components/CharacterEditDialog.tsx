@@ -23,7 +23,7 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import { useCharacters } from '@/constants/CharactersContext';
 import { getApiSettings, addCloudServiceStatusListener } from '@/utils/settings-helper';
 import { GeminiAdapter } from '@/NodeST/nodest/utils/gemini-adapter';
-import { OpenRouterAdapter } from '@/docs/openrouter_cloudservice/ref_code/openrouter-adapter';
+import { OpenRouterAdapter } from '@/NodeST/nodest/utils/openrouter-adapter';
 
 interface CharacterEditDialogProps {
   isVisible: boolean;

@@ -13,6 +13,8 @@ import {
   Text,
   ScrollView,
   TouchableWithoutFeedback,
+  Switch,
+  ActivityIndicator
 } from 'react-native';
 import { MaterialIcons, Ionicons, } from '@expo/vector-icons';
 import { Character } from '@/shared/types';
@@ -27,7 +29,8 @@ import Mem0Service from '@/src/memory/services/Mem0Service';
 import ImageManager from '@/utils/ImageManager';
 import { StorageAdapter } from '@/NodeST/nodest/utils/storage-adapter';
 import { updateAuthorNoteDataForCharacter } from '@/app/pages/character-detail'; // 导入新方法
-
+import { InputImagen } from '@/services/InputImagen'; // 导入InputImagen服务
+import { CloudServiceProvider } from '@/services/cloud-service-provider'; // 导入云服务提供商
 interface ChatInputProps {
   onSendMessage: (text: string, sender: 'user' | 'bot', isLoading?: boolean, metadata?: Record<string, any>) => void;
   selectedConversationId: string | null;
@@ -86,7 +89,14 @@ const { applyRegexTools } = useRegex();
   
   const actionMenuHeight = useRef(new Animated.Value(0)).current;
   const actionMenuOpacity = useRef(new Animated.Value(0)).current;
-
+ // 添加新的状态管理AI场景描述和自定义seed
+ const [aiGeneratedPrompt, setAiGeneratedPrompt] = useState<string>('');
+ const [isGeneratingPrompt, setIsGeneratingPrompt] = useState(false);
+ const [customSeed, setCustomSeed] = useState<string>('');
+ const [useSeed, setUseSeed] = useState<boolean>(false);
+ const [novelAIConfig, setNovelAIConfig] = useState<any>(null);
+ const [generatedNovelAIImage, setGeneratedNovelAIImage] = useState<string | null>(null);
+ const [showNovelAIImageModal, setShowNovelAIImageModal] = useState(false);
   useEffect(() => {
     const keyboardDidHideListener = Keyboard.addListener(
       'keyboardDidHide',
@@ -448,84 +458,7 @@ ${recentMessagesContext ? `最近的对话记录:\n${recentMessagesContext}\n` :
     }
   };
 
-  const handleImageGeneration = async () => {
-    if (!imagePrompt.trim() || !selectedConversationId) {
-      Alert.alert('错误', '请输入有效的图片描述');
-      return;
-    }
 
-    try {
-      setIsGeneratingImage(true);
-      
-      const apiKey = user?.settings?.chat.characterApiKey || '';
-      if (!apiKey) {
-        throw new Error("API密钥未设置");
-      }
-      
-      const geminiAdapter = new GeminiAdapter(apiKey);
-      
-      onSendMessage(`请为我生成图片: "${imagePrompt}"`, "user");
-      onSendMessage('', 'bot', true);
-      
-      const images = await geminiAdapter.generateImage(imagePrompt, {
-        temperature: 0.8
-      });
-      
-      if (images && images.length > 0) {
-        try {
-          const previewLogData = images[0].substring(0, 100) + '...';
-          console.log(`[ChatInput] Image generated, data length: ${images[0].length}, preview: ${previewLogData}`);
-          
-          const cacheResult = await ImageManager.cacheImage(
-            images[0],
-            'image/png'
-          );
-          
-          const imageMessage = `![Gemini生成的图像](image:${cacheResult.id})`;
-          
-          onSendMessage(imageMessage, 'bot');
-          
-          setTimeout(() => {
-            Alert.alert(
-              '图片已生成',
-              '是否保存图片到相册？',
-              [
-                { text: '取消', style: 'cancel' },
-                { 
-                  text: '保存', 
-                  onPress: async () => {
-                    const result = await ImageManager.saveToGallery(cacheResult.id);
-                    Alert.alert(result.success ? '成功' : '错误', result.message);
-                  }
-                },
-                {
-                  text: '分享',
-                  onPress: async () => {
-                    const shared = await ImageManager.shareImage(cacheResult.id);
-                    if (!shared) {
-                      Alert.alert('错误', '分享功能不可用');
-                    }
-                  }
-                }
-              ]
-            );
-          }, 500);
-        } catch (cacheError) {
-          console.error('[ChatInput] Error caching generated image:', cacheError);
-          onSendMessage('图像已生成，但保存过程中出现错误。', 'bot');
-        }
-      } else {
-        onSendMessage('抱歉，我现在无法生成这个图片。可能是描述需要更具体，或者该内容不适合生成。', 'bot');
-      }
-    } catch (error) {
-      console.error('Error generating image:', error);
-      onSendMessage('抱歉，生成图片时出现了错误，请重试。', 'bot');
-    } finally {
-      setIsGeneratingImage(false);
-      setShowImageGenModal(false);
-      setImagePrompt('');
-    }
-  };
 
   const handleImageEditOperation = async () => {
     if (!imagePrompt.trim() || !selectedConversationId || !referenceImage) {
@@ -811,7 +744,132 @@ ${recentMessagesContext ? `最近的对话记录:\n${recentMessagesContext}\n` :
 
   const openImageGenModal = () => {
     setShowActions(false);
+    
+    // 从角色读取NovelAI配置
+    if (selectedCharacter) {
+      const config = InputImagen.getNovelAIConfig(selectedCharacter);
+      setNovelAIConfig(config);
+      
+      // 设置初始seed值
+      if (config.seed !== undefined) {
+        setCustomSeed(config.seed.toString());
+        setUseSeed(true);
+      } else {
+        setCustomSeed(Math.floor(Math.random() * 2 ** 32).toString());
+        setUseSeed(false);
+      }
+    }
+    
+    // 重置其他状态
+    setAiGeneratedPrompt('');
+    setImagePrompt('');
     setShowImageGenModal(true);
+  };
+
+  // 添加新函数：生成AI场景描述
+  const handleGenerateAIPrompt = async () => {
+    if (!selectedCharacter?.id) {
+      Alert.alert('错误', '请先选择一个角色');
+      return;
+    }
+    
+    try {
+      setIsGeneratingPrompt(true);
+      const sceneDescription = await InputImagen.generateSceneDescription(selectedCharacter.id);
+      
+      if (sceneDescription) {
+        setAiGeneratedPrompt(sceneDescription);
+        // 将AI生成的提示词添加到当前提示词的末尾，而不是替换
+        setImagePrompt(prev => {
+          const currentPrompt = prev.trim();
+          if (currentPrompt) {
+            return currentPrompt + ', ' + sceneDescription;
+          } else {
+            return sceneDescription;
+          }
+        });
+      } else {
+        Alert.alert('提示', '无法生成场景描述，请手动输入提示词');
+      }
+    } catch (e) {
+      console.error('[ChatInput] Error generating scene description:', e);
+      Alert.alert('错误', '生成场景描述失败，请手动输入提示词');
+    } finally {
+      setIsGeneratingPrompt(false);
+    }
+  };
+
+  // 生成随机种子
+  const generateRandomSeed = () => {
+    const randomSeed = Math.floor(Math.random() * 2 ** 32);
+    setCustomSeed(randomSeed.toString());
+  };
+
+
+
+  // 修改图片生成方法，使用InputImagen服务并独立展示图片
+  const handleImageGeneration = async () => {
+    if (!selectedConversationId) {
+      Alert.alert('错误', '请先选择一个角色');
+      return;
+    }
+
+    try {
+      setIsGeneratingImage(true);
+      
+      const apiKey = user?.settings?.chat.characterApiKey || '';
+      const novelaiToken = user?.settings?.chat?.novelai?.token || '';
+      
+      if (!novelaiToken) {
+        throw new Error("NovelAI令牌未设置，请在设置中配置");
+      }
+      
+      onSendMessage(`请为我生成图片${ imagePrompt ? `: "${imagePrompt}"` : '' }`, "user");
+      
+      // 准备生成参数
+      const userCustomSeed = useSeed && customSeed ? parseInt(customSeed, 10) : undefined;
+      console.log('[ChatInput] Generating image with seed:', userCustomSeed);
+      
+      const result = await InputImagen.generateImage(
+        novelaiToken,
+        novelAIConfig,
+        imagePrompt,
+        userCustomSeed
+      );
+      
+      if (result.success && result.imageId) {
+        try {
+          console.log(`[ChatInput] Image generated successfully with ID: ${result.imageId}`);
+          
+          // 获取图片信息
+          const imageInfo = ImageManager.getImageInfo(result.imageId);
+          
+          if (imageInfo) {
+            // 设置生成的图片ID，用于独立显示
+            setGeneratedNovelAIImage(result.imageId);
+            setShowNovelAIImageModal(true);
+          } else {
+            onSendMessage('图像已生成，但无法显示。', 'bot');
+          }
+          
+          setTimeout(() => {
+            setShowImageGenModal(false);
+            setImagePrompt('');
+            setAiGeneratedPrompt('');
+          }, 500);
+        } catch (displayError) {
+          console.error('[ChatInput] Error displaying generated image:', displayError);
+          onSendMessage('图像已生成，但显示过程中出现错误。', 'bot');
+        }
+      } else {
+        onSendMessage(`抱歉，我现在无法生成这个图片。${result.error ? '错误: ' + result.error : ''}`, 'bot');
+      }
+    } catch (error) {
+      console.error('Error generating image:', error);
+      onSendMessage('抱歉，生成图片时出现了错误，请重试。', 'bot');
+    } finally {
+      setIsGeneratingImage(false);
+    }
   };
 
   const pickReferenceImage = async () => {
@@ -1026,35 +1084,178 @@ ${recentMessagesContext ? `最近的对话记录:\n${recentMessagesContext}\n` :
       </View>
 
       <Modal
-        visible={showImageUrlModal}
+        visible={showImageGenModal}
         transparent={true}
         animationType="fade"
-        onRequestClose={() => setShowImageUrlModal(false)}
+        onRequestClose={() => setShowImageGenModal(false)}
       >
         <View style={styles.modalContainer}>
           <View style={styles.modalContent}>
-            <Text style={styles.modalTitle}>输入图片URL</Text>
+            <Text style={styles.modalTitle}>生成图片</Text>
+            
+            {novelAIConfig && (
+              <View style={styles.configInfoContainer}>
+                <Text style={styles.configInfoText}>
+                  使用角色设置: {novelAIConfig.model}, {novelAIConfig.sizePreset?.width}x{novelAIConfig.sizePreset?.height}
+                </Text>
+              </View>
+            )}
+            
             <TextInput
-              style={styles.urlInput}
-              placeholder="https://example.com/image.jpg"
+              style={[styles.urlInput, {height: 100}]}
+              placeholder="描述你想要生成的图片..."
               placeholderTextColor="#999"
-              value={imageUrl}
-              onChangeText={setImageUrl}
-              autoCapitalize="none"
-              autoCorrect={false}
+              value={imagePrompt}
+              onChangeText={setImagePrompt}
+              multiline
+              numberOfLines={4}
+              textAlignVertical="top"
             />
+            
+            <View style={styles.promptActionsContainer}>
+              <TouchableOpacity 
+                style={[
+                  styles.autoPromptButton,
+                  isGeneratingPrompt && styles.disabledButton
+                ]}
+                onPress={handleGenerateAIPrompt}
+                disabled={isGeneratingPrompt}
+              >
+                {isGeneratingPrompt ? (
+                  <ActivityIndicator size="small" color="#fff" />
+                ) : (
+                  <>
+                    <Ionicons name="sparkles" size={16} color="#fff" style={{marginRight: 5}} />
+                    <Text style={styles.autoPromptText}>自动提示词</Text>
+                  </>
+                )}
+              </TouchableOpacity>
+              
+              {aiGeneratedPrompt ? (
+                <Text style={styles.aiPromptText}>
+                  AI提示: {aiGeneratedPrompt}
+                </Text>
+              ) : null}
+            </View>
+            
+            <View style={styles.seedContainer}>
+              <View style={styles.seedToggleRow}>
+                <Text style={styles.seedLabel}>使用种子值:</Text>
+                <Switch
+                  value={useSeed}
+                  onValueChange={setUseSeed}
+                  trackColor={{ false: "#5a5a5a", true: "#81b0ff" }}
+                  thumbColor={useSeed ? "#2196F3" : "#c4c4c4"}
+                />
+              </View>
+              
+              {useSeed && (
+                <View style={styles.seedInputRow}>
+                  <TextInput
+                    style={styles.seedInput}
+                    placeholder="输入种子值"
+                    placeholderTextColor="#999"
+                    value={customSeed}
+                    onChangeText={setCustomSeed}
+                    keyboardType="numeric"
+                  />
+                  <TouchableOpacity style={styles.randomSeedButton} onPress={generateRandomSeed}>
+                    <Ionicons name="dice" size={18} color="#fff" />
+                  </TouchableOpacity>
+                </View>
+              )}
+            </View>
+            
             <View style={styles.modalButtons}>
               <TouchableOpacity 
-                style={styles.modalButton}
-                onPress={() => setShowImageUrlModal(false)}
+                style={styles.modalButton} 
+                onPress={() => setShowImageGenModal(false)}
               >
                 <Text style={styles.modalButtonText}>取消</Text>
               </TouchableOpacity>
+              
               <TouchableOpacity 
-                style={[styles.modalButton, styles.modalButtonPrimary]}
-                onPress={handleImageUrlSubmit}
+                style={[
+                  styles.modalButton, 
+                  styles.modalButtonPrimary,
+                  isGeneratingImage && styles.disabledButton
+                ]}
+                onPress={handleImageGeneration}
+                disabled={isGeneratingImage}
               >
-                <Text style={[styles.modalButtonText, {color: '#fff'}]}>确认</Text>
+                {isGeneratingImage ? (
+                  <ActivityIndicator size="small" color="#fff" />
+                ) : (
+                  <Text style={[styles.modalButtonText, { color: '#fff' }]}>
+                    生成
+                  </Text>
+                )}
+              </TouchableOpacity>
+            </View>
+          </View>
+        </View>
+      </Modal>
+
+      {/* 新增: 生成图片的独立显示模态框 */}
+      <Modal
+        visible={showNovelAIImageModal}
+        transparent={true}
+        animationType="fade"
+        onRequestClose={() => setShowNovelAIImageModal(false)}
+      >
+        <View style={styles.modalContainer}>
+          <View style={styles.imagePreviewContent}>
+            <Text style={styles.modalTitle}>NovelAI 生成的图片</Text>
+            
+            {generatedNovelAIImage && (
+              <View style={styles.novelaiImageContainer}>
+                {ImageManager.getImageInfo(generatedNovelAIImage) ? (
+                  <Image
+                    source={{ uri: ImageManager.getImageInfo(generatedNovelAIImage)?.originalPath }}
+                    style={styles.novelaiGeneratedImage}
+                    resizeMode="contain"
+                  />
+                ) : (
+                  <View style={styles.imageError}>
+                    <Ionicons name="alert-circle" size={36} color="#e74c3c" />
+                    <Text style={styles.imageErrorText}>图片无法加载</Text>
+                  </View>
+                )}
+              </View>
+            )}
+            
+            <View style={styles.imageActionsRow}>
+              <TouchableOpacity
+                style={[styles.imageActionButton, { backgroundColor: '#555' }]}
+                onPress={() => setShowNovelAIImageModal(false)}
+              >
+                <Ionicons name="close" size={20} color="#fff" />
+                <Text style={styles.imageActionButtonText}>关闭</Text>
+              </TouchableOpacity>
+              
+              <TouchableOpacity
+                style={[styles.imageActionButton, { backgroundColor: '#2196F3' }]}
+                onPress={async () => {
+                  if (generatedNovelAIImage) {
+                    const result = await ImageManager.saveToGallery(generatedNovelAIImage);
+                    Alert.alert(result.success ? '成功' : '错误', result.message);
+                  }
+                }}
+              >
+                <Ionicons name="download" size={20} color="#fff" />
+                <Text style={styles.imageActionButtonText}>保存</Text>
+              </TouchableOpacity>
+              
+              <TouchableOpacity
+                style={[styles.imageActionButton, { backgroundColor: '#4CAF50' }]}
+                onPress={async () => {
+                  if (generatedNovelAIImage) {
+                    await ImageManager.shareImage(generatedNovelAIImage);
+                  }
+                }}
+              >
+                <Ionicons name="share" size={20} color="#fff" />
+                <Text style={styles.imageActionButtonText}>分享</Text>
               </TouchableOpacity>
             </View>
           </View>
@@ -1093,46 +1294,6 @@ ${recentMessagesContext ? `最近的对话记录:\n${recentMessagesContext}\n` :
               >
                 <Text style={[styles.modalButtonText, {color: '#fff'}]}>
                   {isLoading ? '处理中...' : '发送图片'}
-                </Text>
-              </TouchableOpacity>
-            </View>
-          </View>
-        </View>
-      </Modal>
-
-      <Modal
-        visible={showImageGenModal}
-        transparent={true}
-        animationType="fade"
-        onRequestClose={() => setShowImageGenModal(false)}
-      >
-        <View style={styles.modalContainer}>
-          <View style={styles.modalContent}>
-            <Text style={styles.modalTitle}>生成图片</Text>
-            <TextInput
-              style={[styles.urlInput, {height: 100}]}
-              placeholder="描述你想要生成的图片..."
-              placeholderTextColor="#999"
-              value={imagePrompt}
-              onChangeText={setImagePrompt}
-              multiline
-              numberOfLines={4}
-              textAlignVertical="top"
-            />
-            <View style={styles.modalButtons}>
-              <TouchableOpacity 
-                style={styles.modalButton}
-                onPress={() => setShowImageGenModal(false)}
-              >
-                <Text style={styles.modalButtonText}>取消</Text>
-              </TouchableOpacity>
-              <TouchableOpacity 
-                style={[styles.modalButton, styles.modalButtonPrimary]}
-                onPress={handleImageGeneration}
-                disabled={isGeneratingImage || imagePrompt.trim() === ''}
-              >
-                <Text style={[styles.modalButtonText, {color: '#fff'}]}>
-                  {isGeneratingImage ? '生成中...' : '开始生成'}
                 </Text>
               </TouchableOpacity>
             </View>
@@ -1515,6 +1676,118 @@ const styles = StyleSheet.create({
   cacheIcon: {
     backgroundColor: '#e74c3c',
   },
+    // 添加新的样式
+    configInfoContainer: {
+      backgroundColor: 'rgba(60, 60, 60, 0.8)',
+      padding: 8,
+      borderRadius: 6,
+      marginBottom: 12,
+    },
+    configInfoText: {
+      color: '#ddd',
+      fontSize: 13,
+    },
+    promptActionsContainer: {
+      marginBottom: 12,
+    },
+    autoPromptButton: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      justifyContent: 'center',
+      backgroundColor: '#8e44ad',
+      paddingVertical: 8,
+      paddingHorizontal: 12,
+      borderRadius: 8,
+      marginBottom: 8,
+    },
+    autoPromptText: {
+      color: '#fff',
+      fontWeight: '500',
+    },
+    aiPromptText: {
+      color: '#ddd',
+      fontSize: 13,
+      fontStyle: 'italic',
+      marginTop: 5,
+      padding: 6,
+      backgroundColor: 'rgba(40, 40, 40, 0.6)',
+      borderRadius: 4,
+    },
+    seedContainer: {
+      marginBottom: 20,
+    },
+    seedToggleRow: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      justifyContent: 'space-between',
+      marginBottom: 8,
+    },
+    seedLabel: {
+      color: '#ddd',
+      fontSize: 14,
+    },
+    seedInputRow: {
+      flexDirection: 'row',
+      alignItems: 'center',
+    },
+    seedInput: {
+      backgroundColor: '#444',
+      color: '#fff',
+      flex: 1,
+      borderRadius: 6,
+      padding: 8,
+      marginRight: 8,
+    },
+    randomSeedButton: {
+      backgroundColor: '#555',
+      padding: 9,
+      borderRadius: 6,
+      justifyContent: 'center',
+      alignItems: 'center',
+    },
+    novelaiImageContainer: {
+      width: '100%',
+      height: 400,
+      backgroundColor: '#222',
+      borderRadius: 8,
+      overflow: 'hidden',
+      marginBottom: 16,
+      justifyContent: 'center',
+      alignItems: 'center',
+    },
+    novelaiGeneratedImage: {
+      width: '100%',
+      height: '100%',
+    },
+    imageActionsRow: {
+      flexDirection: 'row',
+      justifyContent: 'space-between',
+      width: '100%',
+    },
+    imageActionButton: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      justifyContent: 'center',
+      paddingVertical: 10,
+      paddingHorizontal: 16,
+      borderRadius: 8,
+      flex: 1,
+      marginHorizontal: 4,
+    },
+    imageActionButtonText: {
+      color: '#fff',
+      fontWeight: 'bold',
+      marginLeft: 6,
+    },
+    imageError: {
+      alignItems: 'center',
+      justifyContent: 'center',
+      padding: 20,
+    },
+    imageErrorText: {
+      color: '#e74c3c',
+      marginTop: 8,
+    },
 });
 
 export default ChatInput;

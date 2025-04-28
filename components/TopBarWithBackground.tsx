@@ -17,7 +17,7 @@ import { Character } from '@/shared/types';
 import { BlurView } from 'expo-blur';
 import { LinearGradient } from 'expo-linear-gradient';
 import RegexToolModal from '@/components/RegexToolModal';
-import MemoryProcessingControl from '@/src/memory/components/MemoryProcessingControl';
+
 import { Group } from '@/src/group/group-types';
 import { GroupAvatar } from './GroupAvatar';
 import { CharacterLoader } from '@/src/utils/character-loader';
@@ -213,20 +213,6 @@ const TopBarWithBackground: React.FC<TopBarWithBackgroundProps> = ({
           )}
 
           <View style={styles.actions}>
-            {/* Only show memory control button if not in empty state and not in group mode */}
-            {!isEmpty && !isGroupMode && selectedCharacter && (
-              <TouchableOpacity
-                style={styles.actionButton}
-                onPress={handleMemoryControlPress}
-                accessibilityLabel="Memory Control"
-              >
-                <MaterialCommunityIcons
-                  name="memory"
-                  size={24}
-                  color="#fff"
-                />
-              </TouchableOpacity>
-            )}
 
             {/* Only show memo button if not in empty state and not in group mode */}
             {!isEmpty && !isGroupMode && (
@@ -267,15 +253,6 @@ const TopBarWithBackground: React.FC<TopBarWithBackgroundProps> = ({
           </View>
         </View>
       </Animated.View>
-
-      {!isGroupMode && (
-        <MemoryProcessingControl
-          visible={isMemoryControlVisible}
-          onClose={() => setIsMemoryControlVisible(false)}
-          characterId={selectedCharacter?.id}
-          conversationId={selectedCharacter ? `conversation-${selectedCharacter.id}` : undefined}
-        />
-      )}
 
       <RegexToolModal
         visible={isRegexModalVisible}
