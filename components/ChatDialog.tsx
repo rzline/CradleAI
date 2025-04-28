@@ -46,6 +46,45 @@ const { width } = Dimensions.get('window');
 // Adjust the maximum width to ensure proper margins
 const MAX_WIDTH = width * 0.88; // Decreased from 0.9 to 0.88 to add more margin
 const MAX_IMAGE_HEIGHT = 300; // Maximum height for images in chat
+const DEFAULT_IMAGE_WIDTH = 240;
+const DEFAULT_IMAGE_HEIGHT = 360;
+
+const getImageDisplayStyle = (imageInfo?: any) => {
+  // 默认比例 832x1216
+  let width = DEFAULT_IMAGE_WIDTH;
+  let height = DEFAULT_IMAGE_HEIGHT;
+  if (imageInfo && imageInfo.originalPath) {
+    // 尝试读取图片实际宽高
+    // 如果 imageInfo 里有 width/height 字段，优先用
+    if (imageInfo.width && imageInfo.height) {
+      const maxW = 260;
+      const maxH = MAX_IMAGE_HEIGHT;
+      const ratio = imageInfo.width / imageInfo.height;
+      if (ratio > 1) {
+        // 横图
+        width = maxW;
+        height = Math.round(maxW / ratio);
+      } else {
+        // 竖图
+        height = maxH;
+        width = Math.round(maxH * ratio);
+      }
+    } else {
+      // fallback: 832x1216
+      width = 208;
+      height = 304;
+    }
+  }
+  return {
+    width,
+    height,
+    maxWidth: 320,
+    maxHeight: MAX_IMAGE_HEIGHT,
+    borderRadius: 8,
+    backgroundColor: 'rgba(42, 42, 42, 0.5)',
+    alignSelf: 'center',
+  };
+};
 
 const ChatDialog: React.FC<ExtendedChatDialogProps> = ({
   messages,
@@ -347,6 +386,8 @@ const ChatDialog: React.FC<ExtendedChatDialogProps> = ({
       const imageId = rawImageMatch[2];
       
       const imageInfo = ImageManager.getImageInfo(imageId);
+      const imageStyle = getImageDisplayStyle(imageInfo);
+
       if (imageInfo) {
         return (
           <View style={styles.imageWrapper}>
@@ -356,7 +397,7 @@ const ChatDialog: React.FC<ExtendedChatDialogProps> = ({
             >
               <Image
                 source={{ uri: imageInfo.originalPath }}
-                style={styles.messageImage}
+                style={imageStyle}
                 resizeMode="contain"
                 onError={(e) => console.error(`Error loading image: ${e.nativeEvent.error}`, imageInfo.originalPath)}
               />
@@ -403,6 +444,7 @@ const ChatDialog: React.FC<ExtendedChatDialogProps> = ({
         <View>
           {matches.map((img, idx) => {
             const imageInfo = ImageManager.getImageInfo(img.id);
+            const imageStyle = getImageDisplayStyle(imageInfo);
             if (imageInfo) {
               return (
                 <TouchableOpacity 
@@ -412,7 +454,7 @@ const ChatDialog: React.FC<ExtendedChatDialogProps> = ({
                 >
                   <Image
                     source={{ uri: imageInfo.originalPath }}
-                    style={styles.messageImage}
+                    style={imageStyle}
                     resizeMode="contain"
                     onError={(e) => console.error(`Error loading image: ${e.nativeEvent.error}`, imageInfo.originalPath)}
                   />

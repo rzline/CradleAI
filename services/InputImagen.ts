@@ -6,6 +6,7 @@ import CloudServiceProviderClass from '@/services/cloud-service-provider';
 import { DEFAULT_NEGATIVE_PROMPTS, DEFAULT_POSITIVE_PROMPTS } from '@/constants/defaultPrompts';
 import NovelAIService from '@/components/NovelAIService';
 import ImageManager from '@/utils/ImageManager';
+import * as FileSystem from 'expo-file-system';
 
 export interface NovelAIGenerationConfig {
   seed?: number;
@@ -231,20 +232,25 @@ export class InputImagen {
         useOrder: config.useOrder
       });
 
-      // NovelAIService returns raw PNG data, we need to cache it using ImageManager
+      // 只处理本地PNG文件路径，不处理base64
       if (result && result.imageUrls) {
-        console.log('[InputImagen] NovelAI returned image data, caching image...');
-        
-        // Cache the image using ImageManager
-        const cacheResult = await ImageManager.cacheImage(
-          result.imageUrls[0],
-          'image/png'
-        );
-        
-        return {
-          success: true,
-          imageId: cacheResult.id
-        };
+        const imagePath = result.imageUrls[0];
+        if (typeof imagePath === 'string' && imagePath.startsWith('file://')) {
+          console.log('[InputImagen] NovelAI returned local PNG file, caching image file...');
+          const cacheResult = await ImageManager.cacheImageFile(
+            imagePath,
+            'image/png'
+          );
+          return {
+            success: true,
+            imageId: cacheResult.id
+          };
+        } else {
+          return {
+            success: false,
+            error: 'NovelAI返回的不是本地PNG文件路径，无法缓存'
+          };
+        }
       } else {
         return {
           success: false,

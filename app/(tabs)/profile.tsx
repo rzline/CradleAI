@@ -104,7 +104,6 @@ const Profile: React.FC = () => {
           leftIcon="person-outline"
           chevron={true}
           onPress={() => router.push('../pages/custom-settings-manager')}
-          subtitle="全部自设列表"
         />
         
         {/* <ListItem
@@ -125,13 +124,13 @@ const Profile: React.FC = () => {
         />
         
 
-        <ListItem
+        {/* <ListItem
           title="调试工具"
           leftIcon="construct-outline"
           chevron={true}
           onPress={() => router.push('../pages/debug-tools')}
           subtitle="角色数据检查"
-        />
+        /> */}
         
         <ListItem
           title="关于"

@@ -172,6 +172,69 @@ export class ImageManager {
   }
   
   /**
+   * Cache a local image file (PNG) with both original and WebP versions
+   * @param filePath The local file path (file://...)
+   * @param mimeType The MIME type of the image
+   * @returns Object with paths to both original and WebP versions
+   */
+  public async cacheImageFile(filePath: string, mimeType: string): Promise<{
+    original: string;
+    thumbnail: string;
+    id: string;
+  }> {
+    try {
+      // 读取文件内容生成hash
+      const fileBuffer = await FileSystem.readAsStringAsync(filePath, { encoding: FileSystem.EncodingType.Base64 });
+      const hash = await Crypto.digestStringAsync(
+        Crypto.CryptoDigestAlgorithm.SHA256,
+        fileBuffer.substring(0, 1000)
+      );
+      const extension = this.getExtensionFromMimeType(mimeType);
+      const filename = `${hash}.${extension}`;
+      const originalPath = `${this.IMAGE_CACHE_DIR}${filename}`;
+      const thumbnailPath = `${this.THUMBNAIL_CACHE_DIR}${hash}.webp`;
+
+      // 拷贝原始文件到缓存目录
+      const originalInfo = await FileSystem.getInfoAsync(originalPath);
+      if (!originalInfo.exists) {
+        await FileSystem.copyAsync({
+          from: filePath,
+          to: originalPath
+        });
+      }
+
+      // 创建缩略图
+      const thumbnailInfo = await FileSystem.getInfoAsync(thumbnailPath);
+      if (!thumbnailInfo.exists) {
+        await this.createWebPThumbnail(originalPath, thumbnailPath);
+      }
+
+      // 获取文件大小
+      const fileInfo = await FileSystem.getInfoAsync(originalPath);
+
+      // 更新注册表
+      this.imageRegistry.set(hash, {
+        id: hash,
+        originalPath,
+        thumbnailPath,
+        timestamp: Date.now(),
+        size: ('size' in fileInfo ? fileInfo.size : 0)
+      });
+
+      await this.saveRegistry();
+
+      return {
+        original: originalPath,
+        thumbnail: thumbnailPath,
+        id: hash
+      };
+    } catch (error) {
+      console.error('[ImageManager] Failed to cache image file:', error);
+      throw error;
+    }
+  }
+  
+  /**
    * Create a WebP thumbnail from an image file
    */
   private async createWebPThumbnail(sourcePath: string, targetPath: string): Promise<void> {

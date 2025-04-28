@@ -95,8 +95,7 @@ const { applyRegexTools } = useRegex();
  const [customSeed, setCustomSeed] = useState<string>('');
  const [useSeed, setUseSeed] = useState<boolean>(false);
  const [novelAIConfig, setNovelAIConfig] = useState<any>(null);
- const [generatedNovelAIImage, setGeneratedNovelAIImage] = useState<string | null>(null);
- const [showNovelAIImageModal, setShowNovelAIImageModal] = useState(false);
+ const [allPositiveTags, setAllPositiveTags] = useState<string[]>([]);
   useEffect(() => {
     const keyboardDidHideListener = Keyboard.addListener(
       'keyboardDidHide',
@@ -750,6 +749,10 @@ ${recentMessagesContext ? `最近的对话记录:\n${recentMessagesContext}\n` :
       const config = InputImagen.getNovelAIConfig(selectedCharacter);
       setNovelAIConfig(config);
       
+      // 展示所有正向提示词
+      // InputImagen.getNovelAIConfig 已合并所有正向提示词
+      setAllPositiveTags(config.positiveTags);
+
       // 设置初始seed值
       if (config.seed !== undefined) {
         setCustomSeed(config.seed.toString());
@@ -807,7 +810,7 @@ ${recentMessagesContext ? `最近的对话记录:\n${recentMessagesContext}\n` :
 
 
 
-  // 修改图片生成方法，使用InputImagen服务并独立展示图片
+  // 修改图片生成方法，生成后直接插入消息流，不弹窗
   const handleImageGeneration = async () => {
     if (!selectedConversationId) {
       Alert.alert('错误', '请先选择一个角色');
@@ -816,42 +819,32 @@ ${recentMessagesContext ? `最近的对话记录:\n${recentMessagesContext}\n` :
 
     try {
       setIsGeneratingImage(true);
-      
+
       const apiKey = user?.settings?.chat.characterApiKey || '';
       const novelaiToken = user?.settings?.chat?.novelai?.token || '';
-      
+
       if (!novelaiToken) {
         throw new Error("NovelAI令牌未设置，请在设置中配置");
       }
-      
-      onSendMessage(`请为我生成图片${ imagePrompt ? `: "${imagePrompt}"` : '' }`, "user");
-      
+
       // 准备生成参数
       const userCustomSeed = useSeed && customSeed ? parseInt(customSeed, 10) : undefined;
       console.log('[ChatInput] Generating image with seed:', userCustomSeed);
-      
+
       const result = await InputImagen.generateImage(
         novelaiToken,
         novelAIConfig,
         imagePrompt,
         userCustomSeed
       );
-      
+
       if (result.success && result.imageId) {
         try {
           console.log(`[ChatInput] Image generated successfully with ID: ${result.imageId}`);
-          
-          // 获取图片信息
-          const imageInfo = ImageManager.getImageInfo(result.imageId);
-          
-          if (imageInfo) {
-            // 设置生成的图片ID，用于独立显示
-            setGeneratedNovelAIImage(result.imageId);
-            setShowNovelAIImageModal(true);
-          } else {
-            onSendMessage('图像已生成，但无法显示。', 'bot');
-          }
-          
+
+          // 直接插入图片消息到对话流
+          onSendMessage(`![图片](image:${result.imageId})`, 'bot');
+
           setTimeout(() => {
             setShowImageGenModal(false);
             setImagePrompt('');
@@ -1098,6 +1091,12 @@ ${recentMessagesContext ? `最近的对话记录:\n${recentMessagesContext}\n` :
                 <Text style={styles.configInfoText}>
                   使用角色设置: {novelAIConfig.model}, {novelAIConfig.sizePreset?.width}x{novelAIConfig.sizePreset?.height}
                 </Text>
+                {/* 展示正向提示词 */}
+                {allPositiveTags && allPositiveTags.length > 0 && (
+                  <Text style={[styles.configInfoText, { marginTop: 4, color: '#b3e5fc', fontSize: 12 }]}>
+                    正向提示词: {allPositiveTags.join(', ')}
+                  </Text>
+                )}
               </View>
             )}
             
@@ -1186,76 +1185,10 @@ ${recentMessagesContext ? `最近的对话记录:\n${recentMessagesContext}\n` :
                 {isGeneratingImage ? (
                   <ActivityIndicator size="small" color="#fff" />
                 ) : (
-                  <Text style={[styles.modalButtonText, { color: '#fff' }]}>
+                  <Text style={[styles.submitButtonText, { color: 'black' }]}>
                     生成
                   </Text>
                 )}
-              </TouchableOpacity>
-            </View>
-          </View>
-        </View>
-      </Modal>
-
-      {/* 新增: 生成图片的独立显示模态框 */}
-      <Modal
-        visible={showNovelAIImageModal}
-        transparent={true}
-        animationType="fade"
-        onRequestClose={() => setShowNovelAIImageModal(false)}
-      >
-        <View style={styles.modalContainer}>
-          <View style={styles.imagePreviewContent}>
-            <Text style={styles.modalTitle}>NovelAI 生成的图片</Text>
-            
-            {generatedNovelAIImage && (
-              <View style={styles.novelaiImageContainer}>
-                {ImageManager.getImageInfo(generatedNovelAIImage) ? (
-                  <Image
-                    source={{ uri: ImageManager.getImageInfo(generatedNovelAIImage)?.originalPath }}
-                    style={styles.novelaiGeneratedImage}
-                    resizeMode="contain"
-                  />
-                ) : (
-                  <View style={styles.imageError}>
-                    <Ionicons name="alert-circle" size={36} color="#e74c3c" />
-                    <Text style={styles.imageErrorText}>图片无法加载</Text>
-                  </View>
-                )}
-              </View>
-            )}
-            
-            <View style={styles.imageActionsRow}>
-              <TouchableOpacity
-                style={[styles.imageActionButton, { backgroundColor: '#555' }]}
-                onPress={() => setShowNovelAIImageModal(false)}
-              >
-                <Ionicons name="close" size={20} color="#fff" />
-                <Text style={styles.imageActionButtonText}>关闭</Text>
-              </TouchableOpacity>
-              
-              <TouchableOpacity
-                style={[styles.imageActionButton, { backgroundColor: '#2196F3' }]}
-                onPress={async () => {
-                  if (generatedNovelAIImage) {
-                    const result = await ImageManager.saveToGallery(generatedNovelAIImage);
-                    Alert.alert(result.success ? '成功' : '错误', result.message);
-                  }
-                }}
-              >
-                <Ionicons name="download" size={20} color="#fff" />
-                <Text style={styles.imageActionButtonText}>保存</Text>
-              </TouchableOpacity>
-              
-              <TouchableOpacity
-                style={[styles.imageActionButton, { backgroundColor: '#4CAF50' }]}
-                onPress={async () => {
-                  if (generatedNovelAIImage) {
-                    await ImageManager.shareImage(generatedNovelAIImage);
-                  }
-                }}
-              >
-                <Ionicons name="share" size={20} color="#fff" />
-                <Text style={styles.imageActionButtonText}>分享</Text>
               </TouchableOpacity>
             </View>
           </View>
@@ -1603,6 +1536,10 @@ const styles = StyleSheet.create({
   },
   modalButtonText: {
     color: '#ddd',
+    fontWeight: 'bold',
+  },
+  submitButtonText: {
+    color: 'black',
     fontWeight: 'bold',
   },
   imagePreviewWrapper: {
