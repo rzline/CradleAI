@@ -345,6 +345,9 @@ const ImageRegenerationModal: React.FC<ImageRegenerationModalProps> = ({
     return {};
   };
 
+  // 新增：用于中断生成流程
+  const abortRef = useRef<{ aborted: boolean }>({ aborted: false });
+
   useEffect(() => {
     if (visible) {
       const loadNovelaiToken = async () => {
@@ -749,12 +752,13 @@ const ImageRegenerationModal: React.FC<ImageRegenerationModalProps> = ({
     }
   };
 
+  // 生成流程前重置abort标记
   const submitImageGeneration = async () => {
     if ((positiveTags.length === 0 && characterTags.length === 0)) {
       Alert.alert('无法生成', '请至少添加一个正面标签或角色标签来描述角色外观');
       return;
     }
-
+    abortRef.current.aborted = false; // 新增
     setIsLoading(true);
     setError(null);
     setPreviewImageUrl(null);
@@ -1055,6 +1059,7 @@ width: sizePreset.width,
     }
   };
 
+  // 在轮询和异步流程中增加中断判断
   const checkImageGenerationStatus = async (characterId: string, taskId: string) => {
     console.log(`[图片重生成] 开始检查任务状态: ${taskId}`);
 
@@ -1065,6 +1070,12 @@ width: sizePreset.width,
     let retries = 0;
 
     const poll = async () => {
+      if (abortRef.current.aborted) {
+        setIsLoading(false);
+        setProgressMessage(null);
+        return;
+      }
+
       try {
         retries++;
         console.log(`[图片重生成] 检查 #${retries}, 任务: ${taskId}`);
@@ -1971,25 +1982,30 @@ width: sizePreset.width,
     </View>
   );
 
+  // 关闭时允许中断生成
+  const handleClose = () => {
+    abortRef.current.aborted = true;
+    setIsLoading(false);
+    setProgressMessage(null);
+    onClose();
+  };
+
   return (
     <Modal
       visible={visible}
       transparent={false}
       animationType="slide"
-      onRequestClose={() => {
-        if (!isLoading) onClose();
-      }}
+      onRequestClose={handleClose}
       statusBarTranslucent
     >
       <View style={styles.fullScreenContainer}>
         <BlurView intensity={30} tint="dark" style={styles.fullScreenBlurView}>
           <View style={styles.header}>
             <Text style={styles.title}>图像生成</Text>
-            {!isLoading && (
-              <TouchableOpacity style={styles.closeButton} onPress={onClose}>
-                <Ionicons name="close" size={28} color="#fff" />
-              </TouchableOpacity>
-            )}
+            {/* 修改：生成中也允许关闭 */}
+            <TouchableOpacity style={styles.closeButton} onPress={handleClose}>
+              <Ionicons name="close" size={28} color="#fff" />
+            </TouchableOpacity>
           </View>
           
           <View style={styles.tabs}>

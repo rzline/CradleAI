@@ -1137,7 +1137,7 @@ ${recentMessagesContext ? `最近的对话记录:\n${recentMessagesContext}\n` :
             
             <View style={styles.seedContainer}>
               <View style={styles.seedToggleRow}>
-                <Text style={styles.seedLabel}>使用种子值:</Text>
+                <Text style={styles.seedLabel}>Seed:</Text>
                 <Switch
                   value={useSeed}
                   onValueChange={setUseSeed}
