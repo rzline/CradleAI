@@ -28,10 +28,10 @@ import { useCharacters } from '@/constants/CharactersContext';
 
 const { width, height } = Dimensions.get('window');
 
-const getCharacterImageDir = (characterId: string) =>
+export const getCharacterImageDir = (characterId: string) =>
   `${FileSystem.documentDirectory}character_${characterId}/`;
 
-const getGalleryMetaFile = (characterId: string) =>
+export const getGalleryMetaFile = (characterId: string) =>
   `${getCharacterImageDir(characterId)}gallery.json`;
 
 interface CharacterImageGallerySidebarProps {
@@ -63,6 +63,7 @@ const CharacterImageGallerySidebar: React.FC<CharacterImageGallerySidebarProps> 
   onSetAsAvatar,
   isLoading = false,
   character,
+  onAddNewImage,
 }) => {
   const slideAnim = useRef(new Animated.Value(height)).current;
   const [selectedImage, setSelectedImage] = useState<CharacterImage | null>(null);
@@ -145,13 +146,25 @@ const CharacterImageGallerySidebar: React.FC<CharacterImageGallerySidebarProps> 
   const addImageAndPersist = async (newImage: CharacterImage) => {
     const dir = getCharacterImageDir(character.id);
     const metaFile = getGalleryMetaFile(character.id);
-    const filename = newImage.localUri?.split('/').pop() || newImage.url?.split('/').pop();
+
+    // 处理 #localNovelAI
+    let localUri = newImage.localUri || newImage.url;
+    if (localUri && localUri.includes('#localNovelAI')) {
+      localUri = localUri.split('#localNovelAI')[0];
+    }
+
+    const filename = localUri?.split('/').pop() || newImage.url?.split('/').pop();
     if (!filename) return;
     const fileUri = dir + filename;
+
     try {
       const fileInfo = await FileSystem.getInfoAsync(fileUri);
-      if (!fileInfo.exists && newImage.localUri && newImage.localUri !== fileUri) {
-        await FileSystem.copyAsync({ from: newImage.localUri, to: fileUri });
+      // 只有当目标文件不存在且本地文件存在时才复制
+      if (!fileInfo.exists && localUri && localUri !== fileUri) {
+        const srcInfo = await FileSystem.getInfoAsync(localUri);
+        if (srcInfo.exists) {
+          await FileSystem.copyAsync({ from: localUri, to: fileUri });
+        }
       }
       let meta: Record<string, any> = {};
       const metaInfo = await FileSystem.getInfoAsync(metaFile);
@@ -234,6 +247,10 @@ const CharacterImageGallerySidebar: React.FC<CharacterImageGallerySidebarProps> 
     if (newImage.generationConfig) {
       addImageAndPersist(newImage);
       setUpdateCounter(prev => prev + 1);
+      // 新增：同步通知父组件
+      if (typeof onAddNewImage === 'function') {
+        onAddNewImage(newImage);
+      }
     }
   };
 

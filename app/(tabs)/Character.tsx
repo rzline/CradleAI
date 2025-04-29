@@ -36,7 +36,7 @@ import { Video, ResizeMode, AVPlaybackStatus } from 'expo-av'; // Import Video c
 import DiaryBook from '@/components/diary/DiaryBook'; // Import the DiaryBook component
 import { LinearGradient } from 'expo-linear-gradient';
 import CharacterEditDialog from '@/components/CharacterEditDialog';
-import CharacterImageGallerySidebar from '@/components/CharacterImageGallerySidebar';
+import CharacterImageGallerySidebar, { getCharacterImageDir, getGalleryMetaFile } from '@/components/CharacterImageGallerySidebar';
 import ImageRegenerationModal from '@/components/ImageRegenerationModal';
 // 新增：导入表格插件API
 import * as TableMemoryAPI from '@/src/memory/plugins/table-memory/api';
@@ -507,6 +507,48 @@ const CharactersScreen: React.FC = () => {
     }
   };
 
+  // 新增持久化方法
+  const persistCharacterImage = async (characterId: string, image: any) => {
+    const dir = getCharacterImageDir(characterId);
+    const metaFile = getGalleryMetaFile(characterId);
+
+    let localUri = image.localUri || image.url;
+    if (localUri && localUri.includes('#localNovelAI')) {
+      localUri = localUri.split('#localNovelAI')[0];
+    }
+    const filename = localUri?.split('/').pop() || image.url?.split('/').pop();
+    if (!filename) return;
+    const fileUri = dir + filename;
+
+    try {
+      const fileInfo = await FileSystem.getInfoAsync(fileUri);
+      if (!fileInfo.exists && localUri && localUri !== fileUri) {
+        const srcInfo = await FileSystem.getInfoAsync(localUri);
+        if (srcInfo.exists) {
+          await FileSystem.copyAsync({ from: localUri, to: fileUri });
+        }
+      }
+      let meta: Record<string, any> = {};
+      const metaInfo = await FileSystem.getInfoAsync(metaFile);
+      if (metaInfo.exists) {
+        try {
+          meta = JSON.parse(await FileSystem.readAsStringAsync(metaFile));
+        } catch {
+          meta = {};
+        }
+      }
+      meta[filename] = {
+        ...image,
+        url: fileUri,
+        localUri: fileUri,
+        id: filename,
+      };
+      await FileSystem.writeAsStringAsync(metaFile, JSON.stringify(meta));
+    } catch (e) {
+      console.warn('[图片生成] 保存图片到文件系统失败', e);
+    }
+  };
+
   const renderHeader = () => (
     <View style={[styles.topBarContainer, { height: HEADER_HEIGHT, paddingTop: Platform.OS === 'ios' ? 44 : (StatusBar.currentHeight || 0) }]}>
       <LinearGradient
@@ -894,6 +936,10 @@ const CharactersScreen: React.FC = () => {
           onClose={() => setShowImageGenModal(false)}
           onSuccess={img => {
             handleImageGenSuccess(img);
+          }}
+          // 新增：立即持久化
+          onPersistImage={async (img) => {
+            await persistCharacterImage(imageGenCharacter.id, img);
           }}
         />
       )}

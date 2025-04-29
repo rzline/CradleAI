@@ -112,6 +112,7 @@ interface ImageRegenerationModalProps {
     animagine4Settings: any;
   };
   initialSeed?: string | number;
+  onPersistImage?: (image: CharacterImage) => Promise<void>;
 }
 
 interface TagItem {
@@ -172,6 +173,7 @@ const ImageRegenerationModal: React.FC<ImageRegenerationModalProps> = ({
   onSavePreviewImage,
   initialSettingsState,
   initialSeed,
+  onPersistImage,
 }) => {
   const { user } = useUser();
   const { setCharacterAvatar, setCharacterBackgroundImage } = useCharacters();
@@ -1199,6 +1201,23 @@ width: sizePreset.width,
     poll();
   };
 
+  const handleUseImage = async (completedImage: CharacterImage) => {
+    // 新增：立即持久化图片
+    if (onPersistImage) {
+      await onPersistImage(completedImage);
+    }
+    onSuccess(
+      completedImage,
+      {
+        imageProvider,
+        sizePresetId,
+        novelaiSettings,
+        animagine4Settings,
+      },
+      completedImage.seed || novelaiSettings.seed
+    );
+  };
+
   const renderCharacterTags = () => {
     if (characterTags.length === 0) {
       return (
@@ -1802,17 +1821,7 @@ width: sizePreset.width,
                           }
                         );
                       }
-                      // 1. 不关闭组件，仅回调onSuccess
-                      onSuccess(
-                        completedImage,
-                        {
-                          imageProvider,
-                          sizePresetId,
-                          novelaiSettings,
-                          animagine4Settings,
-                        },
-                        completedImage.seed || novelaiSettings.seed
-                      );
+                      await handleUseImage(completedImage);
                     }
                   }}
                 >
