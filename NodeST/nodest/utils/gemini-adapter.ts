@@ -1319,7 +1319,25 @@ private async executeGenerateContent(contents: ChatMessage[], modelId: string, c
     async fetchImageAsBase64(imageUrl: string): Promise<{ data: string; mimeType: string }> {
         try {
             console.log(`[Gemini适配器] 正在从URL获取图片: ${imageUrl}`);
-            
+                        // 新增：如果是data:URL，直接解析
+                        if (imageUrl.startsWith('data:')) {
+                            // 解析data URL格式
+                            const matches = imageUrl.match(/^data:([^;]+);base64,(.+)$/);
+                            if (matches && matches.length === 3) {
+                                const mimeType = matches[1];
+                                const base64Data = matches[2];
+                                // console.log(`[Gemini适配器] 检测到data:URL，直接提取base64数据，MIME类型: ${mimeType}, 大小: ${base64Data.length}字节`);
+                                const previewLength = 10;
+                                const base64Preview = base64Data.substring(0, previewLength) + '...';
+                                console.log(`[Gemini适配器] 检测到data:URL，直接提取base64数据，MIME类型: ${mimeType}, 大小: ${base64Data.length}字节, 预览: ${base64Preview}`);
+                                return {
+                                    data: base64Data,
+                                    mimeType
+                                };
+                            } else {
+                                throw new Error('无效的data:URL格式');
+                            }
+                        }
             const response = await fetch(imageUrl);
             
             if (!response.ok) {

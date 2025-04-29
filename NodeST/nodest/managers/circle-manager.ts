@@ -9,6 +9,7 @@ import CirclePrompts, { defaultScenePrompt, ScenePromptParams } from '@/prompts/
 import { StorageAdapter } from '../utils/storage-adapter';
 import { getCloudServiceStatus, getApiSettings } from '../../../utils/settings-helper';
 import * as FileSystem from 'expo-file-system'; // Add this import
+import * as ImageManipulator from 'expo-image-manipulator'; // Add this import
 
 export { CirclePostOptions, CircleResponse };
 export class CircleManager {
@@ -1570,15 +1571,41 @@ user789-+10-friend
         try {
             console.log(`【CircleManager】正在从URL获取图片: ${imageUrl}`);
             
-            // Check if the URL is already a data URL
+            // 新增：如果是data:URL，直接解析
             if (imageUrl.startsWith('data:')) {
-                // Extract MIME type and base64 data
                 const matches = imageUrl.match(/^data:([^;]+);base64,(.+)$/);
                 if (matches && matches.length === 3) {
+                    // 新增：判断是否需要压缩
+                    const mimeType = matches[1];
+                    let base64Data = matches[2];
+                    // 如果图片过大，进行压缩
+                    if (base64Data.length > 400000) { // 约300KB
+                        try {
+                            // 先将base64转为临时文件
+                            const tempFileUri = FileSystem.cacheDirectory + `temp_image_${Date.now()}.jpg`;
+                            await FileSystem.writeAsStringAsync(tempFileUri, base64Data, { encoding: FileSystem.EncodingType.Base64 });
+                            // 使用expo-image-manipulator压缩
+                            const manipResult = await ImageManipulator.manipulateAsync(
+                                tempFileUri,
+                                [{ resize: { width: 1024 } }],
+                                { compress: 0.8, format: ImageManipulator.SaveFormat.JPEG, base64: true }
+                            );
+                            base64Data = manipResult.base64 || base64Data;
+                            console.log(`【CircleManager】已压缩base64图片，压缩后大小: ${base64Data.length} 字节`);
+                            return {
+                                mimeType: 'image/jpeg',
+                                data: base64Data
+                            };
+                        } catch (compressErr) {
+                            console.warn('【CircleManager】base64图片压缩失败，使用原始数据:', compressErr);
+                        }
+                    }
                     return {
-                        mimeType: matches[1],
-                        data: matches[2]
+                        mimeType,
+                        data: base64Data
                     };
+                } else {
+                    throw new Error('无效的data:URL格式');
                 }
             }
             
@@ -1601,8 +1628,31 @@ user789-+10-friend
             for (let i = 0; i < bytes.length; i++) {
                 binaryString += String.fromCharCode(bytes[i]);
             }
-            const base64Data = btoa(binaryString);
-            
+            let base64Data = btoa(binaryString);
+
+            // 新增：如果图片过大，进行压缩
+            if (base64Data.length > 400000) { // 约300KB
+                try {
+                    // 先将base64写入临时文件
+                    const tempFileUri = FileSystem.cacheDirectory + `temp_image_${Date.now()}.jpg`;
+                    await FileSystem.writeAsStringAsync(tempFileUri, base64Data, { encoding: FileSystem.EncodingType.Base64 });
+                    // 使用expo-image-manipulator压缩
+                    const manipResult = await ImageManipulator.manipulateAsync(
+                        tempFileUri,
+                        [{ resize: { width: 1024 } }],
+                        { compress: 0.8, format: ImageManipulator.SaveFormat.JPEG, base64: true }
+                    );
+                    base64Data = manipResult.base64 || base64Data;
+                    console.log(`【CircleManager】已压缩图片，压缩后大小: ${base64Data.length} 字节`);
+                    return {
+                        data: base64Data,
+                        mimeType: 'image/jpeg'
+                    };
+                } catch (compressErr) {
+                    console.warn('【CircleManager】图片压缩失败，使用原始数据:', compressErr);
+                }
+            }
+
             console.log(`【CircleManager】成功获取并编码图片，MIME类型: ${contentType}, 大小: ${base64Data.length} 字节`);
             
             return {

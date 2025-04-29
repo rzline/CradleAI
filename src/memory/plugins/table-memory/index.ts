@@ -87,7 +87,7 @@ async function createDefaultTemplates(): Promise<void> {
     
     // 创建角色特征表模板
     const characterTemplate = await TemplateManager.createTemplate({
-      name: "角色特征表格",
+      name: "特征表格",
       type: "dynamic",
       columns: [
         { value: "角色名", valueIsOnly: true, columnDataType: "text", columnNote: "角色的名称" },
@@ -109,7 +109,7 @@ async function createDefaultTemplates(): Promise<void> {
     
     // 创建社交关系表模板
     const socialTemplate = await TemplateManager.createTemplate({
-      name: "角色与<user>社交表格",
+      name: "关系表格",
       type: "dynamic",
       columns: [
         { value: "角色名", valueIsOnly: true, columnDataType: "text", columnNote: "角色的名称" },
@@ -145,7 +145,7 @@ async function createDefaultTemplates(): Promise<void> {
     
     // 创建事件历史表模板
     const eventTemplate = await TemplateManager.createTemplate({
-      name: "重要事件历史表格",
+      name: "事件表格",
       type: "dynamic",
       columns: [
         { value: "角色", valueIsOnly: false, columnDataType: "text", columnNote: "相关角色" },
@@ -164,7 +164,7 @@ async function createDefaultTemplates(): Promise<void> {
     
     // 创建重要物品表模板
     const itemTemplate = await TemplateManager.createTemplate({
-      name: "重要物品表格",
+      name: "物品表格",
       type: "dynamic",
       columns: [
         { value: "拥有人", valueIsOnly: false, columnDataType: "text", columnNote: "物品拥有者" },
@@ -182,7 +182,7 @@ async function createDefaultTemplates(): Promise<void> {
     
     // 创建任务表模板
     const taskTemplate = await TemplateManager.createTemplate({
-      name: "任务、命令或者约定表格",
+      name: "任务表格",
       type: "dynamic",
       columns: [
         { value: "角色", valueIsOnly: false, columnDataType: "text", columnNote: "任务相关角色" },

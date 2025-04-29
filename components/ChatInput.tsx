@@ -345,8 +345,6 @@ const { applyRegexTools } = useRegex();
       setIsLoading(true);
       setShowImagePreviewModal(false);
       
-      onSendMessage("发送了一张图片", "user");
-      onSendMessage('', 'bot', true);
       
       const apiKey = user?.settings?.chat.characterApiKey || '';
       
