@@ -1,3 +1,34 @@
+## 界面预览
+
+<table style="border-collapse: collapse; width: 100%;">
+  <tr>
+    <td style="text-align: center; padding: 5px;">
+      <img src="https://cradleintro.top/app-screenshot.png" alt="APP截图 1" style="max-width: 150px; border: 1px solid #ddd;">
+      <br>
+    </td>
+    <td style="text-align: center; padding: 5px;">
+      <img src="https://cradleintro.top/app-screenshot2.png" alt="APP截图 2" style="max-width: 150px; border: 1px solid #ddd;">
+      <br>
+    </td>
+    <td style="text-align: center; padding: 5px;">
+      <img src="https://cradleintro.top/app-screenshot3.png" alt="APP截图 3" style="max-width: 150px; border: 1px solid #ddd;">
+      <br>
+    </td>
+    <td style="text-align: center; padding: 5px;">
+      <img src="https://cradleintro.top/app-screenshot4.png" alt="APP截图 4" style="max-width: 150px; border: 1px solid #ddd;">
+      <br>
+    </td>
+    <td style="text-align: center; padding: 5px;">
+      <img src="https://cradleintro.top/app-screenshot5.png" alt="APP截图 5" style="max-width: 150px; border: 1px solid #ddd;">
+      <br>
+    </td>
+    <td style="text-align: center; padding: 5px;">
+      <img src="https://cradleintro.top/app-screenshot6.png" alt="APP截图 6" style="max-width: 150px; border: 1px solid #ddd;">
+      <br>
+    </td>
+  </tr>
+</table>
+
 
 ## 答疑/bug反馈/意见反馈：
 qq群：1017292082
@@ -180,3 +211,10 @@ qq群：1017292082
 1. 表格记忆：`https://github.com/muyoou/st-memory-enhancement`，在此感谢作者的代码分享，请大家多多支持原作者。
 
 2. mem0：`https://github.com/mem0ai/mem0` 基于 [Apache-2.0 license](https://www.apache.org/licenses/LICENSE-2.0) 许可。
+
+
+## 赞助
+
+如果您喜欢本项目并希望支持作者，可以请我喝一杯咖啡：
+
+[请作者喝一杯咖啡](https://cradleintro.top/%E5%BE%AE%E4%BF%A1%E5%9B%BE%E7%89%87_20250430201333.png)
