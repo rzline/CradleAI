@@ -32,6 +32,10 @@ export class NodeSTCore {
     private apiSettings: Pick<GlobalSettings['chat'], 'apiProvider' | 'openrouter' | 'useGeminiModelLoadBalancing' | 'useGeminiKeyRotation' | 'additionalGeminiKeys'> = {
         apiProvider: 'gemini'
     };
+    private geminiPrimaryModel?: string;
+    private geminiBackupModel?: string;
+    private retryDelay?: number;
+
         // 新增：立即总结记忆方法
         async summarizeMemoryNow(
             conversationId: string,
@@ -63,10 +67,25 @@ export class NodeSTCore {
                 return false;
             }
         }
-    constructor(apiKey: string, apiSettings?: Pick<GlobalSettings['chat'], 'apiProvider' | 'openrouter' | 'useGeminiModelLoadBalancing' | 'useGeminiKeyRotation' | 'additionalGeminiKeys'>) {       
+    constructor(
+        apiKey: string,
+        apiSettings?: Pick<GlobalSettings['chat'], 'apiProvider' | 'openrouter' | 'useGeminiModelLoadBalancing' | 'useGeminiKeyRotation' | 'additionalGeminiKeys'>,
+        // 新增参数
+        geminiOptions?: {
+            geminiPrimaryModel?: string;
+            geminiBackupModel?: string;
+            retryDelay?: number;
+        }
+    ) {       
         this.apiKey = apiKey;
         this.apiSettings = apiSettings || { apiProvider: 'gemini' };
-        this.initAdapters(apiKey, apiSettings);
+        // 新增：保存gemini模型和retryDelay
+        if (geminiOptions) {
+            this.geminiPrimaryModel = geminiOptions.geminiPrimaryModel;
+            this.geminiBackupModel = geminiOptions.geminiBackupModel;
+            this.retryDelay = geminiOptions.retryDelay;
+        }
+        this.initAdapters(apiKey, apiSettings, geminiOptions);
     }
 
     updateApiKey(apiKey: string): void {
@@ -93,23 +112,37 @@ export class NodeSTCore {
     }
 
     // Update method to handle API settings
-    updateApiSettings(apiKey: string, apiSettings?: Pick<GlobalSettings['chat'], 'apiProvider' | 'openrouter' | 'useGeminiModelLoadBalancing' | 'useGeminiKeyRotation' | 'additionalGeminiKeys'>): void {
+    updateApiSettings(
+        apiKey: string,
+        apiSettings?: Pick<GlobalSettings['chat'], 'apiProvider' | 'openrouter' | 'useGeminiModelLoadBalancing' | 'useGeminiKeyRotation' | 'additionalGeminiKeys'>,
+        geminiOptions?: {
+            geminiPrimaryModel?: string;
+            geminiBackupModel?: string;
+            retryDelay?: number;
+        }
+    ): void {
         this.apiKey = apiKey;
         if (apiSettings) {
             this.apiSettings = apiSettings;
-            console.log('[NodeSTCore] Updating API settings:', {
-                provider: apiSettings.apiProvider,
-                openRouterEnabled: apiSettings.openrouter?.enabled,
-                model: apiSettings.openrouter?.model || 'none',
-                useGeminiModelLoadBalancing: apiSettings.useGeminiModelLoadBalancing,
-                useGeminiKeyRotation: apiSettings.useGeminiKeyRotation,
-                additionalKeysCount: apiSettings.additionalGeminiKeys?.length || 0
-            });
         }
-        this.initAdapters(apiKey, apiSettings);
+        // 新增：保存gemini模型和retryDelay
+        if (geminiOptions) {
+            this.geminiPrimaryModel = geminiOptions.geminiPrimaryModel;
+            this.geminiBackupModel = geminiOptions.geminiBackupModel;
+            this.retryDelay = geminiOptions.retryDelay;
+        }
+        this.initAdapters(apiKey, apiSettings, geminiOptions);
     }
 
-    private initAdapters(apiKey: string | null = null, apiSettings?: Pick<GlobalSettings['chat'], 'apiProvider' | 'openrouter' | 'useGeminiModelLoadBalancing' | 'useGeminiKeyRotation' | 'additionalGeminiKeys'>) {
+    private initAdapters(
+        apiKey: string | null = null,
+        apiSettings?: Pick<GlobalSettings['chat'], 'apiProvider' | 'openrouter' | 'useGeminiModelLoadBalancing' | 'useGeminiKeyRotation' | 'additionalGeminiKeys'>,
+        geminiOptions?: {
+            geminiPrimaryModel?: string;
+            geminiBackupModel?: string;
+            retryDelay?: number;
+        }
+    ) {
         // 不再为空 API 密钥抛出错误，而是记录一条消息
         if (!apiKey) {
             console.log('[NodeSTCore] No API key provided, will attempt to use cloud service if available');
@@ -121,7 +154,10 @@ export class NodeSTCore {
             {
                 useModelLoadBalancing: apiSettings?.useGeminiModelLoadBalancing || false,
                 useKeyRotation: apiSettings?.useGeminiKeyRotation || false,
-                additionalKeys: apiSettings?.additionalGeminiKeys || []
+                additionalKeys: apiSettings?.additionalGeminiKeys || [],
+                primaryModel: geminiOptions?.geminiPrimaryModel || this.geminiPrimaryModel,
+                backupModel: geminiOptions?.geminiBackupModel || this.geminiBackupModel,
+                retryDelay: geminiOptions?.retryDelay || this.retryDelay
             }
         );
         
@@ -129,7 +165,10 @@ export class NodeSTCore {
             useModelLoadBalancing: apiSettings?.useGeminiModelLoadBalancing || false,
             useKeyRotation: apiSettings?.useGeminiKeyRotation || false,
             additionalKeysCount: apiSettings?.additionalGeminiKeys?.length || 0,
-            usingCloudFallback: !apiKey
+            usingCloudFallback: !apiKey,
+            primaryModel: this.geminiPrimaryModel,
+            backupModel: this.geminiBackupModel,
+            retryDelay: this.retryDelay
         });
         
         // 初始化 OpenRouter 如果已启用且有 API 密钥
@@ -2354,3 +2393,4 @@ export class NodeSTCore {
         }
     }
 }
+

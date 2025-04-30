@@ -278,7 +278,13 @@ const { applyRegexTools } = useRegex();
           openrouter: user?.settings?.chat.openrouter,
           useGeminiModelLoadBalancing: user?.settings?.chat.useGeminiModelLoadBalancing,
           useGeminiKeyRotation: user?.settings?.chat.useGeminiKeyRotation,
-          additionalGeminiKeys: user?.settings?.chat.additionalGeminiKeys
+          additionalGeminiKeys: user?.settings?.chat.additionalGeminiKeys,
+        },
+        // 新增：传递gemini模型和retryDelay参数
+        geminiOptions: {
+          geminiPrimaryModel: user?.settings?.chat.geminiPrimaryModel,
+          geminiBackupModel: user?.settings?.chat.geminiBackupModel,
+          retryDelay: user?.settings?.chat.retryDelay,
         },
         character: selectedCharacter,
         characterId: selectedCharacter?.id,

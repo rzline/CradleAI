@@ -783,6 +783,17 @@ const ApiSettings = () => {
 
   // Function to handle model selection
   const handleModelSelection = (modelId: string) => {
+    if (isModelPickerVisible) {
+      // 处理 Gemini 主/备用模型选择
+      if (modelPickerType === 'primary') {
+        setGeminiPrimaryModel(modelId);
+      } else if (modelPickerType === 'backup') {
+        setGeminiBackupModel(modelId);
+      }
+      setIsModelPickerVisible(false);
+      return;
+    }
+
     if (useCloudService) {
       // For cloud service, validate that the model is allowed
       if (allowedCloudModels.includes(modelId)) {

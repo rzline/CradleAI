@@ -82,7 +82,7 @@ const getImageDisplayStyle = (imageInfo?: any) => {
     maxHeight: MAX_IMAGE_HEIGHT,
     borderRadius: 8,
     backgroundColor: 'rgba(42, 42, 42, 0.5)',
-    alignSelf: 'center',
+    alignSelf: 'center' as const,
   };
 };
 

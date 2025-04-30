@@ -115,6 +115,11 @@ console.log(`[NodeSTManager] Setting search enabled to: ${enabled}`); // Add log
     apiSettings?: Pick<GlobalSettings['chat'], 'apiProvider' | 'openrouter' | 'useGeminiModelLoadBalancing' | 'useGeminiKeyRotation' | 'additionalGeminiKeys'>;
     character?: Character; // Character object with jsonData
     characterId?: string; // Optional character ID
+    geminiOptions?: {
+      geminiPrimaryModel?: string;
+      geminiBackupModel?: string;
+      retryDelay?: number;
+    };
   }): Promise<{
     success: boolean;
     text?: string;
@@ -202,6 +207,7 @@ console.log(`[NodeSTManager] Setting search enabled to: ${enabled}`); // Add log
         characterId: characterId,  // Pass characterId for memory service
         customUserName: params.character?.customUserName, // Pass the customUserName to NodeST
         useToolCalls: this.searchEnabled, // Pass the search preference flag
+        geminiOptions: params.geminiOptions, // Pass geminiOptions
       });
 
       if (response.success) {
@@ -458,7 +464,8 @@ console.log(`[NodeSTManager] Setting search enabled to: ${enabled}`); // Add log
             jsonString: options.character?.jsonData,
             characterId: options.character?.id,  // Pass character ID for memory service
             customUserName: options.character?.customUserName,  // Pass the customUserName to NodeST
-            useToolCalls: NodeSTManagerClass.instance?.searchEnabled || false // Pass search flag
+            useToolCalls: NodeSTManagerClass.instance?.searchEnabled || false, // Pass search flag
+            geminiOptions: options.geminiOptions, // Pass geminiOptions
         });
         
         if (response.success) {
@@ -882,7 +889,11 @@ interface ProcessChatOptions {
   apiKey: string;
   apiSettings?: Pick<GlobalSettings['chat'], 'apiProvider' | 'openrouter' | 'useGeminiModelLoadBalancing' | 'useGeminiKeyRotation' | 'additionalGeminiKeys'>;
   character?: Character;
-  
+  geminiOptions?: {
+    geminiPrimaryModel?: string;
+    geminiBackupModel?: string;
+    retryDelay?: number;
+  };
 }
 
 interface Message {

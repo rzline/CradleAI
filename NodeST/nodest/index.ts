@@ -32,6 +32,11 @@ export interface ProcessChatRequest {
     characterId?: string;
     customUserName?: string;
     useToolCalls?: boolean;
+    geminiOptions?: {
+        geminiPrimaryModel?: string;
+        geminiBackupModel?: string;
+        retryDelay?: number;
+    };
 }
 
 export class NodeST {
@@ -128,7 +133,15 @@ export class NodeST {
         });
     }
 
-    private getCoreInstance(apiKey: string = "", apiSettings?: Pick<GlobalSettings['chat'], 'apiProvider' | 'openrouter' | 'useGeminiModelLoadBalancing' | 'useGeminiKeyRotation' | 'additionalGeminiKeys'>): NodeSTCore {
+    private getCoreInstance(
+        apiKey: string = "",
+        apiSettings?: Pick<GlobalSettings['chat'], 'apiProvider' | 'openrouter' | 'useGeminiModelLoadBalancing' | 'useGeminiKeyRotation' | 'additionalGeminiKeys'>,
+        geminiOptions?: {
+            geminiPrimaryModel?: string;
+            geminiBackupModel?: string;
+            retryDelay?: number;
+        }
+    ): NodeSTCore {
         // 确保使用最新的API Key - could be empty string
         const effectiveApiKey = this.apiKey || apiKey;
         
@@ -143,7 +156,7 @@ export class NodeST {
                 apiKeyLength: effectiveApiKey?.length || 0,
                 usingCloudFallback: !effectiveApiKey
             });
-            this.nodeSTCore = new NodeSTCore(effectiveApiKey, apiSettings);
+            this.nodeSTCore = new NodeSTCore(effectiveApiKey, apiSettings, geminiOptions);
         } else {
             console.log("[NodeST] Updating existing NodeSTCore with API settings:", {
                 provider: apiSettings?.apiProvider || 'gemini',
@@ -152,7 +165,7 @@ export class NodeST {
                 useGeminiKeyRotation: apiSettings?.useGeminiKeyRotation,
                 usingCloudFallback: !effectiveApiKey
             });
-            this.nodeSTCore.updateApiSettings(effectiveApiKey, apiSettings);
+            this.nodeSTCore.updateApiSettings(effectiveApiKey, apiSettings, geminiOptions);
         }
         
         return this.nodeSTCore;
@@ -175,8 +188,8 @@ export class NodeST {
             });
 
             // Note: We pass the API key even if it's empty
-            // 获取 NodeSTCore 实例，并传递 API 设置
-            const core = this.getCoreInstance(params.apiKey || "", params.apiSettings);
+            // 获取 NodeSTCore 实例，并传递 API 设置和 geminiOptions
+            const core = this.getCoreInstance(params.apiKey || "", params.apiSettings, params.geminiOptions);
 
             if (params.status === "新建角色") {
                 if (!params.jsonString) {

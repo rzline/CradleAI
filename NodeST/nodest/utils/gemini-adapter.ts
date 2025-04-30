@@ -105,11 +105,9 @@ export class GeminiAdapter {
         if (options?.primaryModel && this.isValidModel(options.primaryModel)) {
             this.primaryModel = options.primaryModel;
         }
-        
         if (options?.backupModel && this.isValidModel(options.backupModel)) {
             this.backupModel = options.backupModel;
         }
-        
         // Set retry delay if provided
         if (options?.retryDelay && typeof options.retryDelay === 'number') {
             this.retryDelay = options.retryDelay;
