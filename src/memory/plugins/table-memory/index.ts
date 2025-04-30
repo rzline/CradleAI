@@ -113,16 +113,16 @@ async function createDefaultTemplates(): Promise<void> {
       type: "dynamic",
       columns: [
         { value: "角色名", valueIsOnly: true, columnDataType: "text", columnNote: "角色的名称" },
-        { value: "对<user>关系", valueIsOnly: false, columnDataType: "text", columnNote: "关系类型，如朋友、敌人等" },
-        { value: "对<user>态度", valueIsOnly: false, columnDataType: "text", columnNote: "情感态度，如友好、敌对等" },
-        { value: "对<user>好感", valueIsOnly: false, columnDataType: "text", columnNote: "好感度，如高、中、低等" }
+        { value: "对用户关系", valueIsOnly: false, columnDataType: "text", columnNote: "关系类型，如朋友、敌人等" },
+        { value: "对用户态度", valueIsOnly: false, columnDataType: "text", columnNote: "情感态度，如友好、敌对等" },
+        { value: "对用户好感", valueIsOnly: false, columnDataType: "text", columnNote: "好感度，如高、中、低等" }
       ],
       rows: 2,
       note: "记录角色与用户的社交关系",
-      initPrompt: "请仔细分析以下对话内容，初始化角色与<user>的社交关系表格。表格已有标题行，你需要添加内容行。使用'/'分隔多个态度描述，例如'友好/关心'。未知信息填写'未知'。请以完整markdown表格形式返回，确保包含标题行和正确的表格分隔符。",
-      insertPrompt: "请分析聊天内容，提取角色与<user>的社交关系信息，添加新行到表格中。",
+      initPrompt: "请仔细分析以下对话内容，初始化角色与用户的社交关系表格。表格已有标题行，你需要添加内容行。使用'/'分隔多个态度描述，例如'友好/关心'。未知信息填写'未知'。请以完整markdown表格形式返回，确保包含标题行和正确的表格分隔符。",
+      insertPrompt: "请分析聊天内容，提取角色与用户的社交关系信息，添加新行到表格中。",
       deletePrompt: "请删除表格中不再相关的角色行。",
-      updatePrompt: "请根据聊天内容更新角色与<user>的社交关系表格。可以添加新角色行，或更新现有角色与<user>的关系。使用'/'分隔多个态度描述，例如'友好/关心'。"
+      updatePrompt: "请根据聊天内容更新角色与用户的社交关系表格。可以添加新角色行，或更新现有角色与用户的关系。使用'/'分隔多个态度描述，例如'友好/关心'。"
     });
     
     // 创建时空表模板

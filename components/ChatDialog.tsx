@@ -32,6 +32,8 @@ import ImageManager from '@/utils/ImageManager';
 import { ttsService, AudioState } from '@/services/ttsService'; // Import the TTS service
 import { useDialogMode } from '@/constants/DialogModeContext';
 import { GestureResponderEvent } from 'react-native';
+import Markdown from 'react-native-markdown-display'; // Import Markdown renderer
+
 // Update ChatDialogProps interface in the file or in shared/types.ts to include messageMemoryState
 interface ExtendedChatDialogProps extends ChatDialogProps {
   messageMemoryState?: Record<string, string>;
@@ -367,7 +369,8 @@ const ChatDialog: React.FC<ExtendedChatDialogProps> = ({
       );
     }
 
-    if (containsCustomTags(text)) {
+    // 检测是否为自定义标签或 HTML
+    if (containsCustomTags(text) || /<\/?[a-z][^>]*>/i.test(text)) {
       return (
         <RichTextRenderer
           html={optimizeHtmlForRendering(text)}
@@ -378,6 +381,55 @@ const ChatDialog: React.FC<ExtendedChatDialogProps> = ({
       );
     }
 
+    // 检测是否为 markdown（包含代码块、标题、表格、列表、引用等）
+    const markdownPattern = /(^|\n)(\s{0,3}#|```|>\s|[*+-]\s|\d+\.\s|\|.*\|)/;
+    if (markdownPattern.test(text)) {
+      return (
+        <View style={{ width: '100%' }}>
+          <Markdown
+            style={{
+              body: isUser ? styles.userMessageText : styles.botMessageText,
+              text: isUser ? styles.userMessageText : styles.botMessageText,
+              code_block: { backgroundColor: '#111', color: '#fff', borderRadius: 6, padding: 8, fontSize: 14 }, // 修改为黑色背景
+              code_inline: { backgroundColor: '#111', color: '#fff', borderRadius: 4, padding: 2, fontSize: 14 },
+              heading1: { fontSize: 24, fontWeight: 'bold', marginVertical: 10 },
+              heading2: { fontSize: 22, fontWeight: 'bold', marginVertical: 8 },
+              heading3: { fontSize: 20, fontWeight: 'bold', marginVertical: 6 },
+              heading4: { fontSize: 18, fontWeight: 'bold', marginVertical: 5 },
+              heading5: { fontSize: 16, fontWeight: 'bold', marginVertical: 4 },
+              heading6: { fontSize: 14, fontWeight: 'bold', marginVertical: 3 },
+              bullet_list: { marginVertical: 6 },
+              ordered_list: { marginVertical: 6 },
+              list_item: { flexDirection: 'row', alignItems: 'flex-start', marginVertical: 2 },
+              blockquote: { backgroundColor: '#111', borderLeftWidth: 4, borderLeftColor: '#aaa', padding: 8, marginVertical: 6 },
+              table: { borderWidth: 1, borderColor: '#666', marginVertical: 8 },
+              th: { backgroundColor: '#444', color: '#fff', fontWeight: 'bold', padding: 6 },
+              tr: { borderBottomWidth: 1, borderColor: '#666' },
+              td: { padding: 6, color: '#fff' },
+              hr: { borderBottomWidth: 1, borderColor: '#aaa', marginVertical: 8 },
+              link: { color: '#3498db', textDecorationLine: 'underline' },
+              image: { width: 220, height: 160, borderRadius: 8, marginVertical: 8, alignSelf: 'center' },
+              // 可根据需要继续自定义
+            }}
+            onLinkPress={(url: string) => {
+              if (url.startsWith('http://') || url.startsWith('https://') || url.startsWith('mailto:')) {
+                if (typeof window !== 'undefined') {
+                  window.open(url, '_blank');
+                } else {
+                  setFullscreenImage(url);
+                }
+                return true;
+              }
+              return false;
+            }}
+          >
+            {text}
+          </Markdown>
+        </View>
+      );
+    }
+
+    // ...existing code for image markdown, links, fallback...
     const rawImageMarkdownRegex = /^!\[(.*?)\]\(image:([a-f0-9]+)\)$/;
     const rawImageMatch = text.trim().match(rawImageMarkdownRegex);
     
@@ -446,6 +498,7 @@ const ChatDialog: React.FC<ExtendedChatDialogProps> = ({
             const imageInfo = ImageManager.getImageInfo(img.id);
             const imageStyle = getImageDisplayStyle(imageInfo);
             if (imageInfo) {
+              // 确保 key 直接传递给 TouchableOpacity
               return (
                 <TouchableOpacity 
                   key={img.id + '-' + idx}
@@ -462,6 +515,7 @@ const ChatDialog: React.FC<ExtendedChatDialogProps> = ({
                 </TouchableOpacity>
               );
             } else {
+              // key 直接传递给 View
               return (
                 <View key={idx} style={styles.imageError}>
                   <Ionicons name="alert-circle" size={36} color="#e74c3c" />
@@ -494,6 +548,7 @@ const ChatDialog: React.FC<ExtendedChatDialogProps> = ({
             const isLargeDataUrl = isDataUrl && img.url.length > 100000;
             
             if (isLargeDataUrl) {
+              // key 直接传递给 View
               return (
                 <View key={idx} style={styles.imageWrapper}>
                   <TouchableOpacity
@@ -509,6 +564,7 @@ const ChatDialog: React.FC<ExtendedChatDialogProps> = ({
               );
             }
             
+            // key 直接传递给 TouchableOpacity
             return (
               <TouchableOpacity 
                 key={idx}
@@ -539,28 +595,29 @@ const ChatDialog: React.FC<ExtendedChatDialogProps> = ({
       });
     }
     
-    if (linkMatches.length > 0) {
-      return (
-        <View>
-          {linkMatches.map((link, idx) => (
-            <TouchableOpacity
-              key={idx}
-              style={styles.linkButton}
-              onPress={() => {
-                if (typeof window !== 'undefined') {
-                  window.open(link.url, '_blank');
-                } else {
-                  setFullscreenImage(link.url);
-                }
-              }}
-            >
-              <Ionicons name="link" size={16} color="#3498db" style={styles.linkIcon} />
-              <Text style={styles.linkText}>{link.text}</Text>
-            </TouchableOpacity>
-          ))}
-        </View>
-      );
-    }
+// ...existing code...
+if (linkMatches.length > 0) {
+  return (
+    <View>
+      {linkMatches.map((link, idx) => (
+        <TouchableOpacity
+          key={idx}
+          style={styles.linkButton}
+          onPress={() => {
+            if (typeof window !== 'undefined') {
+              window.open(link.url, '_blank');
+            } else {
+              setFullscreenImage(link.url);
+            }
+          }}
+        >
+          <Ionicons name="link" size={16} color="#3498db" style={styles.linkIcon} />
+          <Text style={styles.linkText}>{link.text}</Text>
+        </TouchableOpacity>
+      ))}
+    </View>
+  );
+}
     
     return renderMessageText(text, isUser);
   };

@@ -52,7 +52,7 @@ import { CloudServiceProvider } from '@/services/cloud-service-provider';
 import type  CloudServiceProviderClass  from '@/services/cloud-service-provider';
 import * as FileSystem from 'expo-file-system'; // 新增导入
 import { importDefaultCharactersIfNeeded, resetDefaultCharacterImported } from '@/components/DefaultCharacterImporter';
-
+import TestMarkdown from '@/components/testmarkdown';
 // Create a stable memory configuration outside the component
 type MemoryConfig = {
   embedder: {
@@ -131,6 +131,7 @@ const createStableMemoryConfig: CreateConfigFunction = (user: any): MemoryConfig
 };
 
 const App = () => {
+  const [isTestMarkdownVisible, setIsTestMarkdownVisible] = useState(false);
   const router = useRouter();
   const params = useLocalSearchParams();
   const characterId = params.characterId as string;
@@ -2213,6 +2214,7 @@ const getBackgroundImage = () => {
 
   return (
     <View style={styles.outerContainer}>
+      
       <StatusBar translucent backgroundColor="transparent" />
             {/* 新增：初始化加载蒙层 */}
             {isInitializing && (
@@ -2245,7 +2247,79 @@ const getBackgroundImage = () => {
       >
         <Text style={{ color: '#333', fontWeight: 'bold' }}>重置默认角色初始化</Text>
       </TouchableOpacity> */}
+            {/* <TouchableOpacity
+        style={{
+          position: 'absolute',
+          bottom: 32,
+          right: 24,
+          zIndex: 99999,
+          backgroundColor: '#3498db',
+          borderRadius: 28,
+          width: 56,
+          height: 56,
+          justifyContent: 'center',
+          alignItems: 'center',
+          elevation: 10,
+        }}
+        onPress={() => setIsTestMarkdownVisible(true)}
+        activeOpacity={0.85}
+      >
+        <Text style={{ color: '#fff', fontWeight: 'bold', fontSize: 22 }}>M↓</Text>
+      </TouchableOpacity> */}
+                {/* Markdown 测试按钮（右下角悬浮） */}
+      {/* <TouchableOpacity
+        style={{
+          position: 'absolute',
+          bottom: 32,
+          right: 24,
+          zIndex: 99999,
+          backgroundColor: '#3498db',
+          borderRadius: 28,
+          width: 56,
+          height: 56,
+          justifyContent: 'center',
+          alignItems: 'center',
+          elevation: 10,
+        }}
+        onPress={() => setIsTestMarkdownVisible(true)}
+        activeOpacity={0.85}
+      >
+        <Text style={{ color: '#fff', fontWeight: 'bold', fontSize: 22 }}>M↓</Text>
+      </TouchableOpacity>
 
+
+      {isTestMarkdownVisible && (
+        <View style={{
+          position: 'absolute',
+          left: 0, right: 0, bottom: 0,
+          backgroundColor: 'rgba(0,0,0,0.7)',
+          zIndex: 99999,
+          alignItems: 'center',
+          justifyContent: 'flex-end',
+          paddingBottom: 40,
+        }}>
+          <TestMarkdown
+            onSendMessage={(text, sender) => {
+              handleSendMessage(text, sender);
+              setIsTestMarkdownVisible(false);
+            }}
+          />
+          <TouchableOpacity
+            style={{
+              marginTop: 10,
+              alignSelf: 'center',
+              padding: 10,
+              backgroundColor: '#444',
+              borderRadius: 20,
+            }}
+            onPress={() => setIsTestMarkdownVisible(false)}
+          >
+            <Text style={{ color: '#fff', fontSize: 15 }}>关闭</Text>
+          </TouchableOpacity>
+          </View>
+      )} */}
+
+      
       <MemoryProvider config={memoryConfig}>
         <Mem0Initializer />
         
