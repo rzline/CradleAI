@@ -29,6 +29,8 @@
   </tr>
 </table>
 
+## 下载APK：
+[下载APK](https://cradleintro.top/Cradle-1.0.0%20-release.apk)
 
 ## 答疑/bug反馈/意见反馈：
 qq群：1017292082
