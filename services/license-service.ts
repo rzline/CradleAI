@@ -222,7 +222,6 @@ class LicenseService {
     // 定义所有要尝试的URL (主要 + 备用)
     const urlsToTry = [
       API_CONFIG.LICENSE_API_URL,
-      ...(API_CONFIG.LICENSE_API_FALLBACKS || [])
     ];
     
     // 记录所有错误以便报告
@@ -390,36 +389,7 @@ class LicenseService {
     }
     
     // 尝试备用URL的简单连接测试
-    try {
-      // 对第一个备用URL进行简单测试
-      if (API_CONFIG.LICENSE_API_FALLBACKS && API_CONFIG.LICENSE_API_FALLBACKS.length > 0) {
-        const fallbackUrl = API_CONFIG.LICENSE_API_FALLBACKS[0].replace('/license/verify', '/health');
-        console.log(`测试备用API连接: ${fallbackUrl}`);
-        
-        const fallbackController = new AbortController();
-        const fallbackTimeoutId = setTimeout(() => fallbackController.abort(), 10000);
-        
-        const fallbackResponse = await fetch(fallbackUrl, { 
-          method: 'GET',
-          signal: fallbackController.signal,
-          cache: 'no-store' as RequestCache,
-        });
-        
-        clearTimeout(fallbackTimeoutId);
-        
-        const fallbackSuccess = fallbackResponse.ok;
-        details.push(`备用API连接: ${fallbackSuccess ? '成功' : '失败'} (${fallbackResponse.status})`);
-        
-        // 如果任一连接成功，则标记为成功
-        if (fallbackSuccess && !result.apiEndpointConnected) {
-          result.apiEndpointConnected = true;
-        }
-      }
-    } catch (error) {
-      const errorMsg = error instanceof Error ? error.message : String(error);
-      details.push(`备用API连接失败: ${errorMsg}`);
-      console.error('备用API连接测试失败:', error);
-    }
+
     
     // 如果任一连接测试成功，则整体标记为成功
     result.anySuccess = result.domainConnected || result.apiEndpointConnected;
@@ -458,19 +428,16 @@ class LicenseService {
   public async getLicenseHeaders(): Promise<Record<string, string>> {
     // 确保已初始化
     if (!this.initialized) {
-      console.log('[LicenseService] 获取许可证头前初始化服务');
       await this.initialize();
     }
     
     // 检查许可证和设备ID
     if (!this.licenseKey || !this.deviceId) {
-      console.log('[LicenseService] 无法创建许可证头: 许可证密钥或设备ID缺失');
       return {};
     }
     
     // 检查许可证有效性（如果有许可证信息）
     if (this.licenseInfo && !this.licenseInfo.isValid) {
-      console.log('[LicenseService] 许可证无效，无法创建有效的许可证头');
       return {};
     }
     
@@ -479,7 +446,6 @@ class LicenseService {
       'X-Device-ID': this.deviceId
     };
     
-    console.log('[LicenseService] 创建许可证头成功');
     return headers;
   }
 
@@ -491,7 +457,6 @@ class LicenseService {
     this.licenseInfo = null;
     await AsyncStorage.removeItem(LICENSE_KEY_STORAGE_KEY);
     await AsyncStorage.removeItem(LICENSE_INFO_STORAGE_KEY); // 同时清除许可证信息
-    console.log('[LicenseService] License cleared');
   }
   
   /**

@@ -945,8 +945,6 @@ width: sizePreset.width,
         console.error(`[图片重生成] 请求头信息不完整`);
       }
 
-      console.log(`[图片重生成] 使用许可证密钥: ${licenseHeaders['X-License-Key'].substring(0, 4)}****`);
-      console.log(`[图片重生成] 使用设备ID: ${licenseHeaders['X-Device-ID'].substring(0, 4)}****`);
       if (userEmail) console.log(`[图片重生成] 使用用户邮箱: ${userEmail}`);
 
       const response = await fetch(`${IMAGE_SERVICE_BASE_URL}/api/generate`, {

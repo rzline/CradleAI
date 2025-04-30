@@ -596,7 +596,7 @@ export class OpenRouterAdapter {
             throw new Error(`Cloud service search HTTP error! status: ${response.status}, details: ${errorText}`);
           }
           const result = await response.json();
-          // 兼容CradleAI格式
+
           let searchResultText = "";
           if (result.choices && result.choices.length > 0) {
             searchResultText = result.choices[0].message?.content || "";

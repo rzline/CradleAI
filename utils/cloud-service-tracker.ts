@@ -138,7 +138,6 @@ export function initCloudServiceTracker(): void {
       
       // If license is valid and cloud service is enabled in settings
       if (licenseInfo?.isValid && settings?.chat?.useCloudService) {
-        console.log('[CloudServiceTracker] 发现有效许可证和云服务启用设置，自动启用云服务');
         updateCloudServiceStatus(true);
       }
     } catch (e) {
@@ -152,7 +151,7 @@ export function initCloudServiceTracker(): void {
 }
 
 /**
- * Convert Gemini-style messages to standard OpenAI format for CradleAI
+ * Convert Gemini-style messages to standard OpenAI format
  */
 export function convertGeminiMessagesToStandard(
   messages: ChatMessage[]

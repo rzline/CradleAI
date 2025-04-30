@@ -27,25 +27,15 @@ export const API_CONFIG = {
   IMAGE_GENERATION_URL: getEnvVar('IMAGE_GENERATION_URL', 'https://image.cradleintro.top/'),
   // License API endpoints - primary and fallbacks
   LICENSE_API_URL: getEnvVar('LICENSE_API_URL', 'https://license.cradleintro.top/api/v1/license/verify'),
-  LICENSE_API_FALLBACKS: [
-    'http://license.cradleintro.top/api/v1/license/verify',       // HTTP fallback
-    'https://license.cradleintro.top:443/api/v1/license/verify',  // Explicit HTTPS port (matching curl)
-    'https://license.cradleintro.top:5000/api/v1/license/verify', // Direct HTTPS port
-    'http://license.cradleintro.top:5000/api/v1/license/verify',  // Direct HTTP port
-    'https://cradleintro.top/api/v1/license/verify',              // Original domain as fallback
-  ],
+
   // Base domain for connectivity testing
   LICENSE_SERVER_DOMAIN: 'license.cradleintro.top',
 
-  // CradleAI cloud service endpoints
+  // cloud service endpoints
   CLOUD_API_URL: getEnvVar('CLOUD_API_URL', 'https://chat.cradleintro.top'),
-  CLOUD_API_FALLBACKS: [
-    'https://chat-api.cradleintro.top',
-    'https://chat-backup.cradleintro.top',
-    'https://api.cradleintro.top/chat', // Additional fallback with different URL structure
-  ],
+
   
-  // CradleAI chat completion endpoint (used by cloud service)
+  // chat completion endpoint (used by cloud service)
   CRADLE_CHAT_COMPLETION_ENDPOINT: '/api/chat/completion',
   CRADLE_MODELS_ENDPOINT: '/api/models',
     
@@ -63,11 +53,9 @@ export const API_CONFIG = {
   logConfig: () => {
     console.log('========== API 配置 ==========');
     console.log('LICENSE_API_URL:', API_CONFIG.LICENSE_API_URL);
-    console.log('LICENSE_API_FALLBACKS:', API_CONFIG.LICENSE_API_FALLBACKS);
     console.log('LICENSE_SERVER_DOMAIN:', API_CONFIG.LICENSE_SERVER_DOMAIN);
     console.log('IMAGE_GENERATION_URL:', API_CONFIG.IMAGE_GENERATION_URL);
     console.log('CLOUD_API_URL:', API_CONFIG.CLOUD_API_URL);
-    console.log('CLOUD_API_FALLBACKS:', API_CONFIG.CLOUD_API_FALLBACKS);
     console.log('==============================');
   }
 };

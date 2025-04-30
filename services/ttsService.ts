@@ -360,14 +360,8 @@ class TTSService {
         const userEmail = licenseInfo.email || licenseInfo.customerEmail;
         if (userEmail) {
           licenseHeaders['X-User-Email'] = userEmail;
-        }
-        console.log(`[TTSService] 使用用户邮箱: ${licenseHeaders['X-User-Email']}`);
-      } else {
-        console.warn(`[TTSService] 未找到用户邮箱信息`);
+        }      
       }
-
-      console.log(`[TTSService] 使用许可证密钥: ${licenseHeaders['X-License-Key'].substring(0, 4)}****`);
-      console.log(`[TTSService] 使用设备ID: ${licenseHeaders['X-Device-ID'].substring(0, 4)}****`);
       
       return licenseHeaders;
     } catch (error) {

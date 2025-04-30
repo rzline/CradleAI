@@ -1,7 +1,7 @@
 /**
  * Cloud Service Provider
  * 
- * Handles the cloud service functionality for API communication with CradleAI
+ * Handles the cloud service functionality for API communication
  */
 
 import { API_CONFIG } from '@/constants/api-config';
@@ -95,12 +95,6 @@ class CloudServiceProviderClass {
     if (config.preferredModel) {
       this.setPreferredModel(config.preferredModel);
     }
-    
-    console.log('[CloudService] 初始化成功，云服务已启用');
-    console.log(`[CloudService] 云服务端点: ${this.cloudEndpoint}`);
-    console.log(`[CloudService] 许可证密钥: ${this.licenseKey?.substring(0, 4)}****`);
-    console.log(`[CloudService] 设备ID: ${this.deviceId?.substring(0, 4)}****`);
-    console.log(`[CloudService] 默认模型: ${this.preferredModel}`);
   }
 
   /**
@@ -278,7 +272,6 @@ class CloudServiceProviderClass {
     }
     
     try {
-      console.log('[CloudService] 开始发送多模态请求到 CradleAI');
       
       // For multimodal content, we must use the model that supports it
       const modelToUse = this.getMultiModalModel();
@@ -417,7 +410,7 @@ class CloudServiceProviderClass {
       });
       
       // Add user agent information
-      headers.set('User-Agent', 'CradleAI-Client/1.0');
+      headers.set('User-Agent', 'Client/1.0');
       
       // Add referrer if available
       if (typeof window !== 'undefined' && window.location?.origin) {
@@ -502,7 +495,7 @@ class CloudServiceProviderClass {
   }
   
   /**
-   * Generate a chat completion using CradleAI
+   * Generate a chat completion 
    * @param messages The messages array
    * @param options Additional options for the request
    */
@@ -523,8 +516,7 @@ class CloudServiceProviderClass {
     }
     
     try {
-      console.log('[CloudService] 开始发送聊天请求到 CradleAI');
-      
+
       // Use provided model or fall back to preferred model, with validation
       const providedModel = options.model || this.preferredModel;
       const modelToUse = this.validateModel(providedModel);
@@ -534,7 +526,7 @@ class CloudServiceProviderClass {
         console.warn(`[CloudService] 模型已从 "${providedModel}" 更改为 "${modelToUse}"`);
       }
       
-      // Standardize the message format for CradleAI - ensure content is always a string
+      // Standardize the message format 
       const standardizedMessages = messages.map(msg => {
         // Map 'assistant' role to 'model' role for Hugging Face compatibility
         const role = msg.role === 'model' ? 'model' : msg.role;
@@ -564,7 +556,7 @@ class CloudServiceProviderClass {
       // Debug: Log standardized messages
       console.log('[CloudService] 标准化消息:', JSON.stringify(standardizedMessages, null, 2));
       
-      // Construct the CradleAI compliant request body
+      // Construct the request body
       const requestBody = {
         license_key: this.licenseKey,
         device_id: this.deviceId,
@@ -581,10 +573,7 @@ class CloudServiceProviderClass {
       console.log('[CloudService] 完整请求体:', JSON.stringify(requestBody, null, 2));
       
       console.log(`[CloudService] 请求模型: ${requestBody.model}`);
-      console.log(`[CloudService] 消息数量: ${requestBody.messages.length}`);
       console.log(`[CloudService] 参数设置: temperature=${requestBody.temperature}, max_tokens=${requestBody.max_tokens}`);
-      console.log(`[CloudService] 许可证密钥: ${this.licenseKey?.substring(0, 4)}****`);
-      console.log(`[CloudService] 设备ID: ${this.deviceId?.substring(0, 4)}****`); // Add log for device ID
       
       // Prepare headers for cloud service
       const headers = new Headers({
@@ -593,7 +582,7 @@ class CloudServiceProviderClass {
       });
       
       // Add user agent information
-      headers.set('User-Agent', 'CradleAI-Client/1.0');
+      headers.set('User-Agent', 'Client/1.0');
       
       // Add referrer if available
       if (typeof window !== 'undefined' && window.location?.origin) {
@@ -644,7 +633,7 @@ class CloudServiceProviderClass {
       if (!response.ok) {
         const errorText = await response.text();
         console.error(`[CloudService] 请求失败 (${response.status}): ${errorText}`);
-        throw new Error(`CradleAI 请求失败: ${response.status} ${response.statusText}`);
+        throw new Error(`请求失败: ${response.status} ${response.statusText}`);
       }
       
       return response;
@@ -723,7 +712,7 @@ class CloudServiceProviderClass {
         'Content-Type': 'application/json',
         'Accept': 'application/json'
       });
-      headers.set('User-Agent', 'CradleAI-Client/1.0');
+      headers.set('User-Agent', 'Client/1.0');
       if (typeof window !== 'undefined' && window.location?.origin) {
         headers.set('Referer', window.location.origin);
       }
@@ -804,12 +793,6 @@ class CloudServiceProviderClass {
         temperature: options.temperature || 0.7
       };
       
-      // Debug: Log the complete request body
-      console.log('[CloudService] 完整请求体:', JSON.stringify(requestBody, null, 2));
-      
-      console.log(`[CloudService] HuggingFace请求: 模型=${modelToUse}, 消息数量=${mappedMessages.length}`);
-      console.log(`[CloudService] 许可证密钥: ${this.licenseKey?.substring(0, 4)}****`);
-      console.log(`[CloudService] 设备ID: ${this.deviceId?.substring(0, 4)}****`);
       
       // Prepare headers
       const headers = new Headers({
@@ -818,7 +801,7 @@ class CloudServiceProviderClass {
       });
       
       // Add user agent information
-      headers.set('User-Agent', 'CradleAI-Client/1.0');
+      headers.set('User-Agent', 'Client/1.0');
       
       // Prepare the request options
       const requestOptions: RequestInit = {
@@ -899,7 +882,7 @@ class CloudServiceProviderClass {
   
   /**
    * Forward a request through the cloud service - DEPRECATED, use useHuggingFaceModel instead
-   * @deprecated Use useHuggingFaceModel for better integration with CradleAI
+   * @deprecated Use useHuggingFaceModel for better integration
    */
   async forwardRequest(
     originalUrl: string,

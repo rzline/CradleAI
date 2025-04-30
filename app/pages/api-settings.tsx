@@ -193,10 +193,9 @@ const ApiSettings = () => {
               console.error('获取首选模型失败:', error);
             }
             
-            // 如果许可证有效但云服务未初始化，尝试初始化
             if (info.isValid && !CloudServiceProvider.isEnabled()) {
               try {
-                console.log('检测到有效许可证但云服务未启用，尝试自动初始化');
+
                 await CloudServiceProvider.initialize({
                   enabled: true,
                   licenseKey: info.licenseKey!,
@@ -498,29 +497,18 @@ const ApiSettings = () => {
     try {
       setIsActivating(true);
 
-      console.log('开始激活许可证，激活码:', activationCode.trim().substring(0, 4) + '****');
-      console.log('许可证服务器域名:', API_CONFIG.LICENSE_SERVER_DOMAIN);
-      console.log('许可证API端点:', API_CONFIG.LICENSE_API_URL);
-      console.log('备用API端点:', API_CONFIG.LICENSE_API_FALLBACKS ? API_CONFIG.LICENSE_API_FALLBACKS[0] : 'None');
-
       const deviceId = await DeviceUtils.getDeviceId();
       console.log('当前设备ID:', deviceId.substring(0, 4) + '****');
 
       // 确保验证过程中记录请求信息
       const licenseInfo = await licenseService.verifyLicense(activationCode.trim());
-      console.log('许可证验证响应:', JSON.stringify(licenseInfo));
 
       setLicenseInfo(licenseInfo);
 
       if (licenseInfo) {
-        console.log('许可证激活成功，现在可以启用云服务功能');
+      ;
       }
 
-      Alert.alert(
-        '激活成功',
-        `许可证已成功激活\n计划: ${licenseInfo.planId}\n有效期至: ${licenseInfo.expiryDate}`,
-        [{ text: '确定' }]
-      );
     } catch (error) {
       console.error('许可证激活错误:', error);
       let errorMessage = '未知错误，请检查激活码是否正确';
@@ -865,24 +853,6 @@ const ApiSettings = () => {
                         color="#4CAF50"
                       /> 已激活
                     </Text>
-{/* <Text style={styles.licenseInfoText}>
-                      计划: {licenseInfo.planId || '标准版'}
-                    </Text>
-                    <Text style={styles.licenseInfoText}>
-                      有效期至: {licenseInfo.expiryDate || '永久'}
-                    </Text>
-                    {licenseInfo.email && (
-                      <Text style={styles.licenseInfoText}>
-                        邮箱: {licenseInfo.email}
-                      </Text>
-                    )}
-                    <Text style={styles.licenseInfoText}>
-                      已绑定设备数: {licenseInfo.deviceCount || 1}/3
-                    </Text>
-
-                    <Text style={styles.licenseInfoText}>
-                      设备ID: {licenseInfo.deviceId ? `${licenseInfo.deviceId.substring(0, 8)}...` : '未知'}
-                    </Text> */}
 
                     <View style={styles.cloudServiceContainer}>
                       <Text style={styles.cloudServiceLabel}>启用</Text>

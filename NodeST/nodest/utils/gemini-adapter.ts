@@ -767,7 +767,7 @@ private async executeGenerateContent(contents: ChatMessage[], modelId: string, c
                         console.log('[Gemini适配器] 调用CloudServiceProvider.generateChatCompletion...');
                         const startTime = Date.now();
                         
-                        // Convert Gemini-style messages to standard format expected by CradleAI
+                        // Convert Gemini-style messages to standard format 
                         const standardMessages = contents.map(msg => {
                             // Get text from message parts
                             let contentText = '';
@@ -851,13 +851,12 @@ private async executeGenerateContent(contents: ChatMessage[], modelId: string, c
                 console.log(`[Gemini适配器] 成功接收到API响应，开始解析JSON`);
                 const result = await response.json();
                 
-                // Check for the expected format from CradleAI
                 if (result.choices && result.choices.length > 0) {
-                    // This is the standard OpenAI/CradleAI format
+                    // This is the standard OpenAI format
                     const responseText = result.choices[0].message?.content || "";
                     
                     if (responseText) {
-                        console.log(`[Gemini适配器] 成功接收CradleAI响应，长度: ${responseText.length}`);
+                        console.log(`[Gemini适配器] 成功接收云服务响应，长度: ${responseText.length}`);
                         console.log(`[Gemini适配器] 响应前100个字符: ${responseText.substring(0, 100)}...`);
                         
                         this.conversationHistory.push({
@@ -1287,7 +1286,7 @@ private async executeGenerateContent(contents: ChatMessage[], modelId: string, c
             
             return generatedContent;
         }
-        // 新增：支持处理 CradleAI 多模态响应格式（OpenAI风格）
+        // 新增：支持处理OpenAI格式
         else if (result.choices && result.choices.length > 0 && result.choices[0].message) {
             const msg = result.choices[0].message;
             // 判断role为assistant时，视为model角色
@@ -1302,7 +1301,7 @@ private async executeGenerateContent(contents: ChatMessage[], modelId: string, c
                         .map((part: any) => part.text)
                         .join('\n');
                 }
-                // 目前CradleAI不会返回图片数组，但可扩展
+
                 return generatedContent;
             }
         }
@@ -1862,7 +1861,7 @@ private async executeGenerateContent(contents: ChatMessage[], modelId: string, c
                         throw new Error(`Cloud service search HTTP error! status: ${response.status}, details: ${errorText}`);
                     }
                     const result = await response.json();
-                    // 兼容CradleAI格式
+
                     let searchResultText = "";
                     if (result.choices && result.choices.length > 0) {
                         searchResultText = result.choices[0].message?.content || "";
@@ -2189,7 +2188,7 @@ private async executeGenerateContent(contents: ChatMessage[], modelId: string, c
                         throw new Error(`Cloud service search HTTP error! status: ${response.status}, details: ${errorText}`);
                     }
                     const result = await response.json();
-                    // 兼容CradleAI格式
+
                     let searchResultText = "";
                     if (result.choices && result.choices.length > 0) {
                         searchResultText = result.choices[0].message?.content || "";
