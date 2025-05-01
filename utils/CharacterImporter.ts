@@ -148,19 +148,21 @@ export class CharacterImporter {
       }
       console.log('[预设导入] 文件信息:', fileInfo);
 
-      // 3. 尝试多种方式读取文件内容
+      // 3. 尝试多种方式读取文件内容，并记录每种方式的失败原因
       let content: string | null = null;
-      let error: Error | null = null;
+      const readFailures: { method: string; error?: any; reason?: string }[] = [];
 
       // 方法1: 直接读取
       try {
-        content = await FileSystem.readAsStringAsync(filePath);
-        if (content && !content.includes('�')) {
+        const direct = await FileSystem.readAsStringAsync(filePath);
+        if (direct && !direct.includes('�')) {
+          content = direct;
           console.log('[预设导入] 方法1成功: 直接读取');
         } else {
-          content = null;
+          readFailures.push({ method: '直接读取', reason: '内容为空或包含乱码字符（�）' });
         }
       } catch (e) {
+        readFailures.push({ method: '直接读取', error: e });
         console.log('[预设导入] 方法1失败:', e);
       }
 
@@ -170,47 +172,107 @@ export class CharacterImporter {
           const base64Content = await FileSystem.readAsStringAsync(filePath, {
             encoding: FileSystem.EncodingType.Base64
           });
-          content = Buffer.from(base64Content, 'base64').toString('utf8');
-          if (content && !content.includes('�')) {
+          const decoded = Buffer.from(base64Content, 'base64').toString('utf8');
+          if (decoded && !decoded.includes('�')) {
+            content = decoded;
             console.log('[预设导入] 方法2成功: Base64读取');
           } else {
-            content = null;
+            readFailures.push({ method: 'Base64读取', reason: '内容为空或包含乱码字符（�）' });
           }
         } catch (e) {
+          readFailures.push({ method: 'Base64读取', error: e });
           console.log('[预设导入] 方法2失败:', e);
         }
       }
 
-      // 方法3: 二进制读取
+      // 方法3: UTF8读取
       if (!content) {
         try {
           const binary = await FileSystem.readAsStringAsync(filePath, {
             encoding: FileSystem.EncodingType.UTF8
           });
-          content = binary;
-          if (content && !content.includes('�')) {
+          if (binary && !binary.includes('�')) {
+            content = binary;
             console.log('[预设导入] 方法3成功: UTF8读取');
           } else {
-            content = null;
+            readFailures.push({ method: 'UTF8读取', reason: '内容为空或包含乱码字符（�）' });
           }
         } catch (e) {
+          readFailures.push({ method: 'UTF8读取', error: e });
           console.log('[预设导入] 方法3失败:', e);
+        }
+      }
+
+      // 如果所有方法都失败了，尝试自动转码为UTF-8无BOM后再读一次
+      if (!content) {
+        try {
+          // 读取原始二进制内容
+          const binaryBuffer = await FileSystem.readAsStringAsync(filePath, {
+            encoding: FileSystem.EncodingType.Base64
+          });
+          // 解码为Buffer
+          const buf = Buffer.from(binaryBuffer, 'base64');
+          // 以utf8无BOM编码写入临时文件
+          const tempPath = filePath.replace(/\.json$/i, `.utf8.json`);
+          // expo-file-system不支持直接写Buffer，只能写字符串
+          const utf8String = buf.toString('utf8').replace(/^\uFEFF/, '');
+          await FileSystem.writeAsStringAsync(tempPath, utf8String, { encoding: FileSystem.EncodingType.UTF8 });
+          // 再尝试读取
+          const utf8Content = await FileSystem.readAsStringAsync(tempPath, { encoding: FileSystem.EncodingType.UTF8 });
+          if (utf8Content && !utf8Content.includes('�')) {
+            content = utf8Content;
+            console.log('[预设导入] 自动转码为UTF-8无BOM后读取成功:', tempPath);
+          } else {
+            readFailures.push({ method: '自动转码UTF-8无BOM', reason: '内容为空或包含乱码字符（�）' });
+          }
+          // 删除临时文件
+          await FileSystem.deleteAsync(tempPath, { idempotent: true });
+        } catch (e) {
+          readFailures.push({ method: '自动转码UTF-8无BOM', error: e });
+          console.log('[预设导入] 自动转码UTF-8无BOM失败:', e);
         }
       }
 
       // 如果所有方法都失败了
       if (!content) {
-        throw new Error('无法读取文件内容: 所有读取方法都失败了');
+        // 细化失败原因
+        let details = readFailures.map(f => {
+          let msg = `【${f.method}】`;
+          if (f.error) {
+            msg += `异常: ${f.error instanceof Error ? f.error.message : String(f.error)}`;
+          }
+          if (f.reason) {
+            msg += `原因: ${f.reason}`;
+          }
+          return msg;
+        }).join('\n');
+        // 文件损坏的判断（所有方式都读取到乱码或异常）
+        if (
+          readFailures.length > 0 &&
+          readFailures.every(f => (f.reason && f.reason.includes('乱码')) || f.error)
+        ) {
+          details += '\n可能原因：文件内容损坏或编码不正确。';
+        }
+        throw new Error('无法读取文件内容: 所有读取方法都失败了。\n详细原因如下：\n' + details);
       }
 
-      // 4. 验证和解析JSON
+      // 检查并清洗特殊字符，避免因特殊字符导致乱码或解析失败
+      // 移除BOM、零宽空格、不可见控制字符等
+      const cleanContent = content
+        .replace(/^\uFEFF/, '') // BOM
+        .replace(/[\u200B-\u200D\u2060\uFEFF]/g, '') // 零宽空格等
+        .replace(/[\x00-\x08\x0B\x0C\x0E-\x1F\x7F]/g, ''); // 其它不可见控制字符
+
+      // 检查清洗前后是否有差异，若有则提示
+      if (cleanContent.length !== content.length) {
+        console.warn('[预设导入] 检测到特殊字符，已自动清洗。');
+      }
+
       let data;
       try {
-        // 尝试清理内容中的BOM和其他特殊字符
-        content = content.replace(/^\uFEFF/, ''); // 移除BOM
-        content = content.trim(); // 移除首尾空白
-        
-        data = JSON.parse(content);
+        // 使用清洗后的内容
+        const finalContent = cleanContent.trim();
+        data = JSON.parse(finalContent);
         console.log('[预设导入] JSON解析成功, 数据结构:', {
           hasPrompts: !!data.prompts,
           promptCount: data.prompts?.length,
@@ -220,16 +282,25 @@ export class CharacterImporter {
           } : null
         });
       } catch (parseError) {
-        console.error('[预设导入] JSON解析失败:', parseError);
-        console.log('[预设导入] 内容预览:', content.substring(0, 200));
+        // 增加详细报错和修复建议
         const errorMessage = parseError instanceof Error ? parseError.message : 'Unknown error';
-        throw new Error(`预设文件格式无效: ${errorMessage}`);
+        let suggestion = '';
+        if (errorMessage.includes('Unexpected token')) {
+          suggestion = '请检查JSON文件格式是否正确，是否有多余逗号、缺失括号或引号等语法错误。';
+        } else if (errorMessage.includes('Unexpected end of JSON input')) {
+          suggestion = '文件内容可能不完整或被截断，请确认文件完整性。';
+        } else {
+          suggestion = '请检查文件编码（建议UTF-8无BOM），并确保内容为标准JSON格式。';
+        }
+        console.error('[预设导入] JSON解析失败:', parseError, '\n修复建议:', suggestion);
+        console.log('[预设导入] 内容预览:', content.substring(0, 200));
+        throw new Error(`预设文件格式无效: ${errorMessage}\n修复建议: ${suggestion}`);
       }
 
       // 基本数据结构验证
       if (!data || typeof data !== 'object') {
         console.error('[预设导入] 无效的数据结构:', data);
-        throw new Error('预设数据格式错误');
+        throw new Error('预设数据格式错误。\n修复建议: 请确保JSON顶层为对象结构。');
       }
 
       // 在处理prompts数组前记录原始数据
@@ -258,13 +329,25 @@ export class CharacterImporter {
         // 先根据 prompt_order 中的顺序创建一个映射表
         const orderMap = new Map<string, number>();
         const enabledMap = new Map<string, boolean>();
-        
-        if (data.prompt_order?.[0]?.order) {
-          data.prompt_order[0].order.forEach((item: any, index: number) => {
-            orderMap.set(item.identifier, index);
-            enabledMap.set(item.identifier, item.enabled ?? true);
-          });
+
+        // 检查 prompt_order 结构
+        if (!data.prompt_order || !Array.isArray(data.prompt_order) || !data.prompt_order[0]?.order) {
+          const msg = '预设文件缺少有效的 prompt_order 字段或 order 数组。';
+          const fix = '请确保 prompt_order 字段为数组，且包含 order 数组，每个元素有 identifier 和 enabled 字段。';
+          console.error('[预设导入] prompt_order结构错误:', data.prompt_order, '\n修复建议:', fix);
+          throw new Error(msg + '\n修复建议: ' + fix);
         }
+
+        data.prompt_order[0].order.forEach((item: any, index: number) => {
+          if (!item.identifier) {
+            const msg = `prompt_order[0].order[${index}] 缺少 identifier 字段。`;
+            const fix = '请为每个 order 项补全 identifier 字段。';
+            console.error('[预设导入] prompt_order项缺失identifier:', item, '\n修复建议:', fix);
+            throw new Error(msg + '\n修复建议: ' + fix);
+          }
+          orderMap.set(item.identifier, index);
+          enabledMap.set(item.identifier, item.enabled ?? true);
+        });
 
         // 处理 prompts，使用 prompt_order 中的顺序
         prompts = data.prompts
@@ -279,6 +362,11 @@ export class CharacterImporter {
             const normalizedRole = this.normalizeRole(prompt.role);
             const injection_position = prompt.injection_position ?? 
               (normalizedRole === 'model' ? 1 : 0);
+
+            // 检查 identifier 是否在 prompt_order 中
+            if (!orderMap.has(prompt.identifier)) {
+              console.warn(`[预设导入] prompt.identifier "${prompt.identifier}" 未在 prompt_order 中找到。`);
+            }
 
             // 获取排序顺序，如果在 order 中找不到，则放到最后
             const sortOrder = orderMap.has(prompt.identifier) 
@@ -316,14 +404,18 @@ export class CharacterImporter {
         })));
 
       } else {
-        console.error('[预设导入] prompts不是数组:', data.prompts);
-        throw new Error('预设文件中prompts格式错误');
+        const msg = '预设文件中prompts格式错误，prompts不是数组。';
+        const fix = '请确保prompts字段为数组，每个元素包含identifier和name字段。';
+        console.error('[预设导入] prompts不是数组:', data.prompts, '\n修复建议:', fix);
+        throw new Error(msg + '\n修复建议: ' + fix);
       }
 
       // 确保至少有一个有效的prompt
       if (prompts.length === 0) {
-        console.error('[预设导入] 没有有效的prompts');
-        throw new Error('预设文件中没有有效的提示词');
+        const msg = '预设文件中没有有效的提示词（prompts）。';
+        const fix = '请检查prompts数组，确保每个元素都有identifier和name字段，且不为空。';
+        console.error('[预设导入] 没有有效的prompts', '\n修复建议:', fix);
+        throw new Error(msg + '\n修复建议: ' + fix);
       }
 
       // 在处理 prompt_order 前，记录原始顺序
@@ -338,6 +430,14 @@ export class CharacterImporter {
         identifier: p.identifier,
         enabled: p.enable ?? false // Updated to use the correct field name
       }));
+
+      // 检查order数组是否为空
+      if (!order.length) {
+        const msg = '生成的order数组为空。';
+        const fix = '请检查prompts和prompt_order字段，确保二者匹配且不为空。';
+        console.error('[预设导入] order数组为空', '\n修复建议:', fix);
+        throw new Error(msg + '\n修复建议: ' + fix);
+      }
 
       const presetJson: PresetJson = {
         prompts,
@@ -365,12 +465,24 @@ export class CharacterImporter {
       return presetJson;
 
     } catch (error) {
+      // 增强最终catch的报错信息
+      let extra = '';
+      if (error instanceof Error && error.message) {
+        if (error.message.includes('Unexpected token')) {
+          extra = '\n常见原因：JSON格式错误（如多余逗号、缺失括号/引号），或文件编码问题。建议用文本编辑器（如VSCode）检查格式和编码。';
+        } else if (error.message.includes('prompts格式错误')) {
+          extra = '\n请确保prompts字段为数组，且每个元素有identifier和name字段。';
+        } else if (error.message.includes('prompt_order')) {
+          extra = '\n请确保prompt_order字段结构正确，order为数组且每项有identifier和enabled。';
+        }
+      }
       console.error('[预设导入] 失败:', {
         error,
         message: error instanceof Error ? error.message : '未知错误',
         stack: error instanceof Error ? error.stack : undefined
-      });
-      throw error;
+      }, extra);
+      // 在报错信息中附加修复建议
+      throw new Error((error instanceof Error ? error.message : String(error)) + extra);
     }
   }
 

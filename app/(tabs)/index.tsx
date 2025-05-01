@@ -1710,7 +1710,7 @@ const getBackgroundImage = () => {
         ...prev,
         [characterId]: position
       }));
-      console.log(`[App] Scroll position updated for ${characterId}: ${position}`);
+      ;
     }
   };
 
@@ -2267,7 +2267,7 @@ const getBackgroundImage = () => {
         <Text style={{ color: '#fff', fontWeight: 'bold', fontSize: 22 }}>M↓</Text>
       </TouchableOpacity> */}
                 {/* Markdown 测试按钮（右下角悬浮） */}
-      {/* <TouchableOpacity
+      <TouchableOpacity
         style={{
           position: 'absolute',
           bottom: 32,
@@ -2317,7 +2317,7 @@ const getBackgroundImage = () => {
             <Text style={{ color: '#fff', fontSize: 15 }}>关闭</Text>
           </TouchableOpacity>
           </View>
-      )} */}
+      )}
 
       
       <MemoryProvider config={memoryConfig}>

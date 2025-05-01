@@ -18,6 +18,7 @@ interface TextEditorModalProps {
   onSave: (text: string) => void;
   initialText: string;
   placeholder?: string;
+  title?: string;
 }
 
 const { width, height } = Dimensions.get('window');
@@ -27,13 +28,16 @@ const TextEditorModal: React.FC<TextEditorModalProps> = ({
   onClose,
   onSave,
   initialText,
-  placeholder = '在此输入文本...'
+  placeholder = '在此输入文本...',
+  title = '编辑文本'
 }) => {
   const [text, setText] = useState(initialText);
 
   useEffect(() => {
-    setText(initialText);
-  }, [initialText]);
+    if (isVisible) {
+      setText(initialText);
+    }
+  }, [isVisible, initialText]);
 
   const handleSave = () => {
     onSave(text);
@@ -57,7 +61,7 @@ const TextEditorModal: React.FC<TextEditorModalProps> = ({
               <TouchableOpacity onPress={onClose}>
                 <Text style={styles.cancelText}>取消</Text>
               </TouchableOpacity>
-              <Text style={styles.title}>编辑文本</Text>
+              <Text style={styles.title}>{title}</Text>
               <TouchableOpacity onPress={handleSave}>
                 <Text style={styles.saveText}>保存</Text>
               </TouchableOpacity>

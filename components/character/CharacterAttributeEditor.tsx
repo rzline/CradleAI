@@ -17,6 +17,7 @@ interface CharacterAttributeEditorProps {
   style?: ViewStyle;
   multiline?: boolean;
   numberOfLines?: number;
+  onPress?: () => void;
 }
 
 const CharacterAttributeEditor: React.FC<CharacterAttributeEditorProps> = ({
@@ -26,17 +27,31 @@ const CharacterAttributeEditor: React.FC<CharacterAttributeEditorProps> = ({
   placeholder,
   style,
   multiline = true,
-  numberOfLines = 4
+  numberOfLines = 4,
+  onPress
 }) => {
   const [expanded, setExpanded] = useState(false);
 
-  const toggleExpanded = () => {
-    setExpanded(!expanded);
+  const handleHeaderPress = () => {
+    if (onPress) {
+      onPress();
+    } else {
+      setExpanded(!expanded);
+    }
+  };
+
+  // 新增：点击内容区也能触发 onPress
+  const handleContentPress = () => {
+    if (onPress) {
+      onPress();
+    } else {
+      setExpanded(true);
+    }
   };
 
   return (
     <View style={[styles.container, style]}>
-      <TouchableOpacity style={styles.header} onPress={toggleExpanded}>
+      <TouchableOpacity style={styles.header} onPress={handleHeaderPress}>
         <Text style={styles.title}>{title}</Text>
         <Ionicons
           name={expanded ? 'chevron-up' : 'chevron-down'}
@@ -44,27 +59,35 @@ const CharacterAttributeEditor: React.FC<CharacterAttributeEditorProps> = ({
           color="#aaa"
         />
       </TouchableOpacity>
-      
-      {(expanded || !value) ? (
-        <TextInput
-          style={[
-            styles.inputField,
-            multiline && { minHeight: numberOfLines * 24 }
-          ]}
-          value={value}
-          onChangeText={onChangeText}
-          placeholder={placeholder}
-          placeholderTextColor="#666"
-          multiline={multiline}
-          numberOfLines={numberOfLines}
-          textAlignVertical={multiline ? "top" : "center"}
-        />
-      ) : (
-        <TouchableOpacity onPress={toggleExpanded}>
+      {onPress ? (
+        // 始终用TouchableOpacity包裹内容区，点击进入TextEditorModal
+        <TouchableOpacity onPress={handleContentPress} activeOpacity={0.7}>
           <Text style={styles.previewText} numberOfLines={2}>
-            {value}
+            {value || placeholder || ''}
           </Text>
         </TouchableOpacity>
+      ) : (
+        (expanded || !value) ? (
+          <TextInput
+            style={[
+              styles.inputField,
+              multiline && { minHeight: numberOfLines * 24 }
+            ]}
+            value={value}
+            onChangeText={onChangeText}
+            placeholder={placeholder}
+            placeholderTextColor="#666"
+            multiline={multiline}
+            numberOfLines={numberOfLines}
+            textAlignVertical={multiline ? "top" : "center"}
+          />
+        ) : (
+          <TouchableOpacity onPress={handleHeaderPress}>
+            <Text style={styles.previewText} numberOfLines={2}>
+              {value}
+            </Text>
+          </TouchableOpacity>
+        )
       )}
     </View>
   );

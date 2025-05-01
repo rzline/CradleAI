@@ -40,6 +40,7 @@ import { Ionicons } from '@expo/vector-icons';
 import TagSelector from '@/components/TagSelector';
 import ArtistReferenceSelector from '@/components/ArtistReferenceSelector';
 import VoiceSelector from '@/components/VoiceSelector';
+import TextEditorModal from '@/components/common/TextEditorModal';
 
 import { 
   WorldBookSection,
@@ -293,6 +294,32 @@ const CharacterDetail: React.FC = () => {
     onNameChange?: (text: string) => void;
     id?: string;
   } | null>(null);
+
+  const [textEditorModalVisible, setTextEditorModalVisible] = useState(false);
+  const [textEditorModalField, setTextEditorModalField] = useState<keyof RoleCardJson | null>(null);
+  const [textEditorModalValue, setTextEditorModalValue] = useState<string>('');
+  const [textEditorModalTitle, setTextEditorModalTitle] = useState<string>('');
+  const [textEditorModalPlaceholder, setTextEditorModalPlaceholder] = useState<string>('');
+
+  const openTextEditorModal = (
+    field: keyof RoleCardJson,
+    title: string,
+    value: string,
+    placeholder: string
+  ) => {
+    setTextEditorModalField(field);
+    setTextEditorModalTitle(title);
+    setTextEditorModalValue(value);
+    setTextEditorModalPlaceholder(placeholder);
+    setTextEditorModalVisible(true);
+  };
+
+  const handleTextEditorModalSave = (text: string) => {
+    if (textEditorModalField) {
+      handleRoleCardChange(textEditorModalField, text);
+    }
+    setTextEditorModalVisible(false);
+  };
 
   useEffect(() => {
     const loadCharacterData = async () => {
@@ -1234,6 +1261,14 @@ const CharacterDetail: React.FC = () => {
                 value={roleCard.first_mes || ''}
                 onChangeText={(text) => handleRoleCardChange('first_mes', text)}
                 placeholder="角色与用户的第一次对话内容..."
+                onPress={() =>
+                  openTextEditorModal(
+                    'first_mes',
+                    '编辑开场白',
+                    roleCard.first_mes || '',
+                    '角色与用户的第一次对话内容...'
+                  )
+                }
               />
               
               <CharacterAttributeEditor
@@ -1242,6 +1277,14 @@ const CharacterDetail: React.FC = () => {
                 onChangeText={(text) => handleRoleCardChange('description', text)}
                 placeholder="描述角色的外表、背景等基本信息..."
                 style={styles.attributeSection}
+                onPress={() =>
+                  openTextEditorModal(
+                    'description',
+                    '编辑角色描述',
+                    roleCard.description || '',
+                    '描述角色的外表、背景等基本信息...'
+                  )
+                }
               />
               
               <CharacterAttributeEditor
@@ -1250,6 +1293,14 @@ const CharacterDetail: React.FC = () => {
                 onChangeText={(text) => handleRoleCardChange('personality', text)}
                 placeholder="描述角色的性格、习惯、喜好等..."
                 style={styles.attributeSection}
+                onPress={() =>
+                  openTextEditorModal(
+                    'personality',
+                    '编辑性格特征',
+                    roleCard.personality || '',
+                    '描述角色的性格、习惯、喜好等...'
+                  )
+                }
               />
               
               <CharacterAttributeEditor
@@ -1258,6 +1309,14 @@ const CharacterDetail: React.FC = () => {
                 onChangeText={(text) => handleRoleCardChange('scenario', text)}
                 placeholder="描述角色所在的环境、情境..."
                 style={styles.attributeSection}
+                onPress={() =>
+                  openTextEditorModal(
+                    'scenario',
+                    '编辑场景设定',
+                    roleCard.scenario || '',
+                    '描述角色所在的环境、情境...'
+                  )
+                }
               />
               
               <CharacterAttributeEditor
@@ -1266,6 +1325,14 @@ const CharacterDetail: React.FC = () => {
                 onChangeText={(text) => handleRoleCardChange('mes_example', text)}
                 placeholder="提供一些角色对话的范例..."
                 style={styles.attributeSection}
+                onPress={() =>
+                  openTextEditorModal(
+                    'mes_example',
+                    '编辑对话示例',
+                    roleCard.mes_example || '',
+                    '提供一些角色对话的范例...'
+                  )
+                }
               />
             </View>
           ) : activeTab === 'advanced' ? (
@@ -1426,6 +1493,15 @@ const CharacterDetail: React.FC = () => {
           </View>
         </View>
       </Modal>
+
+      <TextEditorModal
+        isVisible={textEditorModalVisible}
+        onClose={() => setTextEditorModalVisible(false)}
+        onSave={handleTextEditorModalSave}
+        initialText={textEditorModalValue}
+        placeholder={textEditorModalPlaceholder}
+        title={textEditorModalTitle} // 添加title参数
+      />
     </SafeAreaView>
   );
 };
