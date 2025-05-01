@@ -29,13 +29,18 @@
   </tr>
 </table>
 
-## 下载APK：
-[下载APK](https://cradleintro.top/Cradle-1.0.0-realease.apk)
-
 ## 答疑/bug反馈/意见反馈：
 qq群：1017292082
 
 ## 更新日志
+
+0502：
+
+1.修复部分安卓机型无法正确在主页执行下滑手势的问题
+
+2.支持配置OPENAI兼容渠道/hajimi轮询渠道，可以设置自己的中转或者轮询
+
+3.修复了一些局部功能尚不支持openrouter渠道的问题
 
 0501：
 1.已修复gemini渠道高级设置模型无法切换的问题
@@ -54,12 +59,6 @@ qq群：1017292082
 <font>：支持 color/face/size 属性的字体标签
 <img>：图片标签（支持 image:id 及普通 url）
 ```
-
-## 待更新：
-
-1.支持hajimi抱脸轮询（app已经内置轮询，但只是基础实现，不如hajimi功能强大）
-
-2.支持OPENAI兼容渠道API
 
 ## 正在修复
 
