@@ -301,6 +301,11 @@ const CharacterDetail: React.FC = () => {
   const [textEditorModalTitle, setTextEditorModalTitle] = useState<string>('');
   const [textEditorModalPlaceholder, setTextEditorModalPlaceholder] = useState<string>('');
 
+  // 新增状态用于统一删除弹窗
+  const [deleteDialogVisible, setDeleteDialogVisible] = useState(false);
+  const [selectedDeleteEntry, setSelectedDeleteEntry] = useState<string | null>(null);
+  const [selectedDeleteType, setSelectedDeleteType] = useState<'worldbook' | 'preset' | null>(null);
+
   const openTextEditorModal = (
     field: keyof RoleCardJson,
     title: string,
@@ -748,6 +753,38 @@ const CharacterDetail: React.FC = () => {
     setSelectedDialogAction(null);
   };
 
+  // 统一的删除条目弹窗触发函数
+  const confirmDeleteEntry = (id: string, type: 'worldbook' | 'preset') => {
+    setSelectedDeleteEntry(id);
+    setSelectedDeleteType(type);
+    setDeleteDialogVisible(true);
+  };
+
+  // 删除确认后的实际删除操作
+  const handleConfirmDeleteEntry = () => {
+    if (selectedDeleteType === 'worldbook' && selectedDeleteEntry) {
+      setWorldBookEntries(prev => prev.filter(entry => entry.id !== selectedDeleteEntry));
+      setHasUnsavedChanges(true);
+    } else if (selectedDeleteType === 'preset' && selectedDeleteEntry) {
+      const entry = presetEntries.find(e => e.id === selectedDeleteEntry);
+      if (entry?.isDefault) {
+        Alert.alert(
+          '无法删除',
+          '默认预设条目不能被删除，但可以禁用。'
+        );
+        setDeleteDialogVisible(false);
+        setSelectedDeleteEntry(null);
+        setSelectedDeleteType(null);
+        return;
+      }
+      setPresetEntries(prev => prev.filter(entry => entry.id !== selectedDeleteEntry));
+      setHasUnsavedChanges(true);
+    }
+    setDeleteDialogVisible(false);
+    setSelectedDeleteEntry(null);
+    setSelectedDeleteType(null);
+  };
+
   const handleViewDetail = (
     title: string, 
     content: string,
@@ -932,55 +969,14 @@ const CharacterDetail: React.FC = () => {
     }
   };
 
+  // 替换原有的handleDeleteWorldBookEntry
   const handleDeleteWorldBookEntry = (id: string) => {
-    Alert.alert(
-      '删除条目',
-      '确定要删除此世界书条目吗？此操作无法撤销。',
-      [
-        {
-          text: '取消',
-          style: 'cancel'
-        },
-        {
-          text: '删除',
-          style: 'destructive',
-          onPress: () => {
-            setWorldBookEntries(prev => prev.filter(entry => entry.id !== id));
-            setHasUnsavedChanges(true);
-          }
-        }
-      ]
-    );
+    confirmDeleteEntry(id, 'worldbook');
   };
 
+  // 替换原有的handleDeletePresetEntry
   const handleDeletePresetEntry = (id: string) => {
-    const entry = presetEntries.find(e => e.id === id);
-    if (entry?.isDefault) {
-      Alert.alert(
-        '无法删除',
-        '默认预设条目不能被删除，但可以禁用。'
-      );
-      return;
-    }
-
-    Alert.alert(
-      '删除条目',
-      '确定要删除此预设条目吗？此操作无法撤销。',
-      [
-        {
-          text: '取消',
-          style: 'cancel'
-        },
-        {
-          text: '删除',
-          style: 'destructive',
-          onPress: () => {
-            setPresetEntries(prev => prev.filter(entry => entry.id !== id));
-            setHasUnsavedChanges(true);
-          }
-        }
-      ]
-    );
+    confirmDeleteEntry(id, 'preset');
   };
 
   const renderTagGenerationSection = () => (
@@ -1460,6 +1456,23 @@ const CharacterDetail: React.FC = () => {
           selectedDialogAction === 'discard' ? 'alert-circle-outline' :
           selectedDialogAction === 'delete' ? 'trash-outline' : 'help-circle-outline'
         }
+      />
+      
+      {/* 新增统一删除条目弹窗 */}
+      <ConfirmDialog
+        visible={deleteDialogVisible}
+        title="删除条目"
+        message="确定要删除这个条目吗？此操作无法撤销。"
+        confirmText="删除"
+        cancelText="取消"
+        confirmAction={handleConfirmDeleteEntry}
+        cancelAction={() => {
+          setDeleteDialogVisible(false);
+          setSelectedDeleteEntry(null);
+          setSelectedDeleteType(null);
+        }}
+        destructive
+        icon="trash-outline"
       />
       
       <Modal

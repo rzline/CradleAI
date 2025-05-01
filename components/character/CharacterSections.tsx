@@ -7,7 +7,6 @@ import {
   Keyboard,
   Animated,
   PanResponder,
-  Alert,
   Dimensions,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
@@ -55,8 +54,9 @@ const SwipeableEntry: React.FC<SwipeableEntryProps> = ({
     setIsDeleting(false);
   };
 
-  // Confirm and handle delete action
-  const confirmDelete = () => {
+  // Handle delete action (no Alert here, just call onDelete)
+  const handleDelete = () => {
+    setIsDeleting(true);
     if (onDelete) {
       Animated.timing(pan, {
         toValue: -screenWidth,
@@ -69,28 +69,6 @@ const SwipeableEntry: React.FC<SwipeableEntryProps> = ({
     }
   };
 
-  // Handle initiating delete action
-  const handleDelete = () => {
-    setIsDeleting(true);
-    
-    Alert.alert(
-      '确认删除',
-      '确定要删除这个条目吗？',
-      [
-        {
-          text: '取消',
-          style: 'cancel',
-          onPress: resetSwipe
-        },
-        {
-          text: '删除',
-          style: 'destructive',
-          onPress: confirmDelete
-        }
-      ]
-    );
-  };
-  
   // Animated background color for delete area
   const deleteBackgroundColor = pan.interpolate({
     inputRange: [-deleteWidth, -deleteWidth/3],
