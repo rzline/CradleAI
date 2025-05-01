@@ -48,7 +48,7 @@ const VIEW_MODE_SMALL = 'small';
 const VIEW_MODE_LARGE = 'large';
 const VIEW_MODE_VERTICAL = 'vertical'; // New view mode
 
-const { width } = Dimensions.get('window');
+const { width, height } = Dimensions.get('window');
 const CARD_WIDTH = (width - 48) / 2;
 const CARD_HEIGHT = CARD_WIDTH * (16 / 9);
 const LARGE_CARD_WIDTH = width - 32;
@@ -61,7 +61,7 @@ const COLOR_CARD_BG = '#333333';
 const COLOR_BUTTON = 'rgb(255, 224, 195)';
 const COLOR_TEXT = '#FFFFFF';
 
-const HEADER_HEIGHT = 90;
+const HEADER_HEIGHT = Platform.OS === 'ios' ? 90 : (StatusBar.currentHeight || 0) + 56;
 
 const CharactersScreen: React.FC = () => {
   const { characters, isLoading, setIsLoading, deleteCharacters } = useCharacters();
@@ -550,7 +550,10 @@ const CharactersScreen: React.FC = () => {
   };
 
   const renderHeader = () => (
-    <View style={[styles.topBarContainer, { height: HEADER_HEIGHT, paddingTop: Platform.OS === 'ios' ? 44 : (StatusBar.currentHeight || 0) }]}>
+    <View style={[styles.topBarContainer, { 
+      height: HEADER_HEIGHT, 
+      paddingTop: Platform.OS === 'ios' ? Math.max(20, StatusBar.currentHeight || 0) : StatusBar.currentHeight || 0 
+    }]}>
       <LinearGradient
         colors={['#333', '#282828']}
         style={styles.topBarBackground}
@@ -570,12 +573,12 @@ const CharactersScreen: React.FC = () => {
                     ? "albums-outline"
                     : "apps-outline"
               } 
-              size={22} 
+              size={width > 380 ? 22 : 20} 
               color={COLOR_BUTTON} 
             />
           </TouchableOpacity>
           <TouchableOpacity style={styles.topBarActionButton} onPress={handleAddPress}>
-            <Ionicons name="add" size={24} color={COLOR_BUTTON} />
+            <Ionicons name="add" size={width > 380 ? 24 : 22} color={COLOR_BUTTON} />
           </TouchableOpacity>
           <TouchableOpacity
             style={[
@@ -584,7 +587,7 @@ const CharactersScreen: React.FC = () => {
             ]}
             onPress={handleManage}
           >
-            <FontAwesome name="wrench" size={20} color={isManaging ? '#282828' : COLOR_BUTTON} />
+            <FontAwesome name="wrench" size={width > 380 ? 20 : 18} color={isManaging ? '#282828' : COLOR_BUTTON} />
           </TouchableOpacity>
         </View>
       </View>
@@ -977,13 +980,11 @@ const CharacterCard: React.FC<{
     const [isVideoReady, setIsVideoReady] = useState(false);
     const [videoError, setVideoError] = useState<string | null>(null);
 
-    // Remove the view mode condition to allow videos in all view modes
-    const shouldShowVideo = item.dynamicPortraitEnabled && item.dynamicPortraitVideo;
-
-    const cardStyle = isLargeView
+    // Calculate responsive card styles based on screen size and view mode
+    const responsiveCardStyle = isLargeView
       ? {
           width: LARGE_CARD_WIDTH,
-          height: LARGE_CARD_HEIGHT,
+          height: width > 600 ? LARGE_CARD_WIDTH * (9 / 16) : LARGE_CARD_HEIGHT, // Adjust height for larger tablets
           marginBottom: 16,
         }
       : isVerticalView
@@ -997,6 +998,12 @@ const CharacterCard: React.FC<{
           height: CARD_HEIGHT,
           margin: 8,
         };
+
+    // Calculate button size based on screen width
+    const buttonSize = width < 360 ? 16 : 18; 
+    const fontSize = width < 360 ? 14 : 16;
+
+    const shouldShowVideo = item.dynamicPortraitEnabled && item.dynamicPortraitVideo;
 
     const handleCardPress = () => {
       if (isManaging) {
@@ -1033,7 +1040,7 @@ const CharacterCard: React.FC<{
 
     return (
       <TouchableOpacity
-        style={[styles.card, cardStyle, isManaging && styles.manageCard]}
+        style={[styles.card, responsiveCardStyle, isManaging && styles.manageCard]}
         onPress={handleCardPress}
         onLongPress={() => onSelect(item.id)}
       >
@@ -1091,60 +1098,59 @@ const CharacterCard: React.FC<{
         )}
 
         <View style={styles.cardOverlay}>
-          {/* 修改：大视图保持原样，中/小视图分两行 */}
+          {/* Responsive layout for card name and buttons */}
           {isLargeView ? (
             <>
-              <Text style={styles.cardName}>{item.name}</Text>
+              <Text style={[styles.cardName, { fontSize }]}>{item.name}</Text>
               {!isManaging && (
-                <View style={{ flexDirection: 'row', gap: 6 }}>
+                <View style={{ flexDirection: 'row', gap: width < 360 ? 4 : 6 }}>
                   <TouchableOpacity
-                    style={styles.diaryButton}
+                    style={[styles.diaryButton, { width: width < 360 ? 28 : 32, height: width < 360 ? 28 : 32 }]}
                     onPress={e => {
                       e.stopPropagation();
                       onOpenDiary(item.id);
                     }}
                   >
-                    <Ionicons name="book-outline" size={18} color="#fff" />
+                    <Ionicons name="book-outline" size={buttonSize} color="#fff" />
                   </TouchableOpacity>
-                  {/* 仅非管理模式下显示图库按钮 */}
+                  {/* Remaining buttons with responsive sizing */}
                   <TouchableOpacity
-                    style={styles.diaryButton}
+                    style={[styles.diaryButton, { width: width < 360 ? 28 : 32, height: width < 360 ? 28 : 32 }]}
                     onPress={e => {
                       e.stopPropagation();
                       onOpenGallerySidebar(item);
                     }}
                   >
-                    <Ionicons name="images-outline" size={18} color="#fff" />
+                    <Ionicons name="images-outline" size={buttonSize} color="#fff" />
                   </TouchableOpacity>
                   <TouchableOpacity
-                    style={styles.diaryButton}
+                    style={[styles.diaryButton, { width: width < 360 ? 28 : 32, height: width < 360 ? 28 : 32 }]}
                     onPress={e => {
                       e.stopPropagation();
                       onOpenImageGen(item);
                     }}
                   >
-                    <Ionicons name="color-wand-outline" size={18} color="#fff" />
+                    <Ionicons name="color-wand-outline" size={buttonSize} color="#fff" />
                   </TouchableOpacity>
-                  {/* 编辑按钮，最右侧 */}
                   <TouchableOpacity
-                    style={styles.diaryButton}
+                    style={[styles.diaryButton, { width: width < 360 ? 28 : 32, height: width < 360 ? 28 : 32 }]}
                     onPress={e => {
                       e.stopPropagation();
                       onOpenEditDialog && onOpenEditDialog(item);
                     }}
                   >
-                    <Ionicons name="construct-outline" size={18} color="#fff" />
+                    <Ionicons name="construct-outline" size={buttonSize} color="#fff" />
                   </TouchableOpacity>
                 </View>
               )}
             </>
           ) : (
-            // 中/小视图：名字和按钮分两行
+            // For smaller view mode, stack vertically and use smaller fonts/buttons
             <View style={{ flex: 1, width: '100%' }}>
               <Text
                 style={[
                   styles.cardName,
-                  { marginBottom: 6, width: '100%' }
+                  { marginBottom: 6, width: '100%', fontSize: width < 360 ? 13 : 15 }
                 ]}
                 numberOfLines={1}
                 ellipsizeMode="tail"
@@ -1152,44 +1158,43 @@ const CharacterCard: React.FC<{
                 {item.name}
               </Text>
               {!isManaging && (
-                <View style={{ flexDirection: 'row', gap: 6 }}>
+                <View style={{ flexDirection: 'row', gap: width < 360 ? 3 : 6 }}>
+                  {/* Small mode buttons with responsive sizing */}
                   <TouchableOpacity
-                    style={styles.diaryButton}
+                    style={[styles.diaryButton, { width: width < 360 ? 26 : 30, height: width < 360 ? 26 : 30 }]}
                     onPress={e => {
                       e.stopPropagation();
                       onOpenDiary(item.id);
                     }}
                   >
-                    <Ionicons name="book-outline" size={18} color="#fff" />
+                    <Ionicons name="book-outline" size={buttonSize - 2} color="#fff" />
                   </TouchableOpacity>
-                  {/* 仅非管理模式下显示图库按钮 */}
                   <TouchableOpacity
-                    style={styles.diaryButton}
+                    style={[styles.diaryButton, { width: width < 360 ? 26 : 30, height: width < 360 ? 26 : 30 }]}
                     onPress={e => {
                       e.stopPropagation();
                       onOpenGallerySidebar(item);
                     }}
                   >
-                    <Ionicons name="images-outline" size={18} color="#fff" />
+                    <Ionicons name="images-outline" size={buttonSize - 2} color="#fff" />
                   </TouchableOpacity>
                   <TouchableOpacity
-                    style={styles.diaryButton}
+                    style={[styles.diaryButton, { width: width < 360 ? 26 : 30, height: width < 360 ? 26 : 30 }]}
                     onPress={e => {
                       e.stopPropagation();
                       onOpenImageGen(item);
                     }}
                   >
-                    <Ionicons name="color-wand-outline" size={18} color="#fff" />
+                    <Ionicons name="color-wand-outline" size={buttonSize - 2} color="#fff" />
                   </TouchableOpacity>
-                  {/* 编辑按钮，最右侧 */}
                   <TouchableOpacity
-                    style={styles.diaryButton}
+                    style={[styles.diaryButton, { width: width < 360 ? 26 : 30, height: width < 360 ? 26 : 30 }]}
                     onPress={e => {
                       e.stopPropagation();
                       onOpenEditDialog && onOpenEditDialog(item);
                     }}
                   >
-                    <Ionicons name="construct-outline" size={18} color="#fff" />
+                    <Ionicons name="construct-outline" size={buttonSize - 2} color="#fff" />
                   </TouchableOpacity>
                 </View>
               )}
@@ -1197,11 +1202,16 @@ const CharacterCard: React.FC<{
           )}
         </View>
 
+        {/* Make checkbox responsive */}
         {isManaging && (
           <View
-            style={[styles.checkboxContainer, isSelected && styles.checkboxSelected]}
+            style={[
+              styles.checkboxContainer, 
+              isSelected && styles.checkboxSelected,
+              { width: width < 360 ? 20 : 24, height: width < 360 ? 20 : 24 }
+            ]}
           >
-            {isSelected && <Ionicons name="checkmark" size={16} color="black" />}
+            {isSelected && <Ionicons name="checkmark" size={width < 360 ? 14 : 16} color="black" />}
           </View>
         )}
       </TouchableOpacity>
@@ -1267,6 +1277,9 @@ const styles = StyleSheet.create<Styles>({
     borderBottomColor: 'rgba(255, 224, 195, 0.2)',
     zIndex: 10,
   },
+  topBarMenuButton: {
+    padding: width > 380 ? 8 : 6,
+  },
   headerContent: {
     flexDirection: 'row',
     justifyContent: 'space-between',
@@ -1298,7 +1311,7 @@ const styles = StyleSheet.create<Styles>({
     backgroundColor: COLOR_BUTTON,
   },
   listContainer: {
-    padding: 16,
+    padding: width < 360 ? 12 : 16,
     paddingBottom: 100,
     alignItems: 'flex-start',
   },
@@ -1334,7 +1347,6 @@ const styles = StyleSheet.create<Styles>({
   },
   cardName: {
     color: COLOR_TEXT,
-    fontSize: 16,
     fontWeight: '500',
     flex: 1,
   },
@@ -1364,9 +1376,9 @@ const styles = StyleSheet.create<Styles>({
     position: 'absolute',
     right: 16,
     bottom: 16,
-    width: 50,
-    height: 50,
-    borderRadius: 25,
+    width: width < 360 ? 46 : 50,
+    height: width < 360 ? 46 : 50,
+    borderRadius: width < 360 ? 23 : 25,
     backgroundColor: theme.colors.primaryDark,
     justifyContent: 'center',
     alignItems: 'center',
@@ -1496,11 +1508,8 @@ const styles = StyleSheet.create<Styles>({
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
-    paddingHorizontal: 12,
+    paddingHorizontal: width < 360 ? 8 : 12,
     height: '100%',
-  },
-  topBarMenuButton: {
-    padding: 8,
   },
   topBarTitleContainer: {
     flex: 1,
@@ -1510,7 +1519,7 @@ const styles = StyleSheet.create<Styles>({
   },
   topBarTitle: {
     color: '#fff',
-    fontSize: 18,
+    fontSize: width > 380 ? 18 : 16,
     fontWeight: '600',
     textShadowColor: 'rgba(0, 0, 0, 0.75)',
     textShadowOffset: { width: 1, height: 1 },
@@ -1521,8 +1530,8 @@ const styles = StyleSheet.create<Styles>({
     alignItems: 'center',
   },
   topBarActionButton: {
-    padding: 8,
-    marginLeft: 4,
+    padding: width > 380 ? 8 : 6,
+    marginLeft: width > 380 ? 4 : 2,
     backgroundColor: 'rgba(255,255,255,0.1)',
     borderRadius: 20,
   },

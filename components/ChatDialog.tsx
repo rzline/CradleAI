@@ -44,12 +44,16 @@ interface ExtendedChatDialogProps extends ChatDialogProps {
   onShowFullHistory?: () => void; // 新增
 }
 
-const { width } = Dimensions.get('window');
-// Adjust the maximum width to ensure proper margins
-const MAX_WIDTH = width * 0.88; // Decreased from 0.9 to 0.88 to add more margin
-const MAX_IMAGE_HEIGHT = 300; // Maximum height for images in chat
-const DEFAULT_IMAGE_WIDTH = 240;
-const DEFAULT_IMAGE_HEIGHT = 360;
+const { width, height } = Dimensions.get('window');
+// Calculate responsive sizes based on screen dimensions
+// Adjust the maximum width to ensure proper margins on different screen sizes
+const MAX_WIDTH = Math.min(width * 0.88, 500); // Cap at 500px for larger tablets
+const MIN_PADDING = 8; // Minimum padding for small screens
+const RESPONSIVE_PADDING = Math.max(MIN_PADDING, width * 0.02); // Responsive padding
+const MAX_IMAGE_HEIGHT = Math.min(300, height * 0.4); // Adaptive max height for images
+const DEFAULT_IMAGE_WIDTH = Math.min(240, width * 0.6);
+const DEFAULT_IMAGE_HEIGHT = Math.min(360, height * 0.5);
+const AVATAR_SIZE = Math.max(Math.min(width * 0.075, 30), 24); // Between 24-30dp
 
 const getImageDisplayStyle = (imageInfo?: any) => {
   // 默认比例 832x1216
@@ -80,7 +84,7 @@ const getImageDisplayStyle = (imageInfo?: any) => {
   return {
     width,
     height,
-    maxWidth: 320,
+    maxWidth: Math.min(320, width * 0.8), // Responsive max width
     maxHeight: MAX_IMAGE_HEIGHT,
     borderRadius: 8,
     backgroundColor: 'rgba(42, 42, 42, 0.5)',
@@ -746,14 +750,14 @@ if (linkMatches.length > 0) {
                 ? { uri: String(selectedCharacter.avatar) }
                 : require('@/assets/images/default-avatar.png')
             }
-            style={styles.messageAvatar}
+            style={[styles.messageAvatar, { width: AVATAR_SIZE, height: AVATAR_SIZE, borderRadius: AVATAR_SIZE / 2 }]}
           />
         )}
         {isUser ? (
-          <View style={styles.userMessageWrapper}>
+          <View style={[styles.userMessageWrapper, {maxWidth: MAX_WIDTH}]}>
             <LinearGradient
               colors={['rgba(255, 224, 195, 0.95)', 'rgba(255, 200, 170, 0.95)']}
-              style={styles.userGradient}
+              style={[styles.userGradient, {borderRadius: 18, borderTopRightRadius: 4}]}
             >
               {processMessageContent(message.text, true)}
 
@@ -761,12 +765,12 @@ if (linkMatches.length > 0) {
             {user?.avatar && (
               <Image
                 source={{ uri: String(user.avatar) }}
-                style={styles.userMessageAvatar}
+                style={[styles.userMessageAvatar, { width: AVATAR_SIZE, height: AVATAR_SIZE, borderRadius: AVATAR_SIZE / 2 }]}
               />
             )}
           </View>
         ) : (
-          <View style={styles.botMessageTextContainer}>
+          <View style={[styles.botMessageTextContainer, {maxWidth: MAX_WIDTH}]}>
             {message.isLoading ? (
               <View style={styles.loadingContainer}>
                 <Animated.View style={[styles.loadingDot, dot1Style]} />
@@ -1148,7 +1152,7 @@ const styles = StyleSheet.create({
     backgroundColor: 'transparent',
   },
   content: {
-    paddingVertical: 16,
+    paddingVertical: RESPONSIVE_PADDING + 8, // Add extra top/bottom padding
   },
   emptyContent: {
     flex: 1,
@@ -1160,7 +1164,8 @@ const styles = StyleSheet.create({
     paddingHorizontal: 12,
   },
   messageWrapper: {
-    marginBottom: 16,
+    marginBottom: Math.max(12, height * 0.02), // Responsive vertical spacing between messages
+    width: '100%', // Ensure full width
   },
   messageContainer: {
     flexDirection: 'row',
@@ -1169,9 +1174,11 @@ const styles = StyleSheet.create({
   },
   userMessageContainer: {
     justifyContent: 'flex-end',
+    paddingRight: RESPONSIVE_PADDING, // Add padding on the right for user messages
   },
   botMessageContainer: {
     justifyContent: 'flex-start',
+    paddingLeft: RESPONSIVE_PADDING, // Add padding on the left for bot messages
   },
   avatarContainer: {
     width: 36,
@@ -1190,7 +1197,7 @@ const styles = StyleSheet.create({
     alignItems: 'flex-start',
     maxWidth: '100%',
     minHeight: 40,
-    marginHorizontal: 8,
+    marginHorizontal: RESPONSIVE_PADDING, // Responsive horizontal margin
     alignSelf: 'center',
     position: 'relative',
   },
@@ -1206,34 +1213,31 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'flex-start',
     justifyContent: 'flex-end',
-    maxWidth: '100%',
     position: 'relative',
     minHeight: 40,
   },
   userGradient: {
-    borderRadius: 18,
-    borderTopRightRadius: 4,
-    padding: 12,
-    paddingHorizontal: 16,
-    },
+    padding: RESPONSIVE_PADDING + 4,
+    paddingHorizontal: RESPONSIVE_PADDING + 8,
+  },
   userMessageText: {
     color: '#333',
-    fontSize: 16,
+    fontSize: Math.min(Math.max(14, width * 0.04), 16), // Responsive font size between 14-16
   },
   botMessageTextContainer: {
     backgroundColor: 'rgba(68, 68, 68, 0.85)', // Semi-transparent background
     borderRadius: 18,
     borderTopLeftRadius: 4,
-    padding: 12,
-    paddingHorizontal: 16,
+    padding: RESPONSIVE_PADDING + 4,
+    paddingHorizontal: RESPONSIVE_PADDING + 8,
     width: '100%', // Ensure content takes full width available
-    paddingTop: 20, // Extra padding at top to accommodate avatar
+    paddingTop: RESPONSIVE_PADDING + 12, // Extra padding at top to accommodate avatar
     maxWidth: '98%', // Ensure it doesn't exceed parent width
-    marginTop: 15, // Space for the avatar
+    marginTop: AVATAR_SIZE / 2, // Adjust space for the avatar
   },
   botMessageText: {
     color: '#fff',
-    fontSize: 16,
+    fontSize: Math.min(Math.max(14, width * 0.04), 16), // Responsive font size between 14-16
   },
   loadingMessage: {
     minWidth: 80,
@@ -1255,8 +1259,9 @@ const styles = StyleSheet.create({
   messageActions: {
     flexDirection: 'row',
     justifyContent: 'flex-end',
-    marginTop: 8,
+    marginTop: RESPONSIVE_PADDING,
     alignItems: 'center',
+    flexWrap: 'wrap', // Allow wrapping of buttons on small screens
   },
   rateButton: {
     padding: 8,
@@ -1269,11 +1274,11 @@ const styles = StyleSheet.create({
   },
   timeGroup: {
     alignItems: 'center',
-    marginVertical: 8,
+    marginVertical: RESPONSIVE_PADDING,
   },
   timeText: {
     color: '#ddd',
-    fontSize: 12,
+    fontSize: Math.min(Math.max(10, width * 0.03), 12), // Responsive font size between 10-12
     backgroundColor: 'rgba(0, 0, 0, 0.4)',
     paddingHorizontal: 10,
     paddingVertical: 2,
@@ -1464,6 +1469,7 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     marginRight: 8,
+    flexWrap: 'wrap', // Allow buttons to wrap on smaller screens
   },
   ttsButton: {
     width: 32,
@@ -1472,6 +1478,7 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     alignItems: 'center',
     marginRight: 4,
+    marginBottom: 4, // Add bottom margin for wrapping
   },
   ttsButtonActive: {
     backgroundColor: 'black', // 米黄色加深
@@ -1696,9 +1703,6 @@ const styles = StyleSheet.create({
   },
   // AI avatar at top-left of bubble
   messageAvatar: {
-    width: 30,
-    height: 30,
-    borderRadius: 15,
     position: 'absolute',
     left: 10,
     top: -15,
@@ -1709,9 +1713,6 @@ const styles = StyleSheet.create({
   },
   // User avatar at top-right of bubble
   userMessageAvatar: {
-    width: 30,
-    height: 30,
-    borderRadius: 15,
     position: 'absolute',
     right: -38,
     top: -15,

@@ -49,6 +49,9 @@ interface TopBarWithBackgroundProps {
 
 const HEADER_HEIGHT = 90;
 const { width } = Dimensions.get('window');
+const BUTTON_SIZE = Math.max(Math.min(width * 0.07, 28), 24); // Between 24-28dp depending on screen size
+const AVATAR_SIZE = Math.max(Math.min(width * 0.1, 40), 34); // Between 34-40dp depending on screen size
+const ACTION_BUTTON_HIT_SLOP = { top: 10, bottom: 10, left: 10, right: 10 }; // Larger touch area
 
 const TopBarWithBackground: React.FC<TopBarWithBackgroundProps> = ({
   selectedCharacter,
@@ -157,8 +160,9 @@ const TopBarWithBackground: React.FC<TopBarWithBackgroundProps> = ({
           <TouchableOpacity
             style={styles.menuButton}
             onPress={onMenuPress}
+            hitSlop={ACTION_BUTTON_HIT_SLOP}
           >
-            <Ionicons name="menu" size={26} color="#fff" />
+            <Ionicons name="menu" size={BUTTON_SIZE} color="#fff" />
           </TouchableOpacity>
 
           {/* Only show character info when not in empty state or in group mode */}
@@ -172,7 +176,7 @@ const TopBarWithBackground: React.FC<TopBarWithBackgroundProps> = ({
                   <View style={styles.groupAvatarWrapper}>
                     <GroupAvatar
                       members={groupMembers}
-                      size={40}
+                      size={AVATAR_SIZE}
                       maxDisplayed={4}
                     />
                   </View>
@@ -183,7 +187,7 @@ const TopBarWithBackground: React.FC<TopBarWithBackgroundProps> = ({
                         ? { uri: String(selectedCharacter.avatar) }
                         : require('@/assets/images/default-avatar.png')
                     }
-                    style={styles.avatar}
+                    style={[styles.avatar, { width: AVATAR_SIZE, height: AVATAR_SIZE, borderRadius: AVATAR_SIZE / 2 }]}
                   />
                 )}
               </TouchableOpacity>
@@ -219,8 +223,9 @@ const TopBarWithBackground: React.FC<TopBarWithBackgroundProps> = ({
               <TouchableOpacity
                 style={styles.actionButton}
                 onPress={onMemoPress}
+                hitSlop={ACTION_BUTTON_HIT_SLOP}
               >
-                <MaterialCommunityIcons name="notebook-outline" size={24} color="#fff" />
+                <MaterialCommunityIcons name="notebook-outline" size={BUTTON_SIZE} color="#fff" />
               </TouchableOpacity>
             )}
 
@@ -229,15 +234,20 @@ const TopBarWithBackground: React.FC<TopBarWithBackgroundProps> = ({
               <TouchableOpacity
                 style={styles.actionButton}
                 onPress={isGroupMode ? onGroupSettingsPress : onSettingsPress}
+                hitSlop={ACTION_BUTTON_HIT_SLOP}
               >
-                <Ionicons name="settings-outline" size={24} color="#fff" />
+                <Ionicons name="settings-outline" size={BUTTON_SIZE} color="#fff" />
               </TouchableOpacity>
             )}
 
             {/* Only show save manager button if not in empty state and not in group mode */}
             {!isEmpty && !isGroupMode && onSaveManagerPress && (
-              <TouchableOpacity onPress={onSaveManagerPress} style={styles.actionButton}>
-                <Ionicons name="bookmark-outline" size={24} color="#fff" />
+              <TouchableOpacity 
+                onPress={onSaveManagerPress} 
+                style={styles.actionButton}
+                hitSlop={ACTION_BUTTON_HIT_SLOP}
+              >
+                <Ionicons name="bookmark-outline" size={BUTTON_SIZE} color="#fff" />
               </TouchableOpacity>
             )}
 
@@ -246,8 +256,9 @@ const TopBarWithBackground: React.FC<TopBarWithBackgroundProps> = ({
               <TouchableOpacity
                 onPress={onAvatarPress}
                 style={[styles.actionButton, styles.groupManageButton]}
+                hitSlop={ACTION_BUTTON_HIT_SLOP}
               >
-                <Ionicons name="people" size={24} color="#fff" />
+                <Ionicons name="people" size={BUTTON_SIZE} color="#fff" />
               </TouchableOpacity>
             )}
           </View>
@@ -264,8 +275,8 @@ const TopBarWithBackground: React.FC<TopBarWithBackgroundProps> = ({
 
 const styles = StyleSheet.create({
   groupAvatarWrapper: {
-    width: 40,
-    height: 40,
+    width: AVATAR_SIZE,
+    height: AVATAR_SIZE,
     alignItems: 'center',
     justifyContent: 'center',
   },
@@ -314,30 +325,30 @@ const styles = StyleSheet.create({
     paddingHorizontal: 12,
   },
   menuButton: {
-    padding: 8,
+    padding: Math.max(6, width * 0.015), // Responsive padding
+    justifyContent: 'center',
+    alignItems: 'center',
   },
   characterInfo: {
     flexDirection: 'row',
     alignItems: 'center',
     flex: 1,
-    paddingHorizontal: 8,
+    paddingHorizontal: Math.max(6, width * 0.02), // Responsive horizontal padding
   },
   avatarContainer: {
-    marginRight: 12,
+    marginRight: Math.max(8, width * 0.03), // Responsive margin
   },
   avatar: {
-    width: 40,
-    height: 40,
-    borderRadius: 20,
     borderWidth: 2,
     borderColor: 'rgb(255, 224, 195)',
   },
   nameContainer: {
     flex: 1,
+    paddingRight: Math.max(4, width * 0.01), // Add padding to prevent text from touching buttons
   },
   characterName: {
     color: '#fff',
-    fontSize: 18,
+    fontSize: Math.min(Math.max(16, width * 0.045), 18), // Responsive font size between 16-18
     fontWeight: '600',
     textShadowColor: 'rgba(0, 0, 0, 0.75)',
     textShadowOffset: { width: 1, height: 1 },
@@ -346,16 +357,21 @@ const styles = StyleSheet.create({
   actions: {
     flexDirection: 'row',
     alignItems: 'center',
+    marginRight: Math.max(4, width * 0.01), // Add some right margin
   },
   actionButton: {
-    padding: 8,
-    marginLeft: 4,
+    padding: Math.max(6, width * 0.015), // Responsive padding
+    marginLeft: Math.max(2, width * 0.01), // Responsive margin
     position: 'relative',
+    justifyContent: 'center',
+    alignItems: 'center',
+    minWidth: BUTTON_SIZE + 12, // Ensure minimum touch target size
+    minHeight: BUTTON_SIZE + 12, // Ensure minimum touch target size
   },
   groupManageButton: {
     borderRadius: 20,
-    padding: 8,
-    marginLeft: 8,
+    padding: Math.max(6, width * 0.015), // Responsive padding
+    marginLeft: Math.max(6, width * 0.015), // Responsive margin
     zIndex: 5,
   },
   emptySpace: {

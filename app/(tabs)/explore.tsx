@@ -39,12 +39,13 @@ import { CircleScheduler } from '@/services/circle-scheduler';
 import { NodeSTManager } from '@/utils/NodeSTManager';
 import { GeminiAdapter } from '@/NodeST/nodest/utils/gemini-adapter';
 import { ImageManager } from '@/utils/ImageManager';
-import * as FileSystem from 'expo-file-system'; // 新增导入
+import * as FileSystem from 'expo-file-system';
 
-const { width } = Dimensions.get('window');
+const { width, height } = Dimensions.get('window');
 const CARD_WIDTH = width - 32;
-const AVATAR_SIZE = 48;
-const HEADER_HEIGHT = 90;
+const AVATAR_SIZE = width > 400 ? 48 : 40;
+const HEADER_HEIGHT = Platform.OS === 'ios' ? 90 : (StatusBar.currentHeight || 0) + 56;
+
 const Explore: React.FC = () => {
   const { characters, setCharacters, updateCharacter, toggleFavorite, addMessage } = useCharacters();
   const { user } = useUser();
@@ -1054,7 +1055,10 @@ const Explore: React.FC = () => {
 
   // 新的顶部栏，完全对齐TopBarWithBackground.tsx
   const renderHeader = () => (
-    <View style={[styles.topBarContainer, { height: HEADER_HEIGHT, paddingTop: Platform.OS === 'ios' ? 44 : (StatusBar.currentHeight || 0) }]}>
+    <View style={[styles.topBarContainer, { 
+      height: HEADER_HEIGHT, 
+      paddingTop: Platform.OS === 'ios' ? Math.max(20, StatusBar.currentHeight || 0) : StatusBar.currentHeight || 0 
+    }]}>
       <View style={styles.topBarOverlay} />
       <View style={styles.topBarContent}>
         <View style={styles.topBarTitleContainer}>
@@ -1066,14 +1070,14 @@ const Explore: React.FC = () => {
             onPress={() => setShowInteractionSettings(true)}
             disabled={isLoading}
           >
-            <Ionicons name="settings-outline" size={22} color={theme.colors.buttonText} />
+            <Ionicons name="settings-outline" size={width > 380 ? 22 : 20} color={theme.colors.buttonText} />
           </TouchableOpacity>
           <TouchableOpacity 
             style={styles.topBarActionButton}
             onPress={() => setShowUserPostModal(true)}
             disabled={isLoading}
           >
-            <Feather name="plus" size={24} color={theme.colors.buttonText} />
+            <Feather name="plus" size={width > 380 ? 24 : 22} color={theme.colors.buttonText} />
           </TouchableOpacity>
           <TouchableOpacity 
             style={[
@@ -1086,7 +1090,7 @@ const Explore: React.FC = () => {
             {publishingPost ? (
               <ActivityIndicator size="small" color={theme.colors.text} />
             ) : (
-              <MaterialIcons name="auto-awesome" size={22} color={theme.colors.buttonText} />
+              <MaterialIcons name="auto-awesome" size={width > 380 ? 22 : 20} color={theme.colors.buttonText} />
             )}
           </TouchableOpacity>
         </View>
@@ -1466,7 +1470,7 @@ const Explore: React.FC = () => {
       activeOpacity={1}
       onLongPress={() => showPostMenu(item)}
       delayLongPress={500}
-      style={styles.card}
+      style={[styles.card, { width: CARD_WIDTH }]}
       key={item.id}
     >
       <View style={styles.cardHeader}>
@@ -1529,17 +1533,33 @@ const Explore: React.FC = () => {
       )}
       
       {/* Show images if available */}
-      {item.images && item.images.length > 0 && (
-        <View style={styles.imagesContainer}>
-          {item.images.map((image, index) => (
-            <TouchableOpacity
-              key={index}
-              onPress={() => handleImagePress(item.images!, index)}
-              activeOpacity={0.8}
-            >
-              <Image source={{ uri: image }} style={styles.contentImage} />
-            </TouchableOpacity>
-          ))}
+        {item.images && item.images.length > 0 && (
+      <View style={[
+        styles.imagesContainer, 
+        { flexDirection: item.images.length === 1 ? 'column' : 'row' }
+      ]}>
+        {item.images.map((image, index) => {
+          const images = item.images || [];
+          const imageSize = images.length === 1 
+            ? { width: CARD_WIDTH - 16, height: 200 }
+            : images.length === 2
+              ? { width: (CARD_WIDTH - 24) / 2, height: 180 }
+              : { width: (CARD_WIDTH - 32) / Math.min(images.length, 3), height: 120 };
+            
+            return (
+              <TouchableOpacity
+                key={index}
+                onPress={() => handleImagePress(item.images!, index)}
+                activeOpacity={0.8}
+                style={{ margin: 4 }}
+              >
+                <Image 
+                  source={{ uri: image }} 
+                  style={[styles.contentImage, imageSize]}
+                />
+              </TouchableOpacity>
+            );
+          })}
         </View>
       )}
 
@@ -1857,10 +1877,9 @@ const styles = StyleSheet.create({
 
   // Post and card styles
   card: {
-    width: CARD_WIDTH,
     backgroundColor: theme.colors.cardBackground,
     borderRadius: theme.borderRadius.md,
-    padding: theme.spacing.md,
+    padding: width > 380 ? theme.spacing.md : theme.spacing.sm,
     marginBottom: theme.spacing.md,
     flex: 1,
   },
@@ -1877,7 +1896,7 @@ const styles = StyleSheet.create({
   },
   authorName: {
     color: theme.colors.text,
-    fontSize: theme.fontSizes.md,
+    fontSize: width > 380 ? theme.fontSizes.md : theme.fontSizes.sm,
     fontWeight: 'bold',
   },
   timestamp: {
@@ -1931,12 +1950,12 @@ const styles = StyleSheet.create({
   comment: {
     flexDirection: 'row',
     alignItems: 'flex-start',
-    paddingVertical: theme.spacing.sm,
+    paddingVertical: width > 380 ? theme.spacing.sm : theme.spacing.xs,
   },
   commentAvatar: {
-    width: 32,
-    height: 32,
-    borderRadius: 16,
+    width: width > 380 ? 32 : 28,
+    height: width > 380 ? 32 : 28,
+    borderRadius: width > 380 ? 16 : 14,
     marginRight: theme.spacing.sm,
   },
   commentContent: {
@@ -1945,11 +1964,13 @@ const styles = StyleSheet.create({
   commentAuthor: {
     color: theme.colors.text,
     fontWeight: 'bold',
+    fontSize: width > 380 ? theme.fontSizes.md : theme.fontSizes.sm,
     marginBottom: 2,
   },
   commentText: {
     color: theme.colors.text,
     flexShrink: 1,
+    fontSize: width > 380 ? theme.fontSizes.md : theme.fontSizes.sm,
   },
   replyText: {
     color: theme.colors.primary,
@@ -2083,7 +2104,7 @@ const styles = StyleSheet.create({
     alignItems: 'center',
   },
   modalContent: {
-    width: '90%',
+    width: width > 600 ? '80%' : '90%',
     maxHeight: '80%',
     backgroundColor: theme.colors.cardBackground,
     borderRadius: theme.borderRadius.md,
@@ -2174,16 +2195,13 @@ const styles = StyleSheet.create({
   
   // Images container style
   imagesContainer: {
-    flexDirection: 'row',
     flexWrap: 'wrap',
     marginVertical: theme.spacing.sm,
+    justifyContent: 'flex-start',
   },
   
   contentImage: {
-    width: CARD_WIDTH / 2 - 12,
-    height: 150,
     borderRadius: theme.borderRadius.sm,
-    margin: 4,
     backgroundColor: theme.colors.input,
   },
 
@@ -2342,7 +2360,7 @@ const styles = StyleSheet.create({
   },
   topBarTitle: {
     color: '#fff',
-    fontSize: 18,
+    fontSize: width > 380 ? 18 : 16,
     fontWeight: '600',
     textShadowColor: 'rgba(0, 0, 0, 0.75)',
     textShadowOffset: { width: 1, height: 1 },
@@ -2353,7 +2371,7 @@ const styles = StyleSheet.create({
     alignItems: 'center',
   },
   topBarActionButton: {
-    padding: 8,
+    padding: width > 380 ? 8 : 6,
     marginLeft: 4,
     backgroundColor: 'rgba(255,255,255,0.1)',
     borderRadius: 20,

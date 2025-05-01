@@ -34,6 +34,7 @@ const ApiSettings = () => {
   const router = useRouter();
   const { user, updateSettings } = useUser();
   const [isTesting, setIsTesting] = useState(false);
+  const [showProviderDropdown, setShowProviderDropdown] = useState(false);
 
   // 互斥逻辑：只允许一个 provider 被启用
   const [providerType, setProviderType] = useState<'gemini' | 'openrouter' | 'openai-compatible'>(
@@ -51,6 +52,16 @@ const ApiSettings = () => {
 
   const handleProviderTypeChange = (type: 'gemini' | 'openrouter' | 'openai-compatible') => {
     setProviderType(type);
+    setShowProviderDropdown(false);
+  };
+
+  const getProviderDisplayName = (type: string): string => {
+    switch (type) {
+      case 'gemini': return 'Gemini';
+      case 'openrouter': return 'OpenRouter';
+      case 'openai-compatible': return 'OpenAI兼容';
+      default: return 'Unknown';
+    }
   };
 
   // Gemini settings
@@ -936,51 +947,16 @@ const ApiSettings = () => {
             <View style={styles.sectionHeader}>
               <Text style={styles.sectionTitle}>API 渠道</Text>
             </View>
-            <View style={{ flexDirection: 'row', justifyContent: 'flex-start', padding: 16 }}>
+            <View style={styles.contentSection}>
+              <Text style={styles.inputLabel}>选择 API 提供商</Text>
               <TouchableOpacity
-                style={[
-                  styles.providerTab,
-                  providerType === 'gemini' && styles.providerTabSelected
-                ]}
-                onPress={() => handleProviderTypeChange('gemini')}
+                style={styles.providerDropdown}
+                onPress={() => setShowProviderDropdown(true)}
               >
-                <Text
-                  style={providerType === 'gemini' ? styles.providerTabTextSelected : styles.providerTabText}
-                  numberOfLines={1}
-                  ellipsizeMode="tail"
-                >
-                  Gemini
+                <Text style={styles.providerDropdownText}>
+                  {getProviderDisplayName(providerType)}
                 </Text>
-              </TouchableOpacity>
-              <TouchableOpacity
-                style={[
-                  styles.providerTab,
-                  providerType === 'openrouter' && styles.providerTabSelected
-                ]}
-                onPress={() => handleProviderTypeChange('openrouter')}
-              >
-                <Text
-                  style={providerType === 'openrouter' ? styles.providerTabTextSelected : styles.providerTabText}
-                  numberOfLines={1}
-                  ellipsizeMode="tail"
-                >
-                  OpenRouter
-                </Text>
-              </TouchableOpacity>
-              <TouchableOpacity
-                style={[
-                  styles.providerTab,
-                  providerType === 'openai-compatible' && styles.providerTabSelected
-                ]}
-                onPress={() => handleProviderTypeChange('openai-compatible')}
-              >
-                <Text
-                  style={providerType === 'openai-compatible' ? styles.providerTabTextSelected : styles.providerTabText}
-                  numberOfLines={1}
-                  ellipsizeMode="tail"
-                >
-                  OpenAI兼容
-                </Text>
+                <Ionicons name="chevron-down" size={18} color="#fff" />
               </TouchableOpacity>
             </View>
           </View>
@@ -1444,6 +1420,61 @@ const ApiSettings = () => {
           </View>
         </ScrollView>
       </KeyboardAvoidingView>
+
+      {/* Provider Selection Modal */}
+      <Modal
+        visible={showProviderDropdown}
+        transparent={true}
+        animationType="fade"
+        onRequestClose={() => setShowProviderDropdown(false)}
+      >
+        <TouchableOpacity 
+          style={styles.dropdownOverlay} 
+          activeOpacity={1}
+          onPress={() => setShowProviderDropdown(false)}
+        >
+          <View style={styles.dropdownContent}>
+            <TouchableOpacity
+              style={[
+                styles.dropdownItem,
+                providerType === 'gemini' && styles.dropdownItemSelected
+              ]}
+              onPress={() => handleProviderTypeChange('gemini')}
+            >
+              <Text style={styles.dropdownItemText}>Gemini</Text>
+              {providerType === 'gemini' && (
+                <Ionicons name="checkmark" size={20} color={theme.colors.primary} />
+              )}
+            </TouchableOpacity>
+            
+            <TouchableOpacity
+              style={[
+                styles.dropdownItem,
+                providerType === 'openrouter' && styles.dropdownItemSelected
+              ]}
+              onPress={() => handleProviderTypeChange('openrouter')}
+            >
+              <Text style={styles.dropdownItemText}>OpenRouter</Text>
+              {providerType === 'openrouter' && (
+                <Ionicons name="checkmark" size={20} color={theme.colors.primary} />
+              )}
+            </TouchableOpacity>
+            
+            <TouchableOpacity
+              style={[
+                styles.dropdownItem,
+                providerType === 'openai-compatible' && styles.dropdownItemSelected
+              ]}
+              onPress={() => handleProviderTypeChange('openai-compatible')}
+            >
+              <Text style={styles.dropdownItemText}>OpenAI兼容</Text>
+              {providerType === 'openai-compatible' && (
+                <Ionicons name="checkmark" size={20} color={theme.colors.primary} />
+              )}
+            </TouchableOpacity>
+          </View>
+        </TouchableOpacity>
+      </Modal>
 
       <Modal
         visible={isModelSelectorVisible}
@@ -1970,34 +2001,48 @@ const styles = StyleSheet.create({
     fontSize: 16,
     color: '#fff',
   },
-  providerTab: {
-    // flex: 1, // 移除flex: 1
-    paddingVertical: 12,
-    paddingHorizontal: 18, // 增加水平内边距
-    marginHorizontal: 4,
-    borderRadius: 8,
-    backgroundColor: '#222',
-    alignItems: 'center',
+  providerDropdown: {
+    backgroundColor: 'rgba(40, 40, 40, 0.8)',
     borderWidth: 1,
-    borderColor: '#444',
-    minWidth: 60, // 最小宽度，防止太窄
-    alignSelf: 'flex-start', // 让按钮宽度自适应内容
+    borderColor: 'rgba(255, 255, 255, 0.2)',
+    borderRadius: 8,
+    padding: 12,
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
   },
-  providerTabSelected: {
-    backgroundColor: theme.colors.primary,
-    borderColor: theme.colors.primary,
-  },
-  providerTabText: {
+  providerDropdownText: {
     color: '#fff',
-    fontWeight: 'bold',
-    flexShrink: 1,
-    flexWrap: 'nowrap', // 不换行
+    fontSize: 16,
   },
-  providerTabTextSelected: {
-    color: '#000',
-    fontWeight: 'bold',
-    flexShrink: 1,
-    flexWrap: 'nowrap', // 不换行
+  dropdownOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(0, 0, 0, 0.5)',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  dropdownContent: {
+    backgroundColor: '#333',
+    width: '80%',
+    borderRadius: 12,
+    overflow: 'hidden',
+    borderWidth: 1,
+    borderColor: 'rgba(255, 255, 255, 0.1)',
+  },
+  dropdownItem: {
+    padding: 16,
+    borderBottomWidth: 1,
+    borderBottomColor: 'rgba(255, 255, 255, 0.1)',
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+  },
+  dropdownItemSelected: {
+    backgroundColor: 'rgba(255, 255, 255, 0.1)',
+  },
+  dropdownItemText: {
+    fontSize: 16,
+    color: '#fff',
   },
 });
 
