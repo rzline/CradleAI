@@ -932,11 +932,11 @@ const ApiSettings = () => {
         style={styles.container}
       >
         <ScrollView style={styles.scrollView} contentContainerStyle={styles.scrollContent}>
-          <View style={styles.section}>
+        <View style={styles.section}>
             <View style={styles.sectionHeader}>
-              <Text style={styles.sectionTitle}>API 渠道选择</Text>
+              <Text style={styles.sectionTitle}>API 渠道</Text>
             </View>
-            <View style={{ flexDirection: 'row', justifyContent: 'space-between', padding: 16 }}>
+            <View style={{ flexDirection: 'row', justifyContent: 'flex-start', padding: 16 }}>
               <TouchableOpacity
                 style={[
                   styles.providerTab,
@@ -944,7 +944,13 @@ const ApiSettings = () => {
                 ]}
                 onPress={() => handleProviderTypeChange('gemini')}
               >
-                <Text style={providerType === 'gemini' ? styles.providerTabTextSelected : styles.providerTabText}>Gemini</Text>
+                <Text
+                  style={providerType === 'gemini' ? styles.providerTabTextSelected : styles.providerTabText}
+                  numberOfLines={1}
+                  ellipsizeMode="tail"
+                >
+                  Gemini
+                </Text>
               </TouchableOpacity>
               <TouchableOpacity
                 style={[
@@ -953,7 +959,13 @@ const ApiSettings = () => {
                 ]}
                 onPress={() => handleProviderTypeChange('openrouter')}
               >
-                <Text style={providerType === 'openrouter' ? styles.providerTabTextSelected : styles.providerTabText}>OpenRouter</Text>
+                <Text
+                  style={providerType === 'openrouter' ? styles.providerTabTextSelected : styles.providerTabText}
+                  numberOfLines={1}
+                  ellipsizeMode="tail"
+                >
+                  OpenRouter
+                </Text>
               </TouchableOpacity>
               <TouchableOpacity
                 style={[
@@ -962,7 +974,13 @@ const ApiSettings = () => {
                 ]}
                 onPress={() => handleProviderTypeChange('openai-compatible')}
               >
-                <Text style={providerType === 'openai-compatible' ? styles.providerTabTextSelected : styles.providerTabText}>OpenAI兼容</Text>
+                <Text
+                  style={providerType === 'openai-compatible' ? styles.providerTabTextSelected : styles.providerTabText}
+                  numberOfLines={1}
+                  ellipsizeMode="tail"
+                >
+                  OpenAI兼容
+                </Text>
               </TouchableOpacity>
             </View>
           </View>
@@ -1145,10 +1163,10 @@ const ApiSettings = () => {
           {providerType === 'openai-compatible' && (
             <View style={styles.section}>
               <View style={styles.sectionHeader}>
-                <Text style={styles.sectionTitle}>NewProvider API</Text>
+                <Text style={styles.sectionTitle}>OpenAI兼容API</Text>
               </View>
               <View style={styles.contentSection}>
-                <Text style={styles.inputLabel}>NewProvider Endpoint</Text>
+                <Text style={styles.inputLabel}>OpenAI兼容端点</Text>
                 <TextInput
                   style={styles.input}
                   value={OpenAIcompatibleEndpoint}
@@ -1157,23 +1175,33 @@ const ApiSettings = () => {
                   placeholderTextColor="#999"
                   autoCapitalize="none"
                 />
-                <Text style={styles.inputLabel}>NewProvider API Key</Text>
-                <TextInput
-                  style={styles.input}
-                  value={OpenAIcompatibleKey}
-                  onChangeText={setNewProviderKey}
-                  placeholder="输入 NewProvider API Key"
-                  placeholderTextColor="#999"
-                  secureTextEntry={true}
-                />
-                <Text style={styles.inputLabel}>模型</Text>
-                <TextInput
-                  style={styles.input}
-                  value={OpenAIcompatibleModel}
-                  onChangeText={setNewProviderModel}
-                  placeholder="输入模型名"
-                  placeholderTextColor="#999"
-                />
+                <Text style={styles.helperText}>
+                  填写支持OpenAI API格式的服务端点
+                </Text>
+
+                <View style={{marginTop: 16}}>
+                  <Text style={styles.inputLabel}>OpenAI兼容APIKey</Text>
+                  <TextInput
+                    style={styles.input}
+                    value={OpenAIcompatibleKey}
+                    onChangeText={setNewProviderKey}
+                    placeholder="输入 API Key"
+                    placeholderTextColor="#999"
+                    secureTextEntry={true}
+                  />
+                </View>
+
+                <View style={{marginTop: 16}}>
+                  <Text style={styles.inputLabel}>模型</Text>
+                  <TextInput
+                    style={styles.input}
+                    value={OpenAIcompatibleModel}
+                    onChangeText={setNewProviderModel}
+                    placeholder="输入模型名"
+                    placeholderTextColor="#999"
+                  />
+                </View>
+                
                 <TouchableOpacity
                   style={[styles.testButton, { marginTop: 16 }]}
                   onPress={testOpenAIcompatibleConnection}
@@ -1182,7 +1210,7 @@ const ApiSettings = () => {
                   {isTesting ? (
                     <ActivityIndicator size="small" color="#fff" />
                   ) : (
-                    <Text style={styles.buttonText}>测试 NewProvider 连接</Text>
+                    <Text style={styles.buttonText}>测试OpenAI兼容连接</Text>
                   )}
                 </TouchableOpacity>
               </View>
@@ -1943,14 +1971,17 @@ const styles = StyleSheet.create({
     color: '#fff',
   },
   providerTab: {
-    flex: 1,
-    padding: 12,
+    // flex: 1, // 移除flex: 1
+    paddingVertical: 12,
+    paddingHorizontal: 18, // 增加水平内边距
     marginHorizontal: 4,
     borderRadius: 8,
     backgroundColor: '#222',
     alignItems: 'center',
     borderWidth: 1,
     borderColor: '#444',
+    minWidth: 60, // 最小宽度，防止太窄
+    alignSelf: 'flex-start', // 让按钮宽度自适应内容
   },
   providerTabSelected: {
     backgroundColor: theme.colors.primary,
@@ -1959,10 +1990,14 @@ const styles = StyleSheet.create({
   providerTabText: {
     color: '#fff',
     fontWeight: 'bold',
+    flexShrink: 1,
+    flexWrap: 'nowrap', // 不换行
   },
   providerTabTextSelected: {
     color: '#000',
     fontWeight: 'bold',
+    flexShrink: 1,
+    flexWrap: 'nowrap', // 不换行
   },
 });
 
