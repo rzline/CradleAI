@@ -9,10 +9,12 @@ import { getApiSettings } from '@/utils/settings-helper';
 export class MobileLLM implements LLM {
   private apiKey: string = '';
   private model: string = '';
-  private provider: 'gemini' | 'openrouter' = 'gemini';
+  private provider: 'gemini' | 'openrouter' | 'openai-compatible' = 'gemini';
   private llmAdapter: any = null; // 兼容已有适配器
   private apiProvider: string = 'gemini';
   private openrouterConfig: any = {};
+  private openaiCompatibleConfig: any = {};
+  private openaiCompatibleEndpoint: string = '';
   private pendingInitialization: Promise<void> | null = null;
   private lastConfig: LLMConfig | null = null;
   
@@ -57,10 +59,17 @@ export class MobileLLM implements LLM {
     // 更新配置，确保apiKey有值
     this.apiKey = config.apiKey || '';
     this.apiProvider = config.apiProvider || 'gemini';
-    this.provider = this.apiProvider === 'openrouter' ? 'openrouter' : 'gemini';
+    this.provider = this.apiProvider === 'openrouter' ? 'openrouter' : this.apiProvider === 'openai-compatible' ? 'openai-compatible' : 'gemini';
     
-    // 只使用api-settings中的模型配置
-    if (this.provider === 'openrouter') {
+    // 检查 openai-compatible 渠道
+    if (config.apiProvider === 'openai-compatible') {
+      this.provider = 'openai-compatible';
+      this.apiProvider = 'openai-compatible';
+      this.model = config.OpenAIcompatible?.model || 'gpt-3.5-turbo';
+      this.apiKey = config.OpenAIcompatible?.apiKey || '';
+      this.openaiCompatibleEndpoint = config.OpenAIcompatible?.endpoint || '';
+      this.openaiCompatibleConfig = config.OpenAIcompatible || {};
+    } else if (this.apiProvider === 'openrouter') {
       this.model = config.openrouter?.model || 'openai/gpt-3.5-turbo';
       this.openrouterConfig = config.openrouter || {};
     } else {
@@ -139,6 +148,25 @@ export class MobileLLM implements LLM {
           );
           console.log('[MobileLLM] OpenRouterAdapter 异步初始化成功');
         }
+      } else if (initProvider === 'openai-compatible') {
+        try {
+          const { OpenAIAdapter } = require('@/NodeST/nodest/utils/openai-adapter');
+          this.llmAdapter = new OpenAIAdapter({
+            endpoint: this.openaiCompatibleEndpoint,
+            apiKey: this.apiKey,
+            model: this.model
+          });
+          console.log('[MobileLLM] OpenAIAdapter 初始化成功');
+        } catch (error) {
+          console.log('[MobileLLM] OpenAIAdapter 同步初始化失败，尝试异步导入');
+          const { OpenAIAdapter } = await import('@/NodeST/nodest/utils/openai-adapter');
+          this.llmAdapter = new OpenAIAdapter({
+            endpoint: this.openaiCompatibleEndpoint,
+            apiKey: this.apiKey,
+            model: this.model
+          });
+          console.log('[MobileLLM] OpenAIAdapter 异步初始化成功');
+        }
       } else {
         try {
           const { GeminiAdapter } = require('@/NodeST/nodest/utils/gemini-adapter');
@@ -206,7 +234,19 @@ export class MobileLLM implements LLM {
       const apiSettings = getApiSettings();
       
       if (apiSettings) {
-        if (apiSettings.apiProvider === 'openrouter' && 
+        // 优先 openai-compatible
+        if (
+          apiSettings.apiProvider === 'openai-compatible' &&
+          apiSettings.OpenAIcompatible?.enabled &&
+          apiSettings.OpenAIcompatible?.apiKey
+        ) {
+          this.apiProvider = 'openai-compatible';
+          this.provider = 'openai-compatible';
+          this.model = apiSettings.OpenAIcompatible.model || 'gpt-3.5-turbo';
+          this.openaiCompatibleConfig = apiSettings.OpenAIcompatible;
+          this.openaiCompatibleEndpoint = apiSettings.OpenAIcompatible.endpoint || '';
+          return apiSettings.OpenAIcompatible.apiKey;
+        } else if (apiSettings.apiProvider === 'openrouter' && 
             apiSettings.openrouter?.enabled && 
             apiSettings.openrouter?.apiKey) {
           
@@ -233,7 +273,17 @@ export class MobileLLM implements LLM {
           const parsedSettings = JSON.parse(settings);
           const provider = parsedSettings?.chat?.apiProvider || 'gemini';
           
-          if (provider === 'openrouter' && parsedSettings?.chat?.openrouter?.apiKey) {
+          if (
+            provider === 'openai-compatible' &&
+            parsedSettings?.chat?.OpenAIcompatible?.apiKey
+          ) {
+            this.apiProvider = 'openai-compatible';
+            this.provider = 'openai-compatible';
+            this.model = parsedSettings.chat.OpenAIcompatible.model || 'gpt-3.5-turbo';
+            this.openaiCompatibleConfig = parsedSettings.chat.OpenAIcompatible;
+            this.openaiCompatibleEndpoint = parsedSettings.chat.OpenAIcompatible.endpoint || '';
+            return parsedSettings.chat.OpenAIcompatible.apiKey;
+          } else if (provider === 'openrouter' && parsedSettings?.chat?.openrouter?.apiKey) {
             this.apiProvider = 'openrouter';
             this.provider = 'openrouter';
             this.model = parsedSettings.chat.openrouter.model || 'openai/gpt-3.5-turbo';
@@ -257,7 +307,17 @@ export class MobileLLM implements LLM {
             const parsedSettings = JSON.parse(settings);
             const provider = parsedSettings?.chat?.apiProvider || 'gemini';
             
-            if (provider === 'openrouter' && parsedSettings?.chat?.openrouter?.apiKey) {
+            if (
+              provider === 'openai-compatible' &&
+              parsedSettings?.chat?.OpenAIcompatible?.apiKey
+            ) {
+              this.apiProvider = 'openai-compatible';
+              this.provider = 'openai-compatible';
+              this.model = parsedSettings.chat.OpenAIcompatible.model || 'gpt-3.5-turbo';
+              this.openaiCompatibleConfig = parsedSettings.chat.OpenAIcompatible;
+              this.openaiCompatibleEndpoint = parsedSettings.chat.OpenAIcompatible.endpoint || '';
+              return parsedSettings.chat.OpenAIcompatible.apiKey;
+            } else if (provider === 'openrouter' && parsedSettings?.chat?.openrouter?.apiKey) {
               this.apiProvider = 'openrouter';
               this.provider = 'openrouter';
               this.model = parsedSettings.chat.openrouter.model || 'openai/gpt-3.5-turbo';
@@ -290,6 +350,12 @@ export class MobileLLM implements LLM {
       return messages.map(msg => ({
         role: msg.role === 'assistant' ? 'model' : msg.role,
         parts: [{ text: typeof msg.content === 'string' ? msg.content : JSON.stringify(msg.content) }]
+      }));
+    } else if (this.provider === 'openai-compatible') {
+      // OpenAI 格式
+      return messages.map(msg => ({
+        role: msg.role,
+        content: typeof msg.content === 'string' ? msg.content : msg.content
       }));
     } else {
       // OpenRouter 格式
