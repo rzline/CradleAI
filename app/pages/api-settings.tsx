@@ -35,6 +35,24 @@ const ApiSettings = () => {
   const { user, updateSettings } = useUser();
   const [isTesting, setIsTesting] = useState(false);
 
+  // 互斥逻辑：只允许一个 provider 被启用
+  const [providerType, setProviderType] = useState<'gemini' | 'openrouter' | 'openai-compatible'>(
+    user?.settings?.chat?.apiProvider === 'openrouter'
+      ? 'openrouter'
+      : user?.settings?.chat?.OpenAIcompatible?.enabled
+        ? 'openai-compatible'
+        : 'gemini'
+  );
+
+  useEffect(() => {
+    setOpenRouterEnabled(providerType === 'openrouter');
+    setNewProviderEnabled(providerType === 'openai-compatible');
+  }, [providerType]);
+
+  const handleProviderTypeChange = (type: 'gemini' | 'openrouter' | 'openai-compatible') => {
+    setProviderType(type);
+  };
+
   // Gemini settings
   const [geminiKey, setGeminiKey] = useState(
     user?.settings?.chat?.characterApiKey && user?.settings?.chat?.characterApiKey !== '123'
@@ -150,6 +168,21 @@ const ApiSettings = () => {
     'gemini-1.5-flash-8b-exp-0924',
     'gemini-1.5-flash-8b-exp-0827'
   ];
+
+  // 新增 NewProvider 设置
+  const [OpenAIcompatibleEnabled, setNewProviderEnabled] = useState(
+    user?.settings?.chat?.OpenAIcompatible?.enabled || false
+  );
+  const [OpenAIcompatibleKey, setNewProviderKey] = useState(
+    user?.settings?.chat?.OpenAIcompatible?.apiKey || ''
+  );
+  const [OpenAIcompatibleModel, setNewProviderModel] = useState(
+    user?.settings?.chat?.OpenAIcompatible?.model || ''
+  );
+  // 新增 endpoint 字段
+  const [OpenAIcompatibleEndpoint, setNewProviderEndpoint] = useState(
+    user?.settings?.chat?.OpenAIcompatible?.endpoint || ''
+  );
 
   // 修复：如果未填写geminiKey，则设为'123'以触发回退
   const effectiveGeminiKey = geminiKey && geminiKey.trim() !== '' ? geminiKey : '123';
@@ -487,6 +520,64 @@ const ApiSettings = () => {
     }
   };
 
+  // Test OpenAIcompatible connection
+  const testOpenAIcompatibleConnection = async () => {
+    try {
+      if (!OpenAIcompatibleEndpoint || !OpenAIcompatibleKey || !OpenAIcompatibleModel) {
+        Alert.alert('错误', '请填写完整的 Endpoint、API Key 和模型名称');
+        return;
+      }
+      setIsTesting(true);
+
+      // 直接用 fetch 实现等效 curl 测试
+      const url = `${OpenAIcompatibleEndpoint.replace(/\/$/, '')}/v1/chat/completions`;
+      const headers = {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${OpenAIcompatibleKey}`
+      };
+      const body = JSON.stringify({
+        model: OpenAIcompatibleModel,
+        messages: [
+          { role: 'user', content: 'Explain quantum computing in simple terms.' }
+        ],
+        temperature: 0.7,
+        max_tokens: 500
+      });
+
+      const resp = await fetch(url, {
+        method: 'POST',
+        headers,
+        body
+      });
+
+      if (!resp.ok) {
+        let errMsg = '';
+        try {
+          const errJson = await resp.json();
+          errMsg = JSON.stringify(errJson);
+        } catch {
+          errMsg = resp.statusText;
+        }
+        Alert.alert('连接失败', `HTTP ${resp.status}: ${errMsg}`);
+        return;
+      }
+
+      const data = await resp.json();
+      // 兼容 OpenAI 格式
+      const content =
+        data?.choices?.[0]?.message?.content ||
+        data?.choices?.[0]?.text ||
+        JSON.stringify(data);
+
+      Alert.alert('连接成功', `收到回复: ${content}`);
+    } catch (err: any) {
+      console.error('[OpenAIcompatible] 测试连接失败:', err);
+      Alert.alert('连接失败', err?.message || '未知错误');
+    } finally {
+      setIsTesting(false);
+    }
+  };
+
   // Activate license function
   const activateLicense = async () => {
     if (!activationCode.trim()) {
@@ -536,6 +627,10 @@ const ApiSettings = () => {
       // Filter out empty additional API keys
       const validAdditionalKeys = additionalGeminiKeys.filter(key => key && key.trim() !== '');
 
+      let apiProvider = providerType;
+      let openrouterEnabled = providerType === 'openrouter';
+      let openaiCompatibleEnabled = providerType === 'openai-compatible';
+
       if (useActivationCode && licenseInfo) {
         const apiSettings: Partial<GlobalSettings> = {
           chat: {
@@ -549,7 +644,7 @@ const ApiSettings = () => {
             geminiBackupModel,
             retryDelay,
             xApiKey: user?.settings?.chat?.xApiKey || '',
-            apiProvider: openRouterEnabled ? 'openrouter' : 'gemini',
+            apiProvider: apiProvider,
             typingDelay: user?.settings?.chat?.typingDelay || 50,
             temperature: user?.settings?.chat?.temperature || 0.7,
             maxtokens: user?.settings?.chat?.maxtokens || 2000,
@@ -559,7 +654,7 @@ const ApiSettings = () => {
             useCloudService: useCloudService,
             cloudModel: useCloudService ? cloudModel : undefined,
             openrouter: {
-              enabled: openRouterEnabled,
+              enabled: openrouterEnabled,
               apiKey: openRouterKey,
               model: selectedModel,
               useBackupModels: useBackupModels,
@@ -573,6 +668,12 @@ const ApiSettings = () => {
               steps: 28,
               scale: 11,
               noiseSchedule: 'karras'
+            },
+            OpenAIcompatible: {
+              enabled: openaiCompatibleEnabled,
+              apiKey: OpenAIcompatibleKey,
+              model: OpenAIcompatibleModel,
+              endpoint: OpenAIcompatibleEndpoint
             }
           },
           search: {
@@ -668,7 +769,7 @@ const ApiSettings = () => {
             geminiBackupModel,
             retryDelay,
             xApiKey: user?.settings?.chat?.xApiKey || '',
-            apiProvider: openRouterEnabled ? 'openrouter' : 'gemini',
+            apiProvider: apiProvider,
             typingDelay: user?.settings?.chat?.typingDelay || 50,
             temperature: user?.settings?.chat?.temperature || 0.7,
             maxtokens: user?.settings?.chat?.maxtokens || 2000,
@@ -677,7 +778,7 @@ const ApiSettings = () => {
             zhipuApiKey: effectiveZhipuApiKey,
             useCloudService: false,
             openrouter: {
-              enabled: openRouterEnabled,
+              enabled: openrouterEnabled,
               apiKey: openRouterKey,
               model: selectedModel,
               useBackupModels: useBackupModels,
@@ -691,6 +792,12 @@ const ApiSettings = () => {
               steps: 28,
               scale: 11,
               noiseSchedule: 'karras'
+            },
+            OpenAIcompatible: {
+              enabled: openaiCompatibleEnabled,
+              apiKey: OpenAIcompatibleKey,
+              model: OpenAIcompatibleModel,
+              endpoint: OpenAIcompatibleEndpoint
             }
           },
           search: {
@@ -825,6 +932,263 @@ const ApiSettings = () => {
         style={styles.container}
       >
         <ScrollView style={styles.scrollView} contentContainerStyle={styles.scrollContent}>
+          <View style={styles.section}>
+            <View style={styles.sectionHeader}>
+              <Text style={styles.sectionTitle}>API 渠道选择</Text>
+            </View>
+            <View style={{ flexDirection: 'row', justifyContent: 'space-between', padding: 16 }}>
+              <TouchableOpacity
+                style={[
+                  styles.providerTab,
+                  providerType === 'gemini' && styles.providerTabSelected
+                ]}
+                onPress={() => handleProviderTypeChange('gemini')}
+              >
+                <Text style={providerType === 'gemini' ? styles.providerTabTextSelected : styles.providerTabText}>Gemini</Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={[
+                  styles.providerTab,
+                  providerType === 'openrouter' && styles.providerTabSelected
+                ]}
+                onPress={() => handleProviderTypeChange('openrouter')}
+              >
+                <Text style={providerType === 'openrouter' ? styles.providerTabTextSelected : styles.providerTabText}>OpenRouter</Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={[
+                  styles.providerTab,
+                  providerType === 'openai-compatible' && styles.providerTabSelected
+                ]}
+                onPress={() => handleProviderTypeChange('openai-compatible')}
+              >
+                <Text style={providerType === 'openai-compatible' ? styles.providerTabTextSelected : styles.providerTabText}>OpenAI兼容</Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+
+          {providerType === 'gemini' && (
+            <View style={styles.section}>
+              <View style={styles.sectionHeader}>
+                <Text style={styles.sectionTitle}>Gemini API</Text>
+              </View>
+              <View style={styles.contentSection}>
+                <Text style={styles.inputLabel}>Gemini API Key (主密钥)</Text>
+                <TextInput
+                  style={styles.input}
+                  value={geminiKey}
+                  onChangeText={setGeminiKey}
+                  placeholder="输入 Gemini API Key"
+                  placeholderTextColor="#999"
+                  secureTextEntry={true}
+                />
+                <Text style={styles.helperText}>
+                  可从 <Text style={styles.link}>Google AI Studio</Text> 获取免费 API Key
+                </Text>
+                
+                {/* 额外的API密钥 */}
+                <View style={styles.additionalKeysContainer}>
+                  <View style={styles.additionalKeysHeader}>
+                    <Text style={styles.additionalKeysTitle}>额外的API密钥 (可选)</Text>
+                    <TouchableOpacity 
+                      style={styles.addKeyButton}
+                      onPress={addGeminiKeyField}
+                    >
+                      <Ionicons name="add-circle-outline" size={20} color={theme.colors.primary} />
+                      <Text style={styles.addKeyText}>添加</Text>
+                    </TouchableOpacity>
+                  </View>
+                  
+                  {additionalGeminiKeys.map((key, index) => (
+                    <View key={`key-${index}`} style={styles.additionalKeyRow}>
+                      <TextInput
+                        style={[styles.input, styles.additionalKeyInput]}
+                        value={key}
+                        onChangeText={(value) => updateAdditionalGeminiKey(index, value)}
+                        placeholder={`额外API密钥 #${index + 1}`}
+                        placeholderTextColor="#999"
+                        secureTextEntry={true}
+                      />
+                      <TouchableOpacity 
+                        style={styles.removeKeyButton}
+                        onPress={() => removeGeminiKeyField(index)}
+                      >
+                        <Ionicons name="close-circle" size={22} color="#f44336" />
+                      </TouchableOpacity>
+                    </View>
+                  ))}
+                  
+                </View>
+                
+                {/* 模型负载均衡设置 */}
+                <View style={styles.loadBalancingSection}>
+                  <Text style={styles.loadBalancingTitle}>高级设置</Text>
+                  
+                  <View style={styles.switchContainer}>
+                    <Text style={styles.switchLabel}>
+                      模型选择
+                    </Text>
+                    <Switch
+                      value={useGeminiModelLoadBalancing}
+                      onValueChange={setUseGeminiModelLoadBalancing}
+                      trackColor={{ false: '#767577', true: 'rgba(100, 210, 255, 0.4)' }}
+                      thumbColor={useGeminiModelLoadBalancing ? '#2196F3' : '#f4f3f4'}
+                    />
+                  </View>
+                  {useGeminiModelLoadBalancing && (
+                    <>
+                      
+                      {/* 主模型选择 */}
+                      <View style={styles.modelSelectorContainer}>
+                        <Text style={styles.inputLabel}>主模型</Text>
+                        <TouchableOpacity
+                          style={styles.modelButton}
+                          onPress={() => openModelPicker('primary')}
+                        >
+                          <Text style={styles.modelButtonText}>{geminiPrimaryModel}</Text>
+                          <Ionicons name="chevron-down" size={16} color="#fff" />
+                        </TouchableOpacity>
+                      </View>
+                      
+                      {/* 备用模型选择 */}
+                      <View style={styles.modelSelectorContainer}>
+                        <Text style={styles.inputLabel}>备用模型</Text>
+                        <TouchableOpacity
+                          style={styles.modelButton}
+                          onPress={() => openModelPicker('backup')}
+                        >
+                          <Text style={styles.modelButtonText}>{geminiBackupModel}</Text>
+                          <Ionicons name="chevron-down" size={16} color="#fff" />
+                        </TouchableOpacity>
+                      </View>
+                      
+                      {/* 重试延迟设置 */}
+                      <View style={styles.modelSelectorContainer}>
+                        <Text style={styles.inputLabel}>备用模型重试延迟 (毫秒)</Text>
+                        <TextInput
+                          style={styles.input}
+                          value={String(retryDelay)}
+                          onChangeText={(text) => {
+                            const value = parseInt(text.replace(/[^0-9]/g, ''));
+                            setRetryDelay(isNaN(value) ? 5000 : value);
+                          }}
+                          keyboardType="numeric"
+                          placeholder="输入延迟时间 (毫秒)"
+                          placeholderTextColor="#999"
+                        />
+                        <Text style={styles.helperText}>
+                          推荐值: 5000 (5秒)。主模型失败后等待多久再尝试备用模型
+                        </Text>
+                      </View>
+                    </>
+                  )}
+                  
+                  <View style={styles.switchContainer}>
+                    <Text style={styles.switchLabel}>
+                      密钥轮换
+                    </Text>
+                    <Switch
+                      value={useGeminiKeyRotation}
+                      onValueChange={setUseGeminiKeyRotation}
+                      trackColor={{ false: '#767577', true: 'rgba(100, 210, 255, 0.4)' }}
+                      thumbColor={useGeminiKeyRotation ? '#2196F3' : '#f4f3f4'}
+                    />
+                  </View>
+                </View>
+              </View>
+            </View>
+          )}
+
+          {providerType === 'openrouter' && (
+            <View style={styles.section}>
+              <View style={styles.sectionHeader}>
+                <Text style={styles.sectionTitle}>OpenRouter API</Text>
+              </View>
+              <View style={styles.contentSection}>
+                <Text style={styles.inputLabel}>OpenRouter API Key</Text>
+                <TextInput
+                  style={styles.input}
+                  value={openRouterKey}
+                  onChangeText={setOpenRouterKey}
+                  placeholder="输入 OpenRouter API Key"
+                  placeholderTextColor="#999"
+                  secureTextEntry={true}
+                />
+                <Text style={styles.helperText}>
+                  可从 <Text style={styles.link}>OpenRouter</Text> 获取 API Key
+                </Text>
+
+                <View style={styles.modelSection}>
+                  <Text style={styles.inputLabel}>当前选定模型</Text>
+                  <TouchableOpacity
+                    style={styles.modelButton}
+                    onPress={() => setIsModelSelectorVisible(true)}
+                  >
+                    <Text style={styles.modelButtonText}>{selectedModel}</Text>
+                    <Ionicons name="chevron-down" size={16} color="#fff" />
+                  </TouchableOpacity>
+                </View>
+
+                <View style={styles.switchContainer}>
+                  <Text style={styles.switchLabel}>使用备用模型</Text>
+                  <Switch
+                    value={useBackupModels}
+                    onValueChange={setUseBackupModels}
+                    trackColor={{ false: '#767577', true: 'rgba(255, 158, 205, 0.4)' }}
+                    thumbColor={useBackupModels ? theme.colors.primary : '#f4f3f4'}
+                  />
+                </View>
+              </View>
+            </View>
+          )}
+
+          {providerType === 'openai-compatible' && (
+            <View style={styles.section}>
+              <View style={styles.sectionHeader}>
+                <Text style={styles.sectionTitle}>NewProvider API</Text>
+              </View>
+              <View style={styles.contentSection}>
+                <Text style={styles.inputLabel}>NewProvider Endpoint</Text>
+                <TextInput
+                  style={styles.input}
+                  value={OpenAIcompatibleEndpoint}
+                  onChangeText={setNewProviderEndpoint}
+                  placeholder="如 https://api.openai.com"
+                  placeholderTextColor="#999"
+                  autoCapitalize="none"
+                />
+                <Text style={styles.inputLabel}>NewProvider API Key</Text>
+                <TextInput
+                  style={styles.input}
+                  value={OpenAIcompatibleKey}
+                  onChangeText={setNewProviderKey}
+                  placeholder="输入 NewProvider API Key"
+                  placeholderTextColor="#999"
+                  secureTextEntry={true}
+                />
+                <Text style={styles.inputLabel}>模型</Text>
+                <TextInput
+                  style={styles.input}
+                  value={OpenAIcompatibleModel}
+                  onChangeText={setNewProviderModel}
+                  placeholder="输入模型名"
+                  placeholderTextColor="#999"
+                />
+                <TouchableOpacity
+                  style={[styles.testButton, { marginTop: 16 }]}
+                  onPress={testOpenAIcompatibleConnection}
+                  disabled={isTesting}
+                >
+                  {isTesting ? (
+                    <ActivityIndicator size="small" color="#fff" />
+                  ) : (
+                    <Text style={styles.buttonText}>测试 NewProvider 连接</Text>
+                  )}
+                </TouchableOpacity>
+              </View>
+            </View>
+          )}
+
           <View style={styles.section}>
             <View style={styles.sectionHeader}>
               <Text style={styles.sectionTitle}>测试入口</Text>
@@ -983,195 +1347,6 @@ const ApiSettings = () => {
                 )}
               </TouchableOpacity>
             </View>
-          </View>
-
-          <View style={styles.section}>
-            <View style={styles.sectionHeader}>
-              <Text style={styles.sectionTitle}>Gemini API</Text>
-              <Switch
-                value={!openRouterEnabled}
-                onValueChange={(value) => setOpenRouterEnabled(!value)}
-                trackColor={{ false: '#767577', true: 'rgba(255, 158, 205, 0.4)' }}
-                thumbColor={!openRouterEnabled ? theme.colors.primary : '#f4f3f4'}
-              />
-            </View>
-
-            {!openRouterEnabled && (
-              <View style={styles.contentSection}>
-                <Text style={styles.inputLabel}>Gemini API Key (主密钥)</Text>
-                <TextInput
-                  style={styles.input}
-                  value={geminiKey}
-                  onChangeText={setGeminiKey}
-                  placeholder="输入 Gemini API Key"
-                  placeholderTextColor="#999"
-                  secureTextEntry={true}
-                />
-                <Text style={styles.helperText}>
-                  可从 <Text style={styles.link}>Google AI Studio</Text> 获取免费 API Key
-                </Text>
-                
-                {/* 额外的API密钥 */}
-                <View style={styles.additionalKeysContainer}>
-                  <View style={styles.additionalKeysHeader}>
-                    <Text style={styles.additionalKeysTitle}>额外的API密钥 (可选)</Text>
-                    <TouchableOpacity 
-                      style={styles.addKeyButton}
-                      onPress={addGeminiKeyField}
-                    >
-                      <Ionicons name="add-circle-outline" size={20} color={theme.colors.primary} />
-                      <Text style={styles.addKeyText}>添加</Text>
-                    </TouchableOpacity>
-                  </View>
-                  
-                  {additionalGeminiKeys.map((key, index) => (
-                    <View key={`key-${index}`} style={styles.additionalKeyRow}>
-                      <TextInput
-                        style={[styles.input, styles.additionalKeyInput]}
-                        value={key}
-                        onChangeText={(value) => updateAdditionalGeminiKey(index, value)}
-                        placeholder={`额外API密钥 #${index + 1}`}
-                        placeholderTextColor="#999"
-                        secureTextEntry={true}
-                      />
-                      <TouchableOpacity 
-                        style={styles.removeKeyButton}
-                        onPress={() => removeGeminiKeyField(index)}
-                      >
-                        <Ionicons name="close-circle" size={22} color="#f44336" />
-                      </TouchableOpacity>
-                    </View>
-                  ))}
-                  
-                </View>
-                
-                {/* 模型负载均衡设置 */}
-                <View style={styles.loadBalancingSection}>
-                  <Text style={styles.loadBalancingTitle}>高级设置</Text>
-                  
-                  <View style={styles.switchContainer}>
-                    <Text style={styles.switchLabel}>
-                      模型选择
-                    </Text>
-                    <Switch
-                      value={useGeminiModelLoadBalancing}
-                      onValueChange={setUseGeminiModelLoadBalancing}
-                      trackColor={{ false: '#767577', true: 'rgba(100, 210, 255, 0.4)' }}
-                      thumbColor={useGeminiModelLoadBalancing ? '#2196F3' : '#f4f3f4'}
-                    />
-                  </View>
-                  {useGeminiModelLoadBalancing && (
-                    <>
-                      
-                      {/* 主模型选择 */}
-                      <View style={styles.modelSelectorContainer}>
-                        <Text style={styles.inputLabel}>主模型</Text>
-                        <TouchableOpacity
-                          style={styles.modelButton}
-                          onPress={() => openModelPicker('primary')}
-                        >
-                          <Text style={styles.modelButtonText}>{geminiPrimaryModel}</Text>
-                          <Ionicons name="chevron-down" size={16} color="#fff" />
-                        </TouchableOpacity>
-                      </View>
-                      
-                      {/* 备用模型选择 */}
-                      <View style={styles.modelSelectorContainer}>
-                        <Text style={styles.inputLabel}>备用模型</Text>
-                        <TouchableOpacity
-                          style={styles.modelButton}
-                          onPress={() => openModelPicker('backup')}
-                        >
-                          <Text style={styles.modelButtonText}>{geminiBackupModel}</Text>
-                          <Ionicons name="chevron-down" size={16} color="#fff" />
-                        </TouchableOpacity>
-                      </View>
-                      
-                      {/* 重试延迟设置 */}
-                      <View style={styles.modelSelectorContainer}>
-                        <Text style={styles.inputLabel}>备用模型重试延迟 (毫秒)</Text>
-                        <TextInput
-                          style={styles.input}
-                          value={String(retryDelay)}
-                          onChangeText={(text) => {
-                            const value = parseInt(text.replace(/[^0-9]/g, ''));
-                            setRetryDelay(isNaN(value) ? 5000 : value);
-                          }}
-                          keyboardType="numeric"
-                          placeholder="输入延迟时间 (毫秒)"
-                          placeholderTextColor="#999"
-                        />
-                        <Text style={styles.helperText}>
-                          推荐值: 5000 (5秒)。主模型失败后等待多久再尝试备用模型
-                        </Text>
-                      </View>
-                    </>
-                  )}
-                  
-                  <View style={styles.switchContainer}>
-                    <Text style={styles.switchLabel}>
-                      密钥轮换
-                    </Text>
-                    <Switch
-                      value={useGeminiKeyRotation}
-                      onValueChange={setUseGeminiKeyRotation}
-                      trackColor={{ false: '#767577', true: 'rgba(100, 210, 255, 0.4)' }}
-                      thumbColor={useGeminiKeyRotation ? '#2196F3' : '#f4f3f4'}
-                    />
-                  </View>
-                </View>
-              </View>
-            )}
-          </View>
-
-          <View style={styles.section}>
-            <View style={styles.sectionHeader}>
-              <Text style={styles.sectionTitle}>OpenRouter API</Text>
-              <Switch
-                value={openRouterEnabled}
-                onValueChange={setOpenRouterEnabled}
-                trackColor={{ false: '#767577', true: 'rgba(255, 158, 205, 0.4)' }}
-                thumbColor={openRouterEnabled ? theme.colors.primary : '#f4f3f4'}
-              />
-            </View>
-
-            {openRouterEnabled && (
-              <View style={styles.contentSection}>
-                <Text style={styles.inputLabel}>OpenRouter API Key</Text>
-                <TextInput
-                  style={styles.input}
-                  value={openRouterKey}
-                  onChangeText={setOpenRouterKey}
-                  placeholder="输入 OpenRouter API Key"
-                  placeholderTextColor="#999"
-                  secureTextEntry={true}
-                />
-                <Text style={styles.helperText}>
-                  可从 <Text style={styles.link}>OpenRouter</Text> 获取 API Key
-                </Text>
-
-                <View style={styles.modelSection}>
-                  <Text style={styles.inputLabel}>当前选定模型</Text>
-                  <TouchableOpacity
-                    style={styles.modelButton}
-                    onPress={() => setIsModelSelectorVisible(true)}
-                  >
-                    <Text style={styles.modelButtonText}>{selectedModel}</Text>
-                    <Ionicons name="chevron-down" size={16} color="#fff" />
-                  </TouchableOpacity>
-                </View>
-
-                <View style={styles.switchContainer}>
-                  <Text style={styles.switchLabel}>使用备用模型</Text>
-                  <Switch
-                    value={useBackupModels}
-                    onValueChange={setUseBackupModels}
-                    trackColor={{ false: '#767577', true: 'rgba(255, 158, 205, 0.4)' }}
-                    thumbColor={useBackupModels ? theme.colors.primary : '#f4f3f4'}
-                  />
-                </View>
-              </View>
-            )}
           </View>
 
           <View style={styles.section}>
@@ -1766,6 +1941,28 @@ const styles = StyleSheet.create({
   modelPickerItemText: {
     fontSize: 16,
     color: '#fff',
+  },
+  providerTab: {
+    flex: 1,
+    padding: 12,
+    marginHorizontal: 4,
+    borderRadius: 8,
+    backgroundColor: '#222',
+    alignItems: 'center',
+    borderWidth: 1,
+    borderColor: '#444',
+  },
+  providerTabSelected: {
+    backgroundColor: theme.colors.primary,
+    borderColor: theme.colors.primary,
+  },
+  providerTabText: {
+    color: '#fff',
+    fontWeight: 'bold',
+  },
+  providerTabTextSelected: {
+    color: '#000',
+    fontWeight: 'bold',
   },
 });
 

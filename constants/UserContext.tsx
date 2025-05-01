@@ -78,6 +78,9 @@ export const UserProvider: React.FC<{ children: React.ReactNode }> = ({ children
                 characterApiKey: '',
                 xApiKey: '',
                 apiProvider: 'gemini',
+                useGeminiKeyRotation: false,
+                useGeminiModelLoadBalancing: false,
+                additionalGeminiKeys: [],
                 temperature: 0.7,
                 maxTokens: 800,
                 maxtokens: 800,
@@ -94,6 +97,11 @@ export const UserProvider: React.FC<{ children: React.ReactNode }> = ({ children
                   sortingStrategy: 'price',
                   dataCollection: true,
                   ignoredProviders: []
+                },
+                OpenAIcompatible: {
+                  enabled: false,
+                  apiKey: '',
+                  model: ''
                 }
               },
               self: {
@@ -140,6 +148,11 @@ export const UserProvider: React.FC<{ children: React.ReactNode }> = ({ children
     try {
       if (!user.settings) throw new Error('User settings not initialized');
 
+      // 互斥逻辑：只允许一个 provider enabled
+      let apiProvider = settings.chat?.apiProvider || user.settings.chat.apiProvider || 'gemini';
+      let openrouterEnabled = apiProvider === 'openrouter';
+      let openaiCompatibleEnabled = apiProvider === 'openai-compatible';
+
       const updatedUser = {
         ...user,
         settings: {
@@ -150,7 +163,18 @@ export const UserProvider: React.FC<{ children: React.ReactNode }> = ({ children
           },
           chat: {
             ...user.settings.chat,
-            ...settings.chat
+            ...settings.chat,
+            apiProvider,
+            openrouter: {
+              ...(user.settings.chat.openrouter || {}),
+              ...(settings.chat?.openrouter || {}),
+              enabled: openrouterEnabled
+            },
+            OpenAIcompatible: {
+              ...(user.settings.chat.OpenAIcompatible || { enabled: false, apiKey: '', model: '', endpoint: '' }),
+              ...(settings.chat?.OpenAIcompatible || {}),
+              enabled: openaiCompatibleEnabled
+            }
           },
           self: {
             ...user.settings.self,
@@ -170,7 +194,9 @@ export const UserProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
       console.log('[UserContext] Settings updated successfully, apiProvider:',
         updatedUser.settings.chat.apiProvider,
-        'useCloudService:', updatedUser.settings.chat.useCloudService);
+        'useCloudService:', updatedUser.settings.chat.useCloudService,
+        'OpenAIcompatible.endpoint:', updatedUser.settings.chat.OpenAIcompatible?.endpoint
+      );
     } catch (error) {
       console.error('Failed to update settings:', error);
       throw new Error('Failed to update settings');

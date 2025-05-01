@@ -177,6 +177,7 @@ ${chatContext}
       const apiOptions = {
         apiProvider: apiSettings?.apiProvider || 'gemini',
         openrouter: apiSettings?.openrouter,
+        OpenAIcompatible: apiSettings?.OpenAIcompatible,
         additionalGeminiKeys: apiSettings?.additionalGeminiKeys,
         useGeminiModelLoadBalancing: apiSettings?.useGeminiModelLoadBalancing,
         useGeminiKeyRotation: apiSettings?.useGeminiKeyRotation,

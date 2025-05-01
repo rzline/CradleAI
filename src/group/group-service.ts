@@ -5,6 +5,7 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import { getUserSettingsGlobally, getApiSettings, getCloudServiceStatus } from '@/utils/settings-helper';
 import { GroupMessage, Group, GroupSettings } from './group-types';
 import { GroupScheduler } from './group-scheduler';
+import { OpenAIAdapter } from '../../NodeST/nodest/utils/openai-adapter'; // 新增导入
 
 // 创建具有apiKey的单例实例
 let nodeST: NodeST | null = null;
@@ -16,7 +17,7 @@ export class GroupService {
   // 获取NodeST方法，从全局设置获取API设置
   private static getNodeST(
     apiKey?: string, 
-    apiSettings?: Pick<GlobalSettings['chat'], 'apiProvider' | 'openrouter'>
+    apiSettings?: Pick<GlobalSettings['chat'], 'apiProvider' | 'openrouter' | 'OpenAIcompatible'> // 修改类型
   ): NodeST {
     // Get global settings if not provided
     if (!apiKey || !apiSettings) {
@@ -32,7 +33,8 @@ export class GroupService {
         if (!apiSettings) {
           apiSettings = {
             apiProvider: globalSettings.chat.apiProvider,
-            openrouter: globalSettings.chat.openrouter
+            openrouter: globalSettings.chat.openrouter,
+            OpenAIcompatible: globalSettings.chat.OpenAIcompatible // 新增
           };
         }
         
@@ -65,7 +67,7 @@ export class GroupService {
     if (!nodeST) {
       nodeST = new NodeST(apiKey);
       // If initialized with apiKey and we have OpenRouter config, update it immediately
-      if (apiKey && openRouterConfig) {
+      if (apiKey && (openRouterConfig || apiSettings?.OpenAIcompatible)) {
         nodeST.updateApiSettings(apiKey, apiSettings);
       }
     } else if (apiKey) {
@@ -96,7 +98,7 @@ export class GroupService {
     owner: User,
     characters: Character[] = [],
     apiKey?: string,
-    apiSettings?: Pick<GlobalSettings['chat'], 'apiProvider' | 'openrouter'>
+    apiSettings?: Pick<GlobalSettings['chat'], 'apiProvider' | 'openrouter' | 'OpenAIcompatible'> // 修改类型
   ): Promise<Group | null> {
     try {
       console.log(`【群聊服务】创建群聊: ${groupName}, 主题: ${groupTopic}`);
@@ -107,7 +109,8 @@ export class GroupService {
         apiKey = settings.apiKey || apiKey;
         apiSettings = apiSettings || {
           apiProvider: settings.apiProvider,
-          openrouter: settings.openrouter
+          openrouter: settings.openrouter,
+          OpenAIcompatible: settings.OpenAIcompatible // 新增
         };
       }
       
@@ -266,7 +269,7 @@ export class GroupService {
     characterId: string,
     groupId: string,
     apiKey?: string,
-    apiSettings?: Pick<GlobalSettings['chat'], 'apiProvider' | 'openrouter'>
+    apiSettings?: Pick<GlobalSettings['chat'], 'apiProvider' | 'openrouter' | 'OpenAIcompatible'> // 修改类型
   ): Promise<boolean> {
     try {
       console.log(`【群聊服务】初始化角色 ${characterId} 的群聊框架，群组ID: ${groupId}`);
@@ -328,7 +331,7 @@ export class GroupService {
     user: User,
     content: string,
     apiKey?: string,
-    apiSettings?: Pick<GlobalSettings['chat'], 'apiProvider' | 'openrouter'>
+    apiSettings?: Pick<GlobalSettings['chat'], 'apiProvider' | 'openrouter' | 'OpenAIcompatible'> // 修改类型
   ): Promise<GroupMessage | null> {
     try {
       console.log(`【群聊服务】用户发送群聊消息，群组ID: ${groupId}`);
@@ -339,7 +342,8 @@ export class GroupService {
         apiKey = settings.apiKey || apiKey;
         apiSettings = apiSettings || {
           apiProvider: settings.apiProvider,
-          openrouter: settings.openrouter
+          openrouter: settings.openrouter,
+          OpenAIcompatible: settings.OpenAIcompatible // 新增
         };
       }
       
@@ -382,7 +386,7 @@ export class GroupService {
     group: Group,
     userMessage: GroupMessage,
     apiKey?: string,
-    apiSettings?: Pick<GlobalSettings['chat'], 'apiProvider' | 'openrouter'>
+    apiSettings?: Pick<GlobalSettings['chat'], 'apiProvider' | 'openrouter' | 'OpenAIcompatible'> // 修改类型
   ): Promise<void> {
     try {
       console.log(`【群聊服务】触发角色回复，群组ID: ${group.groupId}`);
@@ -416,7 +420,7 @@ export class GroupService {
     originalMessage: GroupMessage,
     groupMessages: GroupMessage[],
     apiKey?: string,
-    apiSettings?: Pick<GlobalSettings['chat'], 'apiProvider' | 'openrouter'>,
+    apiSettings?: Pick<GlobalSettings['chat'], 'apiProvider' | 'openrouter' | 'OpenAIcompatible'>, // 增加OpenAIcompatible类型
     extraPrompt?: string // 新增：额外提示词参数
   ): Promise<GroupMessage | null> {
     try {
@@ -428,7 +432,8 @@ export class GroupService {
         apiKey = settings.apiKey || apiKey;
         apiSettings = apiSettings || {
           apiProvider: settings.apiProvider,
-          openrouter: settings.openrouter
+          openrouter: settings.openrouter,
+          OpenAIcompatible: settings.OpenAIcompatible // 新增
         };
       }
       
@@ -440,31 +445,52 @@ export class GroupService {
       }
       
       // 检查限制条件
-      if (!this.checkReplyCriteria(character.id, groupId)) {
+      if (!await this.checkReplyCriteria(character.id, groupId)) {
         console.log(`【群聊服务】角色 ${character.name} 已达到回复限制，跳过回复`);
         return null;
       }
       
       // 构建提示词
       const prompt = await this.buildGroupReplyPrompt(group, character, originalMessage, groupMessages, extraPrompt);
-      
-      // 获取角色回复
-      const instance = this.getNodeST(apiKey, apiSettings);
-      
+
+      // ==== 新增 openai-compatible 支持 ====
+      const openaiCompatibleEnabled = apiSettings?.apiProvider === 'openai-compatible' && apiSettings?.OpenAIcompatible?.enabled;
       let response: string;
-      try {
-        // 使用await直接解析Promise
-        response = await instance.generateContent(prompt);
-        
+      if (openaiCompatibleEnabled) {
+        // 构造OpenAIAdapter实例
+        const oaConfig = apiSettings.OpenAIcompatible!;
+        const oaAdapter = new OpenAIAdapter({
+          endpoint: oaConfig.endpoint || '',
+          apiKey: oaConfig.apiKey || '',
+          model: oaConfig.model || 'gpt-3.5-turbo'
+        });
+        // 直接调用chatCompletion
+        const messages = [
+          { role: "user", content: prompt }
+        ];
+        const completion = await oaAdapter.chatCompletion(messages, { temperature: 0.7, max_tokens: 2048 });
+        response = completion?.choices?.[0]?.message?.content || '';
         if (!response || response.trim().length === 0) {
           console.error(`【群聊服务】获取角色回复失败: 空响应`);
           return null;
         }
-      } catch (error) {
-        console.error(`【群聊服务】生成内容失败:`, error);
-        return null;
+      } else {
+        // 原有逻辑
+        const instance = this.getNodeST(apiKey, apiSettings);
+        try {
+          // 传递 character.id 以便表格记忆等功能生效
+          response = await instance.generateContent(prompt, character.id);
+          if (!response || response.trim().length === 0) {
+            console.error(`【群聊服务】获取角色回复失败: 空响应`);
+            return null;
+          }
+        } catch (error) {
+          console.error(`【群聊服务】生成内容失败:`, error);
+          return null;
+        }
       }
-      
+      // ==== end 新增 openai-compatible 支持 ====
+
       // 处理@提及
       const processedResponse = this.processAtMentions(response, group);
       
@@ -514,7 +540,7 @@ export class GroupService {
     originalMessage: GroupMessage,
     mentionedCharacterIds: string[],
     apiKey?: string,
-    apiSettings?: Pick<GlobalSettings['chat'], 'apiProvider' | 'openrouter'>
+    apiSettings?: Pick<GlobalSettings['chat'], 'apiProvider' | 'openrouter' | 'OpenAIcompatible'> // 修改类型
   ): Promise<void> {
     try {
       // 获取所有群组消息，作为上下文

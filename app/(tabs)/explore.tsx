@@ -2302,7 +2302,7 @@ const styles = StyleSheet.create({
     minWidth: 100,
   },
   confirmButtonText: {
-    color: theme.colors.text,
+    color: theme.colors.black,
     fontSize: theme.fontSizes.md,
     fontWeight: '500',
   },

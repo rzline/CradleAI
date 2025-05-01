@@ -2,6 +2,7 @@ import * as FileSystem from 'expo-file-system';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { GeminiAdapter } from '../utils/gemini-adapter';
 import { OpenRouterAdapter } from '../utils/openrouter-adapter';
+import { OpenAIAdapter } from '../utils/openai-adapter';
 import { CharacterUtils } from '../utils/character-utils';
 import { 
     RoleCardJson,
@@ -27,9 +28,10 @@ export class NodeSTCore {
     }
     private geminiAdapter: GeminiAdapter | null = null;
     private openRouterAdapter: OpenRouterAdapter | null = null;
+    private openAICompatibleAdapter: OpenAIAdapter | null = null;
     private currentContents: ChatMessage[] | null = null;
     private apiKey: string;
-    private apiSettings: Pick<GlobalSettings['chat'], 'apiProvider' | 'openrouter' | 'useGeminiModelLoadBalancing' | 'useGeminiKeyRotation' | 'additionalGeminiKeys'> = {
+    private apiSettings: Partial<GlobalSettings['chat']> = {
         apiProvider: 'gemini'
     };
     private geminiPrimaryModel?: string;
@@ -41,8 +43,8 @@ export class NodeSTCore {
             conversationId: string,
             characterId: string,
             apiKey: string,
-            apiSettings?: Pick<GlobalSettings['chat'], 'apiProvider' | 'openrouter' | 'useGeminiModelLoadBalancing' | 'useGeminiKeyRotation' | 'additionalGeminiKeys'>
-        ): Promise<boolean> {
+            apiSettings?: Partial<GlobalSettings['chat']>
+): Promise<boolean> {
             try {
                 // 加载当前聊天历史
                 const chatHistory = await this.loadJson<ChatHistoryEntity>(
@@ -69,7 +71,7 @@ export class NodeSTCore {
         }
     constructor(
         apiKey: string,
-        apiSettings?: Pick<GlobalSettings['chat'], 'apiProvider' | 'openrouter' | 'useGeminiModelLoadBalancing' | 'useGeminiKeyRotation' | 'additionalGeminiKeys'>,
+        apiSettings?: Partial<GlobalSettings['chat']>,
         // 新增参数
         geminiOptions?: {
             geminiPrimaryModel?: string;
@@ -114,7 +116,7 @@ export class NodeSTCore {
     // Update method to handle API settings
     updateApiSettings(
         apiKey: string,
-        apiSettings?: Pick<GlobalSettings['chat'], 'apiProvider' | 'openrouter' | 'useGeminiModelLoadBalancing' | 'useGeminiKeyRotation' | 'additionalGeminiKeys'>,
+        apiSettings?: Partial<GlobalSettings['chat']>,
         geminiOptions?: {
             geminiPrimaryModel?: string;
             geminiBackupModel?: string;
@@ -136,7 +138,7 @@ export class NodeSTCore {
 
     private initAdapters(
         apiKey: string | null = null,
-        apiSettings?: Pick<GlobalSettings['chat'], 'apiProvider' | 'openrouter' | 'useGeminiModelLoadBalancing' | 'useGeminiKeyRotation' | 'additionalGeminiKeys'>,
+        apiSettings?: Partial<GlobalSettings['chat']>,        
         geminiOptions?: {
             geminiPrimaryModel?: string;
             geminiBackupModel?: string;
@@ -187,7 +189,28 @@ export class NodeSTCore {
             this.openRouterAdapter = null;
             console.log('[NodeSTCore] OpenRouter not enabled, using Gemini adapter only');
         }
-    
+
+        // 初始化 OpenAIAdapter（OpenAIcompatible）
+        if (
+            apiSettings?.apiProvider === 'openai-compatible' &&
+            apiSettings.OpenAIcompatible?.enabled &&
+            apiSettings.OpenAIcompatible?.apiKey &&
+            apiSettings.OpenAIcompatible?.endpoint &&
+            apiSettings.OpenAIcompatible?.model
+        ) {
+            this.openAICompatibleAdapter = new OpenAIAdapter({
+                endpoint: apiSettings.OpenAIcompatible.endpoint,
+                apiKey: apiSettings.OpenAIcompatible.apiKey,
+                model: apiSettings.OpenAIcompatible.model
+            });
+            console.log('[NodeSTCore] OpenAIAdapter 初始化:', {
+                endpoint: apiSettings.OpenAIcompatible.endpoint,
+                model: apiSettings.OpenAIcompatible.model
+            });
+        } else {
+            this.openAICompatibleAdapter = null;
+        }
+
         if (apiSettings) {
             this.apiSettings = apiSettings;
         }
@@ -203,6 +226,16 @@ export class NodeSTCore {
             return this.openRouterAdapter;
         }
         
+        // 检查是否使用 OpenAIcompatible provider
+        if (
+            this.apiSettings?.apiProvider === 'openai-compatible' &&
+            this.apiSettings.OpenAIcompatible?.enabled &&
+            this.openAICompatibleAdapter
+        ) {
+            console.log('[NodeSTCore] Using OpenAIAdapter with endpoint:', this.apiSettings.OpenAIcompatible.endpoint);
+            return this.openAICompatibleAdapter;
+        }
+
         // 返回 Gemini adapter（可能为 null）
         // 这允许 generateContent 尝试使用云服务
         console.log('[NodeSTCore] Using Gemini adapter' + (!this.geminiAdapter ? ' (not initialized)' : ''));
@@ -675,7 +708,7 @@ export class NodeSTCore {
             });
     
             // 确保 Adapter 已初始化 - 传递 apiKey 即使它是 null
-            if (!this.geminiAdapter || !this.openRouterAdapter) {
+            if (!this.geminiAdapter || !this.openRouterAdapter || !this.openAICompatibleAdapter) {
                 this.initAdapters(apiKey, this.apiSettings);
             }
     
@@ -1271,7 +1304,7 @@ export class NodeSTCore {
         dEntries: ChatMessage[],
         sessionId: string,
         roleCard: RoleCardJson,
-        adapter?: GeminiAdapter | OpenRouterAdapter | null,
+        adapter?: GeminiAdapter | OpenRouterAdapter | OpenAIAdapter | null,
         customUserName?: string, // Add optional customUserName parameter
         memorySearchResults?: any, // 添加记忆搜索结果参数
         characterId?: string // 新增参数
@@ -1423,16 +1456,38 @@ export class NodeSTCore {
             }
             // 添加适配器类型日志
             console.log('[NodeSTCore] Using adapter:', {
-                type: activeAdapter instanceof OpenRouterAdapter ? 'OpenRouter' : 'Gemini',
+                type:
+                    activeAdapter instanceof OpenRouterAdapter
+                        ? 'OpenRouter'
+                        : activeAdapter instanceof OpenAIAdapter
+                        ? 'OpenAICompatible'
+                        : 'Gemini',
                 apiProvider: this.apiSettings?.apiProvider,
                 hasMemoryResults: memorySearchResults && memorySearchResults.results && memorySearchResults.results.length > 0
             });
 
-            // 发送到API，传递记忆搜索结果
-            console.log('[NodeSTCore] Sending to API...', {
-                characterId_passed_to_adapter: characterId // <--- 记录传递给adapter的characterId
-            });
-            
+            // 发送到API
+            if (activeAdapter instanceof OpenAIAdapter) {
+                // 转换为 OpenAI chat completion 格式
+                const openaiMessages = cleanedContents.map(msg => ({
+                    role: msg.role === 'model' ? 'assistant' : msg.role,
+                    content: msg.parts[0]?.text || ''
+                }));
+                try {
+                    const resp = await activeAdapter.chatCompletion(openaiMessages, {
+                        temperature: this.apiSettings?.temperature ?? 0.7,
+                        max_tokens: this.apiSettings?.maxTokens ?? 800
+                    });
+                    if (resp && resp.choices && resp.choices[0]?.message?.content) {
+                        return resp.choices[0].message.content;
+                    }
+                    return null;
+                } catch (err) {
+                    console.error('[NodeSTCore] OpenAIAdapter chatCompletion error:', err);
+                    return null;
+                }
+            }
+
             // 判断是否应该使用记忆增强
             const shouldUseMemoryResults = memorySearchResults && 
                                         memorySearchResults.results && 
@@ -1492,7 +1547,7 @@ export class NodeSTCore {
         dEntries: ChatMessage[],
         sessionId: string,
         roleCard: RoleCardJson,
-        adapter?: GeminiAdapter | OpenRouterAdapter | null,
+        adapter?: GeminiAdapter | OpenRouterAdapter | OpenAIAdapter | null,
         customUserName?: string, // Add optional customUserName parameter
         memoryResults?: any, // This parameter already correctly receives memory search results
         characterId?: string // 新增参数
@@ -1651,7 +1706,12 @@ export class NodeSTCore {
 
             // 添加适配器类型日志
             console.log('[NodeSTCore] Using adapter:', {
-                type: activeAdapter instanceof OpenRouterAdapter ? 'OpenRouter' : 'Gemini',
+                type:
+                    activeAdapter instanceof OpenRouterAdapter
+                        ? 'OpenRouter'
+                        : activeAdapter instanceof OpenAIAdapter
+                        ? 'OpenAICompatible'
+                        : 'Gemini',
                 apiProvider: this.apiSettings?.apiProvider
             });
 
@@ -1660,6 +1720,26 @@ export class NodeSTCore {
                 characterId_passed_to_adapter: characterId // <--- 记录传递给adapter的characterId
             });
             // 如果使用工具调用，则传递记忆搜索结果
+            if (activeAdapter instanceof OpenAIAdapter) {
+                const openaiMessages = cleanedContents.map(msg => ({
+                    role: msg.role === 'model' ? 'assistant' : msg.role,
+                    content: msg.parts[0]?.text || ''
+                }));
+                try {
+                    const resp = await activeAdapter.chatCompletion(openaiMessages, {
+                        temperature: this.apiSettings?.temperature ?? 0.7,
+                        max_tokens: this.apiSettings?.maxTokens ?? 800
+                    });
+                    if (resp && resp.choices && resp.choices[0]?.message?.content) {
+                        return resp.choices[0].message.content;
+                    }
+                    return null;
+                } catch (err) {
+                    console.error('[NodeSTCore] OpenAIAdapter chatCompletion error:', err);
+                    return null;
+                }
+            }
+
             if (activeAdapter) {
                 console.log('[NodeSTCore] 调用generateContentWithTools，传递characterId:', characterId); // <--- 记录
                 const response = await activeAdapter.generateContentWithTools(
@@ -1881,7 +1961,7 @@ export class NodeSTCore {
             });
 
             // 确保Adapter已初始化
-            if ((!this.geminiAdapter || !this.openRouterAdapter) && apiKey) {
+            if ((!this.geminiAdapter || !this.openRouterAdapter || !this.openAICompatibleAdapter) && apiKey) {
                 this.initAdapters(apiKey, this.apiSettings);
             }
 

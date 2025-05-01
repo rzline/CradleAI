@@ -1,8 +1,8 @@
-import AsyncStorage from '@react-native-async-storage/async-storage';
 import { Character } from '../../../shared/types';
 import { CircleRFramework, CirclePostOptions, CircleResponse } from '@/shared/types/circle-types';
 import { GeminiAdapter } from '../utils/gemini-adapter';
 import { OpenRouterAdapter } from '../utils/openrouter-adapter';
+import { OpenAIAdapter } from '../utils/openai-adapter'; // 新增导入
 import { MessageBoxItem, RelationshipMapData } from '../../../shared/types/relationship-types';
 import { PromptBuilderService, DEntry, RFrameworkEntry } from '../services/prompt-builder-service';
 import CirclePrompts, { defaultScenePrompt, ScenePromptParams } from '@/prompts/circle-prompts';
@@ -16,6 +16,7 @@ export class CircleManager {
     
     private geminiAdapter: GeminiAdapter | null = null;
     private openRouterAdapter: OpenRouterAdapter | null = null;
+    private openAIAdapter: OpenAIAdapter | null = null; // 新增openai-compatible适配器
     private apiKey?: string;
     private openRouterConfig?: {
         apiKey?: string;
@@ -65,6 +66,17 @@ export class CircleManager {
             this.geminiAdapter = new GeminiAdapter(apiKey);
             console.log('【CircleManager】已初始化 Gemini 适配器');
         }
+
+        // 检查 openai-compatible 配置
+        const apiSettings = getApiSettings();
+        if (apiSettings.apiProvider === 'openai-compatible' && apiSettings.OpenAIcompatible?.enabled) {
+            this.openAIAdapter = new OpenAIAdapter({
+                endpoint: apiSettings.OpenAIcompatible.endpoint || '',
+                apiKey: apiSettings.OpenAIcompatible.apiKey || '',
+                model: apiSettings.OpenAIcompatible.model || 'gpt-3.5-turbo'
+            });
+            console.log('【CircleManager】已初始化 OpenAI-compatible 适配器');
+        }
     }
 
     updateApiKey(
@@ -89,6 +101,7 @@ export class CircleManager {
         // Clear existing adapters to prevent conflicts
         this.geminiAdapter = null;
         this.openRouterAdapter = null;
+        this.openAIAdapter = null; // 清理openAIAdapter
         
         // Only update OpenRouter configuration if explicitly provided
         if (openRouterConfig && openRouterConfig.apiKey) {
@@ -105,6 +118,17 @@ export class CircleManager {
         else {
             this.geminiAdapter = new GeminiAdapter(apiKey);
             console.log('【CircleManager】已初始化/更新 Gemini 适配器');
+        }
+
+        // 检查 openai-compatible 配置
+        const apiSettings = getApiSettings();
+        if (apiSettings.apiProvider === 'openai-compatible' && apiSettings.OpenAIcompatible?.enabled) {
+            this.openAIAdapter = new OpenAIAdapter({
+                endpoint: apiSettings.OpenAIcompatible.endpoint || '',
+                apiKey: apiSettings.OpenAIcompatible.apiKey || '',
+                model: apiSettings.OpenAIcompatible.model || 'gpt-3.5-turbo'
+            });
+            console.log('【CircleManager】已初始化/更新 OpenAI-compatible 适配器');
         }
     }
 
@@ -236,7 +260,43 @@ export class CircleManager {
                 };
                 
                 let response: string;
-                
+
+                // 优先判断 openai-compatible
+                if (
+                    apiSettings.apiProvider === 'openai-compatible' &&
+                    this.openAIAdapter
+                ) {
+                    console.log('【朋友圈】使用OpenAI-compatible适配器发送请求');
+                    // 判断是否为多模态请求
+                    if (containsImage) {
+                        // 这里只处理文本+图片的简单情况
+                        // 你可以根据实际需求扩展图片提取逻辑
+                        const multimodalMessages = [
+                            {
+                                role: "user",
+                                content: [
+                                    {
+                                        type: "text",
+                                        text: request.prompt
+                                    }
+                                    // 图片部分由circlePost处理
+                                ]
+                            }
+                        ];
+                        // 这里只返回文本内容
+                        const multimodalResult = await this.openAIAdapter.generateMultiModalContent(request.prompt, {});
+                        response = multimodalResult.text || '';
+                    } else {
+                        // 普通文本请求
+                        response = await this.openAIAdapter.chatCompletion([
+                            { role: "user", content: request.prompt }
+                        ]).then(res => res.choices?.[0]?.message?.content || '');
+                    }
+                    CircleManager.lastRequestTime = Date.now();
+                    request.resolve(response);
+                    continue;
+                }
+
                 // Check if cloud service is enabled first
                 if (this.useCloudService) {
                     console.log('【朋友圈】云服务已启用，尝试使用云端API');
@@ -772,8 +832,33 @@ export class CircleManager {
                     
                     console.log(`【朋友圈】发送包含图片的请求，提示文本长度: ${promptText.length}`);
                     
-                    // 检查是否应该使用云服务处理图片请求
-                    if (this.useCloudService) {
+                    // 检查 openai-compatible
+                    const apiSettings = getApiSettings();
+                    if (
+                        apiSettings.apiProvider === 'openai-compatible' &&
+                        this.openAIAdapter
+                    ) {
+                        // 只取第一张图片
+                        const imageUrl = options.content.images![0];
+                        let imageData: { data: string, mimeType: string };
+                        try {
+                            imageData = await this.fetchImageAsBase64(imageUrl);
+                        } catch (imageError) {
+                            throw new Error(`无法处理图片: ${imageError instanceof Error ? imageError.message : '未知错误'}`);
+                        }
+                        const formattedImageData = {
+                            data: imageData.data,
+                            mimeType: imageData.mimeType
+                        };
+                        // 使用OpenAIAdapter的多模态方法
+                        const multimodalResult = await this.openAIAdapter.generateMultiModalContent(
+                            promptText,
+                            {
+                                images: [{ data: formattedImageData.data, mimeType: formattedImageData.mimeType }]
+                            }
+                        );
+                        response = multimodalResult.text || '';
+                    } else if (this.useCloudService) {
                         try {
                             // Import CloudServiceProvider if not already imported
                             const { CloudServiceProvider } = require('@/services/cloud-service-provider');
@@ -920,14 +1005,37 @@ export class CircleManager {
                     console.log(`【朋友圈】角色 ${characterData.name} 的完整请求体(手动添加了关系状态检视):\n${'-'.repeat(80)}\n${modifiedPrompt}\n${'-'.repeat(80)}`);
                     console.log(`【朋友圈】角色 ${characterData.name} 的最终提示词长度: ${modifiedPrompt.length}`);
                     
-                    // 使用修改后的提示词
-                    response = await this.getChatResponse(modifiedPrompt);
+                    // 检查 openai-compatible
+                    const apiSettings = getApiSettings();
+                    if (
+                        apiSettings.apiProvider === 'openai-compatible' &&
+                        this.openAIAdapter
+                    ) {
+                        response = await this.openAIAdapter.chatCompletion([
+                            { role: "user", content: modifiedPrompt }
+                        ]).then(res => res.choices?.[0]?.message?.content || '');
+                    } else {
+                        // 使用修改后的提示词
+                        response = await this.getChatResponse(modifiedPrompt);
+                    }
                 } else {
                     // 原来的流程
                     // 新增日志：打印完整的请求体内容
                     console.log(`【朋友圈】角色 ${characterData.name} 的完整请求体:\n${'-'.repeat(80)}\n${prompt}\n${'-'.repeat(80)}`);
                     console.log(`【朋友圈】角色 ${characterData.name} 的最终提示词长度: ${prompt.length}`);
-                    response = await this.getChatResponse(prompt);
+                    
+                    // 检查 openai-compatible
+                    const apiSettings = getApiSettings();
+                    if (
+                        apiSettings.apiProvider === 'openai-compatible' &&
+                        this.openAIAdapter
+                    ) {
+                        response = await this.openAIAdapter.chatCompletion([
+                            { role: "user", content: prompt }
+                        ]).then(res => res.choices?.[0]?.message?.content || '');
+                    } else {
+                        response = await this.getChatResponse(prompt);
+                    }
                 }
             }
             
@@ -1451,82 +1559,6 @@ user789-+10-friend
         }
     }
 
-    // 修正1: 创建一个方法来将消息盒子转换为D类条目
-    private createChatHistoryDEntry(character: Character): any {
-        if (!character?.messageBox || character.messageBox.length === 0) {
-            return null;
-        }
-        
-        // 将消息盒子格式化为适合AI理解的文本
-        const messagesText = character.messageBox
-            .slice(0, 15) // 限制显示最近15条消息
-            .sort((a, b) => b.timestamp - a.timestamp) // 从新到旧排序
-            .map(msg => {
-                return `- 来自: ${msg.senderName} (${msg.type})
-        内容: ${msg.content}
-        时间: ${new Date(msg.timestamp).toLocaleString()}
-        ${msg.contextContent ? `上下文: ${msg.contextContent}` : ''}
-        ---`;
-            }).join('\n');
-            
-        // 创建D类条目
-        return {
-            name: "Chat History",
-            parts: [{ text: `【消息盒子】\n以下是你最近收到的互动消息:\n${messagesText}` }],
-            role: "user",
-            is_d_entry: true,
-            position: 4,        // position=4表示这是一个动态深度条目
-            injection_depth: 1, // 深度1，插入在用户消息之前
-            constant: true      // 始终包含此条目
-        };
-    }
-
-    // 修正2: 创建一个方法来将关系图谱转换为D类条目
-    private createRelationshipMapDEntry(character: Character): any {
-        if (!character?.relationshipMap?.relationships) {
-            return null;
-        }
-        
-        // 格式化关系图谱数据
-        const relationshipsText = Object.entries(character.relationshipMap.relationships)
-            .map(([id, rel]: [string, any]) => {
-                return `- 角色ID: ${id}
-        关系类型: ${rel.type}
-        关系强度: ${rel.strength}
-        描述: ${rel.description}
-        最后更新: ${new Date(rel.lastUpdated).toLocaleString()}
-        互动次数: ${rel.interactions || 0}`;
-            }).join('\n\n');
-        
-        // 创建D类条目
-        return {
-            name: "Relationship Map",
-            parts: [{ text: `【关系图谱数据】\n你与其他角色的当前关系:\n${relationshipsText}` }],
-            role: "user",
-            is_d_entry: true,
-            position: 4,        // position=4表示这是一个动态深度条目
-            injection_depth: 1, // 深度1，插入在用户消息之前
-            constant: true      // 始终包含此条目
-        };
-    }
-
-    // 修正3: 创建一个方法来将状态检视提示词转换为D类条目
-    private createRelationshipReviewDEntry(reviewPrompt: string): any {
-        if (!reviewPrompt) {
-            return null;
-        }
-        
-        // 创建D类条目
-        return {
-            name: "Relationship State Review",
-            parts: [{ text: reviewPrompt }],
-            role: "user",
-            is_d_entry: true,
-            position: 4,        // position=4表示这是一个动态深度条目
-            injection_depth: 1, // 深度1，插入在用户消息之前
-            constant: true      // 始终包含此条目
-        };
-    }
 
     // 格式化消息盒子内容
     private formatMessageBoxForPrompt(messageBox: MessageBoxItem[]): string {

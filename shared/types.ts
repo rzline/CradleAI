@@ -140,6 +140,10 @@ export interface MessagePart {
     position?: number;
     parts?: MessagePart[]; // 递归结构，消息是否包含子消息
     is_d_entry?: boolean; // 是否是世界书条目
+    inlineData?: string; // 内联数据
+    fileData?: string; // 文件数据
+    mimiType?: string; // MIME类型
+    
 }
 
 export interface ChatMessage {
@@ -669,6 +673,13 @@ export interface ChatSettings {
     steps?: number;
     scale?: number;
     noiseSchedule?: string;
+  };
+  OpenAIcompatible?: {
+    enabled: boolean;
+    apiKey?: string;
+    model?: string;
+    endpoint?: string;
+    // 其他配置项
   };
 }
 

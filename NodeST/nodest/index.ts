@@ -13,6 +13,7 @@ import { CircleManager, CirclePostOptions, CircleResponse } from './managers/cir
 import { GroupManager } from '../../src/group/group-manager';
 import { GeminiAdapter } from './utils/gemini-adapter';
 import { OpenRouterAdapter } from './utils/openrouter-adapter';
+import { OpenAIAdapter } from './utils/openai-adapter';
 import { CharacterUtils } from './utils/character-utils';
 
 export interface ProcessChatResponse {
@@ -26,7 +27,7 @@ export interface ProcessChatRequest {
     conversationId: string;
     status: "更新人设" | "新建角色" | "同一角色继续对话";
     apiKey: string;
-    apiSettings?: Pick<GlobalSettings['chat'], 'apiProvider' | 'openrouter' | 'useGeminiModelLoadBalancing' | 'useGeminiKeyRotation' | 'additionalGeminiKeys'>;
+    apiSettings?: Partial<GlobalSettings['chat']>; // 修改为 Partial
     jsonString?: string;
     isCradleGeneration?: boolean; 
     characterId?: string;
@@ -46,6 +47,7 @@ export class NodeST {
     private apiKey: string = '';
     private geminiAdapter: GeminiAdapter | null = null;
     private openRouterAdapter: OpenRouterAdapter | null = null;
+    private openAICompatibleAdapter: OpenAIAdapter | null = null; // 新增
 
     constructor(apiKey: string = '') {
         this.apiKey = apiKey;
@@ -86,7 +88,7 @@ export class NodeST {
     // Add new method for updating API settings
     updateApiSettings(
         apiKey: string, 
-        apiSettings?: Pick<GlobalSettings['chat'], 'apiProvider' | 'openrouter' | 'useGeminiModelLoadBalancing' | 'useGeminiKeyRotation' | 'additionalGeminiKeys'>
+        apiSettings?: Partial<GlobalSettings['chat']> // 修改为 Partial
     ): void {
         // Set API key first
         this.setApiKey(apiKey);
@@ -109,17 +111,28 @@ export class NodeST {
         }
         
         // Update adapters
-        if (apiSettings?.apiProvider === 'openrouter' && apiSettings.openrouter?.enabled) {
+        if (apiSettings?.apiProvider === 'openai-compatible' && apiSettings.OpenAIcompatible?.enabled) {
+            this.openAICompatibleAdapter = new OpenAIAdapter({
+                endpoint: apiSettings.OpenAIcompatible.endpoint || '',
+                apiKey: apiSettings.OpenAIcompatible.apiKey || '',
+                model: apiSettings.OpenAIcompatible.model || 'gpt-3.5-turbo'
+            });
+            // 清除其它适配器避免冲突
+            this.geminiAdapter = null;
+            this.openRouterAdapter = null;
+        } else if (apiSettings?.apiProvider === 'openrouter' && apiSettings.openrouter?.enabled) {
             this.openRouterAdapter = new OpenRouterAdapter(
                 apiSettings.openrouter.apiKey || '',
                 apiSettings.openrouter.model || 'openai/gpt-3.5-turbo'
             );
             // Clear gemini adapter to avoid conflicts
             this.geminiAdapter = null;
+            this.openAICompatibleAdapter = null;
         } else {
             this.geminiAdapter = new GeminiAdapter(apiKey);
-            // Clear openrouter adapter to avoid conflicts
+            // Clear other adapters to avoid conflicts
             this.openRouterAdapter = null;
+            this.openAICompatibleAdapter = null;
         }
         
         console.log(`【NodeST】更新API设置:`, {
@@ -135,7 +148,7 @@ export class NodeST {
 
     private getCoreInstance(
         apiKey: string = "",
-        apiSettings?: Pick<GlobalSettings['chat'], 'apiProvider' | 'openrouter' | 'useGeminiModelLoadBalancing' | 'useGeminiKeyRotation' | 'additionalGeminiKeys'>,
+        apiSettings?: Partial<GlobalSettings['chat']>, // 修改为 Partial
         geminiOptions?: {
             geminiPrimaryModel?: string;
             geminiBackupModel?: string;
@@ -268,6 +281,17 @@ export class NodeST {
                 };
             }
             else if (params.status === "同一角色继续对话") {
+                // 确认OpenAIcompatible参数已传递
+                if (
+                    params.apiSettings?.apiProvider === 'openai-compatible' &&
+                    params.apiSettings?.OpenAIcompatible?.enabled
+                ) {
+                    console.log('[NodeST] OpenAIcompatible参数:', {
+                        endpoint: params.apiSettings.OpenAIcompatible.endpoint,
+                        model: params.apiSettings.OpenAIcompatible.model,
+                        apiKey: params.apiSettings.OpenAIcompatible.apiKey
+                    });
+                }
                 const response = await core.continueChat(
                     params.conversationId,
                     params.userMessage,
@@ -795,14 +819,15 @@ export class NodeST {
     /**
      * 生成文本内容 - 供群聊等功能直接使用
      * @param prompt 提示词文本
+     * @param characterId 可选，便于表格记忆
      * @returns 生成的内容
      */
-    async generateContent(prompt: string): Promise<string> {
+    async generateContent(prompt: string, characterId?: string): Promise<string> {
         try {
-            console.log(`【NodeST】生成内容，提示词长度: ${prompt.length}，使用提供商: ${this.openRouterAdapter ? 'OpenRouter' : 'Gemini'}`);
+            console.log(`【NodeST】生成内容，提示词长度: ${prompt.length}，使用提供商: ${this.openAICompatibleAdapter ? 'OpenAI-compatible' : this.openRouterAdapter ? 'OpenRouter' : 'Gemini'}`);
             
             // Initialize adapters if they don't exist - no API key check needed
-            if (!this.openRouterAdapter && !this.geminiAdapter) {
+            if (!this.openRouterAdapter && !this.geminiAdapter && !this.openAICompatibleAdapter) {
                 // Create Gemini adapter - it can handle empty API key now
                 this.geminiAdapter = new GeminiAdapter(this.apiKey || "");
             }
@@ -815,8 +840,14 @@ export class NodeST {
             
             let response: string;
             
-            // Prioritize OpenRouter adapter if available
-            if (this.openRouterAdapter) {
+            // 优先 openai-compatible
+            if (this.openAICompatibleAdapter) {
+                console.log('【NodeST】使用OpenAI-compatible适配器生成内容');
+                response = await this.openAICompatibleAdapter.generateContent(
+                    [message],
+                    characterId
+                );
+            } else if (this.openRouterAdapter) {
                 console.log('【NodeST】使用OpenRouter适配器生成内容');
                 response = await this.openRouterAdapter.generateContent([message]);
             } else if (this.geminiAdapter) {
@@ -866,7 +897,7 @@ export class NodeST {
         conversationId: string;
         characterId: string;
         apiKey: string;
-        apiSettings?: Pick<GlobalSettings['chat'], 'apiProvider' | 'openrouter' | 'useGeminiModelLoadBalancing' | 'useGeminiKeyRotation' | 'additionalGeminiKeys'>;
+        apiSettings?: Partial<GlobalSettings['chat']>;
     }): Promise<{ success: boolean; error?: string }> {
         try {
             // 获取核心实例

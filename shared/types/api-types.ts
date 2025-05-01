@@ -59,9 +59,22 @@ export interface NovelAISettings {
     noiseSchedule?: string;    // 噪声调度方式
 }
 
+// OpenAI compatible API settings
+export interface OpenAICompatibleSettings {
+    enabled: boolean;          // 是否启用 OpenAI 兼容 API
+    apiKey: string;            // API Key
+    model: string;             // 当前选择的模型
+    endpoint: string;          // API 端点 URL
+    orgId?: string;            // 组织 ID (可选)
+    useSystemRole?: boolean;   // 是否使用系统角色
+    contextWindow?: number;    // 上下文窗口大小 (可选)
+    maxTokens?: number;        // 最大生成的标记数 (可选)
+}
+
 export interface ApiSettings {
-    apiProvider: 'gemini' | 'openrouter';  // 当前选择的API提供商
+    apiProvider: 'gemini' | 'openrouter' | 'openai-compatible';  // 当前选择的API提供商
     openrouter?: OpenRouterSettings;       // OpenRouter设置
+    OpenAIcompatible?: OpenAICompatibleSettings; // OpenAI兼容API设置
     useCloudService?: boolean;             // 是否使用云服务
     cloudModel?: string;                   // 云服务使用的模型
     additionalGeminiKeys?: string[];
@@ -140,6 +153,49 @@ export interface OpenRouterError {
 // OpenRouter 模型列表响应
 export interface OpenRouterModelsResponse {
     data: OpenRouterModel[];
+}
+
+// OpenAI Compatible API Request
+export interface OpenAICompatibleRequest {
+    model: string;
+    messages: Array<{
+        role: "user" | "assistant" | "system";
+        content: string | Array<{
+            type?: string;
+            text?: string;
+            image_url?: {
+                url: string;
+            };
+        }>;
+    }>;
+    temperature?: number;
+    max_tokens?: number;
+    top_p?: number;
+    frequency_penalty?: number;
+    presence_penalty?: number;
+    stream?: boolean;
+    stop?: string[];
+}
+
+// OpenAI Compatible API Response
+export interface OpenAICompatibleResponse {
+    id: string;
+    object: string;
+    created: number;
+    model: string;
+    choices: Array<{
+        index: number;
+        message: {
+            role: string;
+            content: string;
+        };
+        finish_reason: string;
+    }>;
+    usage: {
+        prompt_tokens: number;
+        completion_tokens: number;
+        total_tokens: number;
+    };
 }
 
 // CloudService 配置

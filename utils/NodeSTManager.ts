@@ -112,7 +112,7 @@ console.log(`[NodeSTManager] Setting search enabled to: ${enabled}`); // Add log
     status?: "更新人设" | "新建角色" | "同一角色继续对话";
     conversationId: string;
     apiKey?: string; // Make apiKey optional
-    apiSettings?: Pick<GlobalSettings['chat'], 'apiProvider' | 'openrouter' | 'useGeminiModelLoadBalancing' | 'useGeminiKeyRotation' | 'additionalGeminiKeys'>;
+    apiSettings?: Partial<GlobalSettings['chat']>;    
     character?: Character; // Character object with jsonData
     characterId?: string; // Optional character ID
     geminiOptions?: {
@@ -147,6 +147,10 @@ console.log(`[NodeSTManager] Setting search enabled to: ${enabled}`); // Add log
         action: params.status === "更新人设" ? "更新人设" : (params.status === "新建角色" ? "新建角色" : "继续对话"),
         useToolCalls: this.searchEnabled,
         usingCloudFallback: !apiKey,
+        OpenAIcompatible: params.apiSettings?.OpenAIcompatible?.enabled,
+        OpenAIcompatibleModel: params.apiSettings?.OpenAIcompatible?.model,
+        OpenAIcompatibleKey: params.apiSettings?.OpenAIcompatible?.apiKey,
+        OpenAIcompatibleEndpoint: params.apiSettings?.OpenAIcompatible?.endpoint
       });
 
       // Add detailed logging of character data when creating a new character
@@ -202,7 +206,7 @@ console.log(`[NodeSTManager] Setting search enabled to: ${enabled}`); // Add log
         conversationId: params.conversationId,
         status: params.status || "同一角色继续对话",
         apiKey: apiKey,
-        apiSettings: params.apiSettings,
+        apiSettings: params.apiSettings, // 这里已包含OpenAIcompatible全部参数
         jsonString: jsonString,
         characterId: characterId,  // Pass characterId for memory service
         customUserName: params.character?.customUserName, // Pass the customUserName to NodeST
@@ -887,8 +891,7 @@ interface ProcessChatOptions {
   status?: "更新人设" | "新建角色" | "同一角色继续对话";
   conversationId: string;
   apiKey: string;
-  apiSettings?: Pick<GlobalSettings['chat'], 'apiProvider' | 'openrouter' | 'useGeminiModelLoadBalancing' | 'useGeminiKeyRotation' | 'additionalGeminiKeys'>;
-  character?: Character;
+  apiSettings?: Partial<GlobalSettings['chat']>;  character?: Character;
   geminiOptions?: {
     geminiPrimaryModel?: string;
     geminiBackupModel?: string;

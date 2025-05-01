@@ -47,11 +47,17 @@ export function storeUserSettingsGlobally(settings: GlobalSettings): void {
     // Store in global object for React Native environment
     if (typeof global !== 'undefined') {
       (global as any).__USER_SETTINGS = settings;
+      if (settings.chat?.OpenAIcompatible?.endpoint) {
+        (global as any).__OPENAI_COMPATIBLE_ENDPOINT = settings.chat.OpenAIcompatible.endpoint;
+      }
     }
     
     // Store in localStorage for web environment
     if (typeof localStorage !== 'undefined') {
       localStorage.setItem('user_settings', JSON.stringify(settings));
+      if (settings.chat?.OpenAIcompatible?.endpoint) {
+        localStorage.setItem('openai_compatible_endpoint', settings.chat.OpenAIcompatible.endpoint);
+      }
     }
     
     console.log('[SettingsHelper] User settings stored globally');
@@ -72,14 +78,27 @@ export function getUserSettingsGlobally(): GlobalSettings | null {
   try {
     // Try to get from global object first (React Native)
     if (typeof global !== 'undefined' && (global as any).__USER_SETTINGS) {
-      return (global as any).__USER_SETTINGS;
+      const settings = (global as any).__USER_SETTINGS;
+      if (settings.chat?.OpenAIcompatible?.endpoint === undefined && (global as any).__OPENAI_COMPATIBLE_ENDPOINT) {
+        settings.chat.OpenAIcompatible = settings.chat.OpenAIcompatible || {};
+        settings.chat.OpenAIcompatible.endpoint = (global as any).__OPENAI_COMPATIBLE_ENDPOINT;
+      }
+      return settings;
     }
     
     // Try to get from localStorage (web)
     if (typeof localStorage !== 'undefined') {
       const settingsStr = localStorage.getItem('user_settings');
       if (settingsStr) {
-        return JSON.parse(settingsStr);
+        const settings = JSON.parse(settingsStr);
+        if (settings.chat?.OpenAIcompatible?.endpoint === undefined) {
+          const endpoint = localStorage.getItem('openai_compatible_endpoint');
+          if (endpoint) {
+            settings.chat.OpenAIcompatible = settings.chat.OpenAIcompatible || {};
+            settings.chat.OpenAIcompatible.endpoint = endpoint;
+          }
+        }
+        return settings;
       }
     }
     
@@ -102,6 +121,12 @@ export function getApiSettings(): {
     apiKey?: string;
     model?: string;
   };
+  OpenAIcompatible?: {
+    enabled: boolean;
+    apiKey?: string;
+    model?: string;
+    endpoint?: string;
+  };
   useCloudService: boolean;
   useGeminiKeyRotation?: boolean;
   useGeminiModelLoadBalancing?: boolean;
@@ -117,21 +142,38 @@ export function getApiSettings(): {
       useCloudService: false,
       openrouter: {
         enabled: false
+      },
+      OpenAIcompatible: {
+        enabled: false
       }
     };
   }
-  
-  // Get the preferred API provider and settings
-  const { apiProvider, characterApiKey, openrouter, useCloudService = false } = settings.chat;
-  
+
+  // 互斥逻辑：只返回当前 provider 的参数
+  const { apiProvider, characterApiKey, openrouter, OpenAIcompatible, useCloudService = false, additionalGeminiKeys, useGeminiKeyRotation, useGeminiModelLoadBalancing, cloudModel } = settings.chat;
+
   return {
     apiKey: characterApiKey,
     apiProvider: apiProvider || 'gemini',
-    openrouter: {
-      enabled: openrouter?.enabled || false,
-      apiKey: openrouter?.apiKey,
-      model: openrouter?.model || 'openai/gpt-3.5-turbo'
-    },
-    useCloudService: useCloudService
+    openrouter: apiProvider === 'openrouter'
+      ? {
+          enabled: true,
+          apiKey: openrouter?.apiKey,
+          model: openrouter?.model || 'openai/gpt-3.5-turbo'
+        }
+      : { enabled: false },
+    OpenAIcompatible: apiProvider === 'openai-compatible'
+      ? {
+          enabled: true,
+          apiKey: OpenAIcompatible?.apiKey,
+          model: OpenAIcompatible?.model,
+          endpoint: OpenAIcompatible?.endpoint
+        }
+      : { enabled: false },
+    useCloudService,
+    additionalGeminiKeys,
+    useGeminiKeyRotation,
+    useGeminiModelLoadBalancing,
+    cloudModel
   };
 }

@@ -276,6 +276,7 @@ const { applyRegexTools } = useRegex();
         apiSettings: {
           apiProvider: user?.settings?.chat.apiProvider || 'gemini',
           openrouter: user?.settings?.chat.openrouter,
+          OpenAIcompatible: user?.settings?.chat.OpenAIcompatible, // 新增
           useGeminiModelLoadBalancing: user?.settings?.chat.useGeminiModelLoadBalancing,
           useGeminiKeyRotation: user?.settings?.chat.useGeminiKeyRotation,
           additionalGeminiKeys: user?.settings?.chat.additionalGeminiKeys,
