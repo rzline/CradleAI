@@ -24,6 +24,7 @@ import { useCharacters } from '@/constants/CharactersContext';
 import { getApiSettings, addCloudServiceStatusListener } from '@/utils/settings-helper';
 import { GeminiAdapter } from '@/NodeST/nodest/utils/gemini-adapter';
 import { OpenRouterAdapter } from '@/NodeST/nodest/utils/openrouter-adapter';
+import { OpenAIAdapter } from '@/NodeST/nodest/utils/openai-adapter';
 
 interface CharacterEditDialogProps {
   isVisible: boolean;
@@ -43,12 +44,23 @@ interface ChatMessage {
 // Helper function to convert API settings to properly typed object
 function getTypedApiSettings() {
   const settings = getApiSettings();
+  // 修正 openaiCompatible 结构，确保 apiKey 正确传递
   return {
-    apiProvider: settings.apiProvider === 'openrouter' ? 'openrouter' as const : 'gemini' as const,
+    apiProvider: settings.apiProvider === 'openrouter'
+      ? 'openrouter' as const
+      : settings.apiProvider === 'openai-compatible'
+        ? 'openai-compatible' as const
+        : 'gemini' as const,
     openrouter: settings.openrouter && {
       enabled: settings.openrouter.enabled,
       apiKey: settings.openrouter.apiKey || '',
       model: settings.openrouter.model || '',
+    },
+    openaiCompatible: settings.OpenAIcompatible && {
+      enabled: settings.OpenAIcompatible.enabled,
+      apiKey: settings.OpenAIcompatible.apiKey || '',
+      model: settings.OpenAIcompatible.model || '',
+      endpoint: settings.OpenAIcompatible.endpoint || '',
     },
     useCloudService: settings.useCloudService,
     cloudModel: settings.cloudModel,
@@ -59,16 +71,25 @@ function getTypedApiSettings() {
 }
 
 // Helper function to get the appropriate adapter based on API settings
-function getAdapter(apiSettings: ReturnType<typeof getTypedApiSettings>, apiKey: string) {
+function getAdapter(apiSettings: ReturnType<typeof getTypedApiSettings>, userApiKey: string) {
   if (apiSettings.apiProvider === 'openrouter' && apiSettings.openrouter?.enabled) {
-    console.log('[CharacterEditDialog] Using OpenRouter adapter');
+    // ...existing code...
     return new OpenRouterAdapter(
-      apiKey || apiSettings.openrouter.apiKey || '',
+      userApiKey || apiSettings.openrouter.apiKey || '',
       apiSettings.openrouter.model || 'openai/gpt-3.5-turbo'
     );
+  } else if (apiSettings.apiProvider === 'openai-compatible' && apiSettings.openaiCompatible?.enabled) {
+    // 优先使用 openaiCompatible.apiKey
+    const openaiKey = apiSettings.openaiCompatible.apiKey || userApiKey || '';
+    console.log('[CharacterEditDialog] Using OpenAI-compatible adapter, apiKey:', openaiKey ? '***' : '(empty)');
+    return new OpenAIAdapter({
+      endpoint: apiSettings.openaiCompatible.endpoint,
+      apiKey: openaiKey,
+      model: apiSettings.openaiCompatible.model || 'gpt-3.5-turbo'
+    });
   } else {
-    console.log('[CharacterEditDialog] Using Gemini adapter');
-    return new GeminiAdapter(apiKey, {
+    // ...existing code...
+    return new GeminiAdapter(userApiKey, {
       useModelLoadBalancing: apiSettings.useGeminiModelLoadBalancing,
       useKeyRotation: apiSettings.useGeminiKeyRotation,
       additionalKeys: apiSettings.additionalGeminiKeys,

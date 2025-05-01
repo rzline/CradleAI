@@ -162,6 +162,7 @@ export function getApiSettings(): {
           model: openrouter?.model || 'openai/gpt-3.5-turbo'
         }
       : { enabled: false },
+    // 修正 OpenAIcompatible 结构，确保 apiKey 正确返回
     OpenAIcompatible: apiProvider === 'openai-compatible'
       ? {
           enabled: true,
