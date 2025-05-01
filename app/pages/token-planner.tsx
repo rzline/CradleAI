@@ -6,8 +6,11 @@ import {
   SafeAreaView, 
   ScrollView,
   StatusBar,
-  Platform
+  Platform,
+  ToastAndroid,
+  Alert
 } from 'react-native';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import { useRouter } from 'expo-router';
 import { theme } from '@/constants/theme';
 import ModelInputForm from '@/components/token-planner/ModelInputForm';
@@ -71,10 +74,12 @@ interface CalculationResult {
 
 const VOICE_GENERATION_COST_PER_SECOND = 0.01;
 const IMAGE_GENERATION_COST_PER_IMAGE = 0.01 * 5;
+const TOKEN_PLANNER_SETTINGS_KEY = 'token_planner_settings';
 
 const TokenPlanner: React.FC = () => {
   const router = useRouter();
   const [loading, setLoading] = useState(true);
+  const [settingsLoaded, setSettingsLoaded] = useState(false);
   const [models, setModels] = useState<ModelData[]>([]);
   const [results, setResults] = useState<CalculationResult[]>([]);
   const [error, setError] = useState<string | null>(null);
@@ -99,8 +104,47 @@ const TokenPlanner: React.FC = () => {
   const [inputValues, setInputValues] = useState<InputValues>(defaultValues);
 
   useEffect(() => {
-    fetchModels();
+    const initPage = async () => {
+      await loadSavedSettings();
+      fetchModels();
+    };
+    
+    initPage();
   }, []);
+
+  const loadSavedSettings = async () => {
+    try {
+      setLoading(true);
+      const savedSettings = await AsyncStorage.getItem(TOKEN_PLANNER_SETTINGS_KEY);
+      if (savedSettings !== null) {
+        const parsedSettings = JSON.parse(savedSettings) as InputValues;
+        setInputValues(parsedSettings);
+      }
+    } catch (err) {
+      console.error('Error loading saved settings:', err);
+    } finally {
+      setSettingsLoaded(true);
+      setLoading(false);
+    }
+  };
+
+  const saveSettings = async (values: InputValues) => {
+    try {
+      await AsyncStorage.setItem(TOKEN_PLANNER_SETTINGS_KEY, JSON.stringify(values));
+      if (Platform.OS === 'android') {
+        ToastAndroid.show('设置已保存', ToastAndroid.SHORT);
+      } else {
+        Alert.alert('成功', '使用习惯设置已保存');
+      }
+    } catch (err) {
+      console.error('Error saving settings:', err);
+      if (Platform.OS === 'android') {
+        ToastAndroid.show('保存设置失败', ToastAndroid.SHORT);
+      } else {
+        Alert.alert('错误', '保存设置失败');
+      }
+    }
+  };
 
   const fetchModels = async () => {
     try {
@@ -194,6 +238,7 @@ const TokenPlanner: React.FC = () => {
   const handleFormSubmit = (values: InputValues) => {
     setInputValues(values);
     calculateCosts(values);
+    saveSettings(values);
   };
 
   return (
@@ -210,11 +255,14 @@ const TokenPlanner: React.FC = () => {
           </Text>
         </View>
 
-        <ModelInputForm 
-          defaultValues={inputValues} 
-          onSubmit={handleFormSubmit}
-          onRefreshModels={fetchModels}
-        />
+        {settingsLoaded && (
+          <ModelInputForm 
+            defaultValues={inputValues} 
+            onSubmit={handleFormSubmit}
+            onRefreshModels={fetchModels}
+            onSaveSettings={saveSettings}
+          />
+        )}
 
         {error ? (
           <View style={styles.errorContainer}>

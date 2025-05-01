@@ -732,40 +732,11 @@ const CharactersScreen: React.FC = () => {
     if (!isManaging) return null;
     return (
       <>
-        {/* 编辑按钮 */}
-        <TouchableOpacity
-          style={[
-            styles.floatingButton,
-            { bottom: 88, backgroundColor: theme.colors.primary }
-          ]}
-          onPress={() => {
-            // 只允许单选编辑
-            const char = characters.find(c => selectedCharacters[0] === c.id);
-            if (char) handleOpenEditDialog(char);
-          }}
-          disabled={selectedCharacters.length !== 1}
-        >
-          <Ionicons name="construct-outline" size={24} color="black" />
-        </TouchableOpacity>
-        {/* 图库按钮 */}
-        <TouchableOpacity
-          style={[
-            styles.floatingButton,
-            { bottom: 154, backgroundColor: theme.colors.primary }
-          ]}
-          onPress={() => {
-            const char = characters.find(c => selectedCharacters[0] === c.id);
-            if (char) handleOpenGallerySidebar(char);
-          }}
-          disabled={selectedCharacters.length !== 1}
-        >
-          <Ionicons name="images-outline" size={24} color="black" />
-        </TouchableOpacity>
         {/* 导出按钮 */}
         <TouchableOpacity
           style={[
             styles.floatingButton,
-            { bottom: 220, backgroundColor: theme.colors.primary }
+            { bottom: 82, backgroundColor: theme.colors.primary }
           ]}
           onPress={handleExport}
           disabled={selectedCharacters.length !== 1}

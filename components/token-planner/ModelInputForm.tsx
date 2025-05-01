@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { 
   View, 
   Text, 
@@ -32,16 +32,23 @@ interface ModelInputFormProps {
   defaultValues: InputValues;
   onSubmit: (values: InputValues) => void;
   onRefreshModels: () => void;
+  onSaveSettings: (values: InputValues) => void;
 }
 
 const ModelInputForm: React.FC<ModelInputFormProps> = ({ 
   defaultValues, 
   onSubmit,
-  onRefreshModels
+  onRefreshModels,
+  onSaveSettings
 }) => {
   const [values, setValues] = useState<InputValues>(defaultValues);
   const [expanded, setExpanded] = useState(false);
   const [showAdvancedOptions, setShowAdvancedOptions] = useState(false);
+  
+  // Update local state when defaultValues change (like when loaded from AsyncStorage)
+  useEffect(() => {
+    setValues(defaultValues);
+  }, [defaultValues]);
 
   const handleInputChange = (field: keyof InputValues, value: string | boolean) => {
     if (typeof value === 'boolean') {
@@ -64,6 +71,10 @@ const ModelInputForm: React.FC<ModelInputFormProps> = ({
 
   const handleReset = () => {
     setValues(defaultValues);
+  };
+
+  const handleSaveSettings = () => {
+    onSaveSettings(values);
   };
 
   const toggleExpanded = () => {
@@ -292,10 +303,15 @@ const ModelInputForm: React.FC<ModelInputFormProps> = ({
       )}
 
       <View style={styles.buttonContainer}>
-        <TouchableOpacity style={styles.refreshButton} onPress={onRefreshModels}>
-          <Ionicons name="refresh-outline" size={18} color="#fff" />
-          <Text style={styles.refreshButtonText}>刷新模型</Text>
-        </TouchableOpacity>
+        <View style={styles.leftButtons}>
+          <TouchableOpacity style={styles.refreshButton} onPress={onRefreshModels}>
+            <Ionicons name="refresh-outline" size={18} color="#fff" />
+          </TouchableOpacity>
+          
+          <TouchableOpacity style={styles.saveButton} onPress={handleSaveSettings}>
+            <Ionicons name="save-outline" size={18} color="#fff" />
+          </TouchableOpacity>
+        </View>
         
         <View style={styles.rightButtons}>
           <TouchableOpacity style={styles.resetButton} onPress={handleReset}>
@@ -368,6 +384,9 @@ const styles = StyleSheet.create({
     marginTop: 16,
     alignItems: 'center',
   },
+  leftButtons: {
+    flexDirection: 'row',
+  },
   rightButtons: {
     flexDirection: 'row',
   },
@@ -400,11 +419,15 @@ const styles = StyleSheet.create({
     paddingHorizontal: 12,
     borderRadius: 8,
     backgroundColor: 'rgba(255, 255, 255, 0.1)',
+    marginRight: 8,
   },
-  refreshButtonText: {
-    color: theme.colors.text,
-    fontSize: 14,
-    marginLeft: 6,
+  saveButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingVertical: 8,
+    paddingHorizontal: 12,
+    borderRadius: 8,
+    backgroundColor: 'rgba(100, 255, 100, 0.15)',
   },
   advancedOptionsButton: {
     flexDirection: 'row',
