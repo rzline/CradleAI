@@ -1037,11 +1037,7 @@ if (linkMatches.length > 0) {
         </>
       ) : (
         <>
-          <TouchableOpacity
-            activeOpacity={1}
-            style={{ flex: 1 }}
-            onLongPress={handleLongPressOutside}
-          >
+          <View style={{ flex: 1 }}>
             {getVisibleMessages().length === 0 ? (
               <ScrollView
                 style={[
@@ -1083,7 +1079,7 @@ if (linkMatches.length > 0) {
                 keyboardShouldPersistTaps="handled"
               />
             )}
-          </TouchableOpacity>
+          </View>
           {renderHistoryModal()}
         </>
       )}
