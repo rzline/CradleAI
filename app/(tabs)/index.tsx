@@ -53,6 +53,8 @@ import type  CloudServiceProviderClass  from '@/services/cloud-service-provider'
 import * as FileSystem from 'expo-file-system'; // 新增导入
 import { importDefaultCharactersIfNeeded, resetDefaultCharacterImported } from '@/components/DefaultCharacterImporter';
 import TestMarkdown from '@/components/testmarkdown';
+import { getApiSettings } from '@/utils/settings-helper'; 
+import { OpenRouterAdapter } from '@/NodeST/nodest/utils/openrouter-adapter';
 // Create a stable memory configuration outside the component
 type MemoryConfig = {
   embedder: {
@@ -1903,14 +1905,51 @@ const getBackgroundImage = () => {
     // 4. AI生成场景描述
     let aiSceneDesc = '';
     try {
-      const prompt = `请根据以下对话内容，用一句不超过15个英文单词的连贯语句，描述角色当前的表情、动作、场景（时间、地点、画面），不要描述外观、服饰。输出英文短句。对话内容：\n${contextMessages.map(m=>`${m.role}: ${m.content}`).join('\n')}`;
-      console.log('[后处理] 发送GeminiAdapter prompt:', prompt);
-      aiSceneDesc = await GeminiAdapter.executeDirectGenerateContent(prompt);
-      aiSceneDesc = (aiSceneDesc || '').replace(/[\r\n]+/g, ' ').trim();
-      console.log('[后处理] Gemini生成场景描述:', aiSceneDesc);
+      
+      // 检查 openai_compatible 是否启用
+      const apiSettings = getApiSettings();    
+      
+      if (
+        apiSettings.openrouter?.enabled &&
+        apiSettings.openrouter.apiKey &&
+        apiSettings.openrouter.model
+      ) {
+        // 使用 OpenRouterAdapter
+        const openrouterAdapter = new OpenRouterAdapter(
+          apiSettings.openrouter.apiKey,
+          apiSettings.openrouter.model
+        );
+        const prompt = `请根据以下对话内容，用一句不超过15个英文单词的连贯语句，描述角色当前的表情、动作、场景（时间、地点、画面），不要描述外观、服饰。输出英文短句。对话内容：\n${contextMessages.map(m=>`${m.role}: ${m.content}`).join('\n')}`;
+        aiSceneDesc = await openrouterAdapter.generateContent([
+          { role: 'user', parts: [{ text: prompt }] }
+        ]);
+        aiSceneDesc = (aiSceneDesc || '').replace(/[\r\n]+/g, ' ').trim();
+        console.log('[后处理] OpenRouterAdapter生成场景描述:', aiSceneDesc);
+      } else if (apiSettings.OpenAIcompatible?.enabled && apiSettings.OpenAIcompatible.apiKey && apiSettings.OpenAIcompatible.endpoint && apiSettings.OpenAIcompatible.model) {
+        // 动态导入 OpenAIAdapter
+        const { OpenAIAdapter } = await import('@/NodeST/nodest/utils/openai-adapter');
+        const openaiAdapter = new OpenAIAdapter({
+          endpoint: apiSettings.OpenAIcompatible.endpoint,
+          apiKey: apiSettings.OpenAIcompatible.apiKey,
+          model: apiSettings.OpenAIcompatible.model,
+        });
+        const prompt = `请根据以下对话内容，用一句不超过15个英文单词的连贯语句，描述角色当前的表情、动作、场景（时间、地点、画面），不要描述外观、服饰。输出英文短句。对话内容：\n${contextMessages.map(m=>`${m.role}: ${m.content}`).join('\n')}`;
+        aiSceneDesc = await openaiAdapter.generateContent([
+          { role: 'user', parts: [{ text: prompt }] }
+        ]);
+        aiSceneDesc = (aiSceneDesc || '').replace(/[\r\n]+/g, ' ').trim();
+        console.log('[后处理] OpenAICompatible生成场景描述:', aiSceneDesc);
+      } else {
+        // 原有GeminiAdapter逻辑
+        const prompt = `请根据以下对话内容，用一句不超过15个英文单词的连贯语句，描述角色当前的表情、动作、场景（时间、地点、画面），不要描述外观、服饰。输出英文短句。对话内容：\n${contextMessages.map(m=>`${m.role}: ${m.content}`).join('\n')}`;
+        console.log('[后处理] 发送GeminiAdapter prompt:', prompt);
+        aiSceneDesc = await GeminiAdapter.executeDirectGenerateContent(prompt);
+        aiSceneDesc = (aiSceneDesc || '').replace(/[\r\n]+/g, ' ').trim();
+        console.log('[后处理] Gemini生成场景描述:', aiSceneDesc);
+      }
     } catch (e) {
       aiSceneDesc = '';
-      console.warn('[后处理] Gemini生成场景描述失败:', e);
+      console.warn('[后处理] 场景描述生成失败:', e);
       // 新增：兜底，尝试用CloudServiceProvider
       try {
         const cloudResp = await (CloudServiceProvider.constructor as typeof CloudServiceProviderClass).generateChatCompletionStatic(

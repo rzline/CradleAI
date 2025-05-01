@@ -7,6 +7,7 @@ import { DEFAULT_NEGATIVE_PROMPTS, DEFAULT_POSITIVE_PROMPTS } from '@/constants/
 import NovelAIService from '@/components/NovelAIService';
 import ImageManager from '@/utils/ImageManager';
 import * as FileSystem from 'expo-file-system';
+import { getApiSettings } from '@/utils/settings-helper';
 
 export interface NovelAIGenerationConfig {
   seed?: number;
@@ -126,13 +127,37 @@ export class InputImagen {
       // Get recent conversation context (last 10 messages)
       const contextMessages = await StorageAdapter.exportConversation(characterId);
       const recentMessages = contextMessages.slice(-10);
-      
+
       if (recentMessages.length === 0) {
         return '';
       }
 
-      console.log('[InputImagen] Generating scene description from last messages:', 
-        recentMessages.length);
+      // 新增：检测openrouter/openai-compatible
+      const apiSettings = getApiSettings();
+      if (apiSettings.apiProvider === 'openrouter' && apiSettings.openrouter?.enabled && apiSettings.openrouter.apiKey) {
+        // 动态导入OpenRouterAdapter
+        const { OpenRouterAdapter } = await import('@/NodeST/nodest/utils/openrouter-adapter');
+        const adapter = new OpenRouterAdapter(apiSettings.openrouter.apiKey, apiSettings.openrouter.model || 'openai/gpt-3.5-turbo');
+        const prompt = `请根据以下对话内容，用一句不超过15个英文单词的连贯语句，描述角色当前的表情、动作、场景（时间、地点、画面），不要描述外观、服饰。输出英文短句。对话内容：\n${recentMessages.map(m=>`${m.role}: ${m.content}`).join('\n')}`;
+        const result = await adapter.generateContent([
+          { role: 'user', content: prompt }
+        ]);
+        return (result || '').replace(/[\r\n]+/g, ' ').trim();
+      }
+      if (apiSettings.apiProvider === 'openai-compatible' && apiSettings.OpenAIcompatible?.enabled && apiSettings.OpenAIcompatible.apiKey && apiSettings.OpenAIcompatible.endpoint) {
+        // 动态导入OpenAIAdapter
+        const { OpenAIAdapter } = await import('@/NodeST/nodest/utils/openai-adapter');
+        const adapter = new OpenAIAdapter({
+          endpoint: apiSettings.OpenAIcompatible.endpoint,
+          apiKey: apiSettings.OpenAIcompatible.apiKey,
+          model: apiSettings.OpenAIcompatible.model || 'gpt-3.5-turbo'
+        });
+        const prompt = `请根据以下对话内容，用一句不超过15个英文单词的连贯语句，描述角色当前的表情、动作、场景（时间、地点、画面），不要描述外观、服饰。输出英文短句。对话内容：\n${recentMessages.map(m=>`${m.role}: ${m.content}`).join('\n')}`;
+        const result = await adapter.generateContent([
+          { role: 'user', parts: [{ text: prompt }] }
+        ]);
+        return (result || '').replace(/[\r\n]+/g, ' ').trim();
+      }
 
       // Try using Gemini first
       try {
