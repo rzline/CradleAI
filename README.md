@@ -1,3 +1,72 @@
+## 界面预览
+
+<table style="border-collapse: collapse; width: 100%;">
+  <tr>
+    <td style="text-align: center; padding: 5px;">
+      <img src="https://cradleintro.top/app-screenshot.png" alt="APP截图 1" style="max-width: 150px; border: 1px solid #ddd;">
+      <br>
+    </td>
+    <td style="text-align: center; padding: 5px;">
+      <img src="https://cradleintro.top/app-screenshot2.png" alt="APP截图 2" style="max-width: 150px; border: 1px solid #ddd;">
+      <br>
+    </td>
+    <td style="text-align: center; padding: 5px;">
+      <img src="https://cradleintro.top/app-screenshot3.png" alt="APP截图 3" style="max-width: 150px; border: 1px solid #ddd;">
+      <br>
+    </td>
+    <td style="text-align: center; padding: 5px;">
+      <img src="https://cradleintro.top/app-screenshot4.png" alt="APP截图 4" style="max-width: 150px; border: 1px solid #ddd;">
+      <br>
+    </td>
+    <td style="text-align: center; padding: 5px;">
+      <img src="https://cradleintro.top/app-screenshot5.png" alt="APP截图 5" style="max-width: 150px; border: 1px solid #ddd;">
+      <br>
+    </td>
+    <td style="text-align: center; padding: 5px;">
+      <img src="https://cradleintro.top/app-screenshot6.png" alt="APP截图 6" style="max-width: 150px; border: 1px solid #ddd;">
+      <br>
+    </td>
+  </tr>
+</table>
+
+## 下载APK：
+[下载APK](https://cradleintro.top/Cradle-1.0.0-realease.apk)
+
+## 答疑/bug反馈/意见反馈：
+qq群：1017292082
+
+## 更新日志
+
+0501：
+1.已修复gemini渠道高级设置模型无法切换的问题
+
+2.支持markdown渲染功能
+
+3.优化角色详情编辑页面的交互
+
+4.支持以下自定义标签渲染：
+
+```
+<thinking> / <think> / <char-think>：思考过程折叠块
+<mem>：回忆折叠块
+<status> / <StatusBlock> / <statusblock>：状态栏块
+<websearch>：搜索结果折叠块
+<font>：支持 color/face/size 属性的字体标签
+<img>：图片标签（支持 image:id 及普通 url）
+```
+
+## 待更新：
+
+1.支持hajimi抱脸轮询（app已经内置轮询，但只是基础实现，不如hajimi功能强大）
+
+2.支持OPENAI兼容渠道API
+
+## 正在修复
+
+1.部分安卓手机无法上下滑聊天界面（红米部分型号）
+
+2.部分预设导入错误，原因是某些破限存在特殊字符，暂不支持，删除特殊字符后预设可以导入
+
 ## 主要功能
 
 ### 1. 角色管理
@@ -160,3 +229,10 @@
 1. 表格记忆：`https://github.com/muyoou/st-memory-enhancement`，在此感谢作者的代码分享，请大家多多支持原作者。
 
 2. mem0：`https://github.com/mem0ai/mem0` 基于 [Apache-2.0 license](https://www.apache.org/licenses/LICENSE-2.0) 许可。
+
+
+## 赞助
+
+如果您喜欢本项目并希望支持作者，可以请我喝一杯咖啡：
+
+[请作者喝一杯咖啡](https://cradleintro.top/%E5%BE%AE%E4%BF%A1%E5%9B%BE%E7%89%87_20250430201333.png)
