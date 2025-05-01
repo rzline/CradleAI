@@ -14,7 +14,7 @@ export interface ImageInfo {
 }
 
 /**
- * Manages image caching, storage, and cleanup for the application
+ *  Manages image caching, storage, and cleanup for the application
  */
 export class ImageManager {
   private static instance: ImageManager;
