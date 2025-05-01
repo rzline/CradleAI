@@ -755,19 +755,18 @@ if (linkMatches.length > 0) {
         )}
         {isUser ? (
           <View style={[styles.userMessageWrapper, {maxWidth: MAX_WIDTH}]}>
-            <LinearGradient
-              colors={['rgba(255, 224, 195, 0.95)', 'rgba(255, 200, 170, 0.95)']}
-              style={[styles.userGradient, {borderRadius: 18, borderTopRightRadius: 4}]}
-            >
-              {processMessageContent(message.text, true)}
-
-            </LinearGradient>
             {user?.avatar && (
               <Image
                 source={{ uri: String(user.avatar) }}
                 style={[styles.userMessageAvatar, { width: AVATAR_SIZE, height: AVATAR_SIZE, borderRadius: AVATAR_SIZE / 2 }]}
               />
             )}
+            <LinearGradient
+              colors={['rgba(255, 224, 195, 0.95)', 'rgba(255, 200, 170, 0.95)']}
+              style={[styles.userGradient, {borderRadius: 18, borderTopRightRadius: 4}]}
+            >
+              {processMessageContent(message.text, true)}
+            </LinearGradient>
           </View>
         ) : (
           <View style={[styles.botMessageTextContainer, {maxWidth: MAX_WIDTH}]}>
@@ -787,7 +786,7 @@ if (linkMatches.length > 0) {
       </View>
     );
   };
-
+  
   const renderMessageActions = (message: Message, index: number) => {
     if (message.isLoading) return null;
     
@@ -1701,6 +1700,7 @@ const styles = StyleSheet.create({
   visualNovelRegeneratingButton: {
     backgroundColor: 'rgba(52, 152, 219, 0.6)',
   },
+  
   // AI avatar at top-left of bubble
   messageAvatar: {
     position: 'absolute',
@@ -1711,16 +1711,18 @@ const styles = StyleSheet.create({
     borderWidth: 2,
     borderColor: 'rgba(255,255,255,0.2)',
   },
+  
   // User avatar at top-right of bubble
   userMessageAvatar: {
     position: 'absolute',
-    right: -38,
+    right: -15,
     top: -15,
     zIndex: 2,
     backgroundColor: '#444',
     borderWidth: 2,
     borderColor: 'rgba(255,255,255,0.2)',
   },
+
 });
 
 export default ChatDialog;
