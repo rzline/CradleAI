@@ -238,6 +238,8 @@ qq群：1017292082
 
 2. mem0：`https://github.com/mem0ai/mem0` 基于 [Apache-2.0 license](https://www.apache.org/licenses/LICENSE-2.0) 许可。
 
+3. OpenAI-adapter：感谢hajimi作者提供测试渠道，项目地址：`https://github.com/wyeeeee/hajimi` 
+
 
 ## 赞助
 
