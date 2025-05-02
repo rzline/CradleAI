@@ -789,15 +789,39 @@ if (linkMatches.length > 0) {
   
   const renderMessageActions = (message: Message, index: number) => {
     if (message.isLoading) return null;
-    
-    const isLastAIMessage = isMessageLastAIMessage(message, index);
-    
-    const messageRating = getMessageRating(message.id);
+
+    // 新增：判断是否为AI消息且不是自动消息
+    const isBot = message.sender === 'bot' && !message.isLoading;
+    const isAutoMessage = !!message.metadata?.isAutoMessageResponse;
     const isRegenerating = regeneratingMessageId === message.id;
-    
+
     return (
       <View style={styles.messageActions}>
-        {message.sender === 'bot' && renderTTSButtons(message)}
+        {isBot && !isAutoMessage && (
+          <>
+            {renderTTSButtons(message)}
+            {/* 重新生成按钮 */}
+            <TouchableOpacity
+              style={[
+                styles.actionButton,
+                isRegenerating && styles.regeneratingButton
+              ]}
+              disabled={isRegenerating || !!regeneratingMessageId} // 禁用所有重新生成按钮当有任何一个消息正在重新生成时
+              onPress={() => onRegenerateMessage && onRegenerateMessage(message.id, getAiMessageIndex(index))}
+            >
+              {isRegenerating ? (
+                <ActivityIndicator size="small" color="#ffffff" />
+              ) : (
+                <Ionicons 
+                  name="refresh" 
+                  size={18} 
+                  color={regeneratingMessageId ? "#999999" : "#3498db"} 
+                />
+              )}
+            </TouchableOpacity>
+          </>
+        )}
+        {/* 其他操作按钮可继续添加 */}
       </View>
     );
   };

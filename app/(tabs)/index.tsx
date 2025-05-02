@@ -941,76 +941,92 @@ useEffect(() => {
     }
   };
 
-  const handleRegenerateMessage = async (messageId: string, messageIndex: number) => {
+  const handleRegenerateMessage = async (messageId: string, _messageIndex: number) => {
     if (!selectedConversationId) {
       console.warn('No conversation selected for regeneration');
       return;
     }
-    
+  
     try {
-      // Set regenerating state to show loading indicator
+      // Set regenerating message ID to show loading indicator on button
       setRegeneratingMessageId(messageId);
-      
-      // Record current scroll position
-      const currentScrollPosition = selectedConversationId ? 
-        chatScrollPositions[selectedConversationId] : undefined;
-      
-      console.log('Regenerating message with aiIndex:', messageIndex);
-      
-      // Find all AI messages and their corresponding user messages
-      const currentMessages = [...messages];
-      
-      // First, count the number of actual bot messages (excluding loading messages and error messages)
-      const botMessages = currentMessages.filter(msg => 
-        msg.sender === 'bot' && 
-        !msg.isLoading && 
-        !msg.metadata?.isErrorMessage && 
-        !msg.metadata?.error
+  
+      // 获取角色 first_mes 内容（用于识别 first_mes 消息）
+      let firstMesText = '';
+      try {
+        const char = fallbackCharacter || selectedCharacter;
+        if (char?.jsonData) {
+          const characterData = JSON.parse(char.jsonData);
+          firstMesText = characterData.roleCard?.first_mes || '';
+        }
+      } catch (e) {
+        firstMesText = '';
+      }
+  
+      // 找出要重新生成的消息在列表中的实际位置
+      const targetMsgIndex = messages.findIndex(msg => msg.id === messageId);
+      if (targetMsgIndex === -1) {
+        console.warn('Target message not found:', messageId);
+        setRegeneratingMessageId(null);
+        return;
+      }
+  
+      // 只统计真实AI消息（非 loading、非 error、非 first_mes）
+      const botMessages = messages.filter(msg =>
+        msg.sender === 'bot' &&
+        !msg.isLoading &&
+        !msg.metadata?.isErrorMessage &&
+        !msg.metadata?.error &&
+        (firstMesText ? msg.text !== firstMesText : true) &&
+        !msg.metadata?.isFirstMes
       );
-      
-      console.log(`Found ${botMessages.length} bot messages for regeneration`);
-      
-      // Check if the message with the given ID exists and is a bot message
-      const targetMessageIndex = currentMessages.findIndex(msg => msg.id === messageId);
-      if (targetMessageIndex === -1) {
-        console.warn('Target message not found by ID:', messageId);
-        setRegeneratingMessageId(null); // Reset regenerating state
-        return;
+  
+      // 找到目标消息在真实AI消息中的索引（aiIndex）
+      const targetMsg = messages[targetMsgIndex];
+      let aiIndex = -1;
+      if (targetMsg) {
+        aiIndex = botMessages.findIndex(m => m.id === targetMsg.id);
       }
-      
-      const targetMessage = currentMessages[targetMessageIndex];
-      
-      // Verify this is a bot message we can regenerate (not an error message)
-      if (targetMessage.sender !== 'bot' || 
-          targetMessage.isLoading || 
-          targetMessage.metadata?.isErrorMessage === true ||
-          targetMessage.metadata?.error !== undefined) {
-        console.warn('Cannot regenerate message - invalid message type:', {
-          sender: targetMessage.sender,
-          isLoading: targetMessage.isLoading,
-          isErrorMessage: targetMessage.metadata?.isErrorMessage,
-          hasError: targetMessage.metadata?.error !== undefined
-        });
-        setRegeneratingMessageId(null); // Reset regenerating state
-        return;
+  
+      if (aiIndex === -1) {
+        // 兼容极端情况：如果是first_mes，aiIndex=0
+        if (firstMesText && targetMsg?.text === firstMesText) {
+          aiIndex = 0;
+        } else {
+          console.warn('Target message not found in filtered botMessages:', messageId);
+          setRegeneratingMessageId(null);
+          return;
+        }
       }
-
-      // Create a loading message
-      const loadingMessageId = `loading-${Date.now()}`;
-      await addMessage(selectedConversationId, {
-        id: loadingMessageId,
-        text: '', 
-        sender: 'bot',
-        isLoading: true,
-        timestamp: Date.now(),
-      });
-      
-      // Update local state to show loading indicator
-      setMessages(getMessages(selectedConversationId));
-      
-      // Call NodeSTManager to handle the regeneration with the provided aiIndex
+  
+      // 创建一个只包含目标消息之前的消息列表(包含目标消息的上一条用户消息)
+      let messagesToKeep = messages.slice(0, targetMsgIndex);
+  
+      // 确保保留目标消息前的用户消息（如果是机器人消息）
+      if (targetMsg.sender === 'bot' && targetMsgIndex > 0) {
+        const prevMsg = messages[targetMsgIndex - 1];
+        if (prevMsg && prevMsg.sender === 'user') {
+          messagesToKeep = messages.slice(0, targetMsgIndex);
+        }
+      }
+  
+      // 复制用于显示的消息列表，并添加一个loading状态的消息在原位置
+      const displayMessages = [
+        ...messagesToKeep,
+        {
+          ...targetMsg,
+          isLoading: true,
+          text: '正在重新生成回复...',
+          metadata: { ...targetMsg.metadata, isRegenerating: true }
+        }
+      ];
+  
+      // 更新UI显示，展示loading状态(无闪烁)
+      setMessages(displayMessages);
+  
+      // 调用 NodeSTManager，传递严格的 aiIndex+1
       const result = await NodeSTManager.regenerateFromMessage({
-        messageIndex: messageIndex, // Use the aiIndex explicitly
+        messageIndex: aiIndex + 1, // 用严格过滤后的aiIndex+1
         conversationId: selectedConversationId,
         apiKey: user?.settings?.chat?.characterApiKey || '',
         apiSettings: {
@@ -1019,69 +1035,28 @@ useEffect(() => {
         },
         character: fallbackCharacter || selectedCharacter || undefined
       });
-      
-      // Clear regenerating state after completion
-      setRegeneratingMessageId(null);
-      
-      // Handle the regeneration result
-      if (result.success) {
-        // Get current messages without the loading message
-        const updatedMessages = getMessages(selectedConversationId).filter(
-          msg => msg.id !== loadingMessageId
-        );
-        
-        // Find the message to replace
-        const insertIndex = updatedMessages.findIndex(msg => msg.id === messageId);
-        
-        if (insertIndex !== -1) {
-          // Replace the old message with the regenerated one, maintaining the aiIndex
-          updatedMessages[insertIndex] = {
-            ...updatedMessages[insertIndex],
-            text: result.text || 'No response generated',
-            isLoading: false,
-            // Store metadata including aiIndex for future regenerations
-            metadata: {
-              ...(updatedMessages[insertIndex].metadata || {}),
-              aiIndex: messageIndex,
-              regenerated: true,
-              regenerationTime: Date.now()
-            }
-          };
-        } else {
-          // If we couldn't find the original message (unlikely), append the regenerated message
-          updatedMessages.push({
-            id: `regenerated-${Date.now()}`,
-            text: result.text || 'No response generated',
-            sender: 'bot',
-            isLoading: false,
-            timestamp: Date.now(),
-            // Include metadata for future reference
-            metadata: {
-              aiIndex: messageIndex,
-              regenerated: true,
-              regenerationTime: Date.now()
-            }
-          });
-        }
-        
-        // Clear messages and rebuild with updated ones
-        await clearMessages(selectedConversationId);
-        
-        // Add the updated messages one by one
-        for (const msg of updatedMessages) {
-          await addMessage(selectedConversationId, msg);
-        }
-        
-        // Update local state to reflect changes
-        setMessages([...getMessages(selectedConversationId)]);
+  
+      // 构建最终消息列表
+      let finalMessages = [...messagesToKeep];
+  
+      if (result.success && result.text) {
+        // 生成成功，添加新的回复消息在原位置
+        finalMessages.push({
+          id: `${messageId}-regenerated-${Date.now()}`,
+          text: result.text,
+          sender: 'bot',
+          isLoading: false,
+          timestamp: Date.now(),
+          metadata: {
+            ...(targetMsg.metadata || {}),
+            aiIndex,
+            regenerated: true,
+            regenerationTime: Date.now()
+          }
+        });
       } else {
-        // In case of error, remove the loading indicator and add error message
-        const currentMessagesAfterLoading = getMessages(selectedConversationId).filter(
-          msg => msg.id !== loadingMessageId
-        );
-        
-        // Add error message
-        await addMessage(selectedConversationId, {
+        // 生成失败，添加错误消息
+        finalMessages.push({
           id: `error-${Date.now()}`,
           text: '抱歉，无法重新生成回复。请稍后再试。',
           sender: 'bot',
@@ -1090,33 +1065,31 @@ useEffect(() => {
           metadata: {
             error: result.error || 'Unknown error during regeneration',
             regenerationAttempt: true,
-            isErrorMessage: true // Add explicit flag to identify error messages
+            isErrorMessage: true
           }
         });
-        
-        // Update local state
-        setMessages([...getMessages(selectedConversationId)]);
       }
+  
+      // 将消息保存到数据库
+      await clearMessages(selectedConversationId);
+      for (const msg of finalMessages) {
+        await addMessage(selectedConversationId, msg);
+      }
+  
+      // 最后更新UI
+      setMessages(finalMessages);
+      setRegeneratingMessageId(null);
     } catch (error) {
       console.error('Error regenerating message:', error);
       
-      // Clear regenerating state on error
       setRegeneratingMessageId(null);
       
-      // Clean up loading indicator in case of error
-      const updatedMessages = messages.filter(msg => !msg.isLoading);
-      setMessages([...updatedMessages, {
-        id: `error-${Date.now()}`,
-        text: '发生错误，无法重新生成消息。',
-        sender: 'bot',
-        isLoading: false,
-        timestamp: Date.now(),
-        metadata: {
-          error: error instanceof Error ? error.message : 'Unknown error',
-          regenerationAttempt: true,
-          isErrorMessage: true // Add explicit flag to identify error messages
-        }
-      }]);
+      // 在错误情况下，恢复原消息列表，并添加错误提示
+      handleSendMessage('发生错误，无法重新生成消息。', 'bot', false, {
+        error: error instanceof Error ? error.message : 'Unknown error',
+        regenerationAttempt: true,
+        isErrorMessage: true
+      });
     }
   };
 

@@ -2054,29 +2054,28 @@ export class NodeSTCore {
                     return null;
                 }
             }
-            
-            // FIX: Completely revamp the message index calculation logic to properly handle short conversations
-            
-            // First, collect all actual AI and user messages (excluding first_mes and D-entries)
-            const aiMessages = realMessages.filter(msg => 
-                (msg.role === "model" || msg.role === "assistant") && !msg.is_first_mes
-            );
-            
-            console.log('[NodeSTCore] Found AI messages (excluding first_mes):', aiMessages.length);
-            
-            // Check if the requested index is valid
-            if (messageIndex <= 0 || messageIndex > aiMessages.length) {
-                console.error(`[NodeSTCore] Invalid message index: ${messageIndex}. Available AI messages: ${aiMessages.length}`);
-                return null;
-            }
-            
-            // Get the target AI message (1-based index for messageIndex)
-            const targetAiMessage = aiMessages[messageIndex - 1];
-            
-            if (!targetAiMessage) {
-                console.error(`[NodeSTCore] Could not find AI message at index ${messageIndex}`);
-                return null;
-            }
+                // === 修正：定义 aiMessages 变量 ===
+        const aiMessages = realMessages.filter(msg => 
+            (msg.role === "model" || msg.role === "assistant") && !msg.is_first_mes
+        );
+
+        // === 修正核心逻辑 ===
+        if (messageIndex < 1 || messageIndex > aiMessages.length) {
+            console.error(`[NodeSTCore] Invalid message index: ${messageIndex}. Available AI messages: ${aiMessages.length}`);
+            return null;
+        }
+        // 找到目标AI消息
+        const targetAiMessage = aiMessages[messageIndex - 1];
+        if (!targetAiMessage) {
+            console.error(`[NodeSTCore] Could not find AI message at index ${messageIndex}`);
+            return null;
+        }
+        // 在realMessages中找到该AI消息的索引
+        const aiIndexInReal = realMessages.findIndex(msg => msg === targetAiMessage);
+        if (aiIndexInReal === -1) {
+            console.error('[NodeSTCore] Could not locate target AI message in realMessages');
+            return null;
+        }
             
             console.log('[NodeSTCore] Target AI message to regenerate:', {
                 role: targetAiMessage.role,
@@ -2088,18 +2087,15 @@ export class NodeSTCore {
             let userMessageForRegeneration: ChatMessage | undefined;
             let userMessageIndex = -1;
             
-            for (let i = 0; i < realMessages.length; i++) {
-                if (realMessages[i] === targetAiMessage && i > 0) {
-                    // Look backwards for the closest user message
-                    for (let j = i - 1; j >= 0; j--) {
-                        if (realMessages[j].role === "user") {
-                            userMessageForRegeneration = realMessages[j];
-                            userMessageIndex = j;
-                            break;
-                        }
-                    }
+            for (let j = aiIndexInReal - 1; j >= 0; j--) {
+                if (realMessages[j].role === "user") {
+                    userMessageForRegeneration = realMessages[j];
                     break;
                 }
+            }
+            if (!userMessageForRegeneration) {
+                console.error('[NodeSTCore] Could not find user message before target AI message');
+                return null;
             }
             
             if (!userMessageForRegeneration) {
