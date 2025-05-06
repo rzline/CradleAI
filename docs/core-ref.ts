@@ -13,65 +13,15 @@ import {
     ChatHistoryEntity,
     GeminiMessage,
     RegexScript,
-    GlobalSettings,GlobalPresetConfig, GlobalWorldbookConfig,
+    GlobalSettings
 } from '../../../shared/types';
 import { MessagePart } from '@/shared/types';
 import { memoryService } from '@/services/memory-service';
-import { StorageAdapter } from '../utils/storage-adapter';
 
 export class NodeSTCore {
-
-    /**
-     * 应用全局正则脚本到文本
-     * @param text 输入文本
-     * @param regexScripts 正则脚本数组
-     * @param placement 1=用户输入, 2=AI输出
-     */
-    public static applyGlobalRegexScripts(
-        text: string,
-        regexScripts: any[],
-        placement: 1 | 2
-    ): string {
-        if (!Array.isArray(regexScripts) || typeof text !== 'string') return text;
-        let result = text;
-        for (const script of regexScripts) {
-            try {
-                if (script.disabled) continue;
-                if (!script.placement || !script.placement.includes(placement)) continue;
-                let findRegex = script.findRegex;
-                const replaceString = script.replaceString ?? '';
-                if (!findRegex) continue;
-
-                // 支持 /pattern/flags 格式
-                let pattern = findRegex;
-                let flags = script.flags || '';
-                // 如果 findRegex 形如 /xxx/gi
-                const regexMatch = /^\/(.+)\/([a-z]*)$/i.exec(findRegex);
-                if (regexMatch) {
-                    pattern = regexMatch[1];
-                    flags = regexMatch[2] || flags;
-                }
-
-                // 增加详细日志
-                const before = result;
-                const regex = new RegExp(pattern, flags);
-                result = result.replace(regex, replaceString);
-                if (before !== result) {
-                    console.log(`[全局正则] 应用脚本: ${script.scriptName}，查找: ${pattern}，替换为: ${replaceString}，flags: ${flags}，placement: ${script.placement}，原文: ${before}，结果: ${result}`);
-                } else {
-                    console.log(`[全局正则] 脚本: ${script.scriptName} 未匹配内容，原文未变。`);
-                }
-            } catch (e) {
-                console.warn('[NodeSTCore][GlobalRegex] 正则脚本执行异常:', script?.scriptName, e);
-                continue;
-            }
-        }
-        return result;
-    }
-
-    // 角色数据文件存储目录
-    private static characterDataDir = FileSystem.documentDirectory + 'nodest_characters/';
-        // 辅助方法：获取角色数据文件路径
+        // 角色数据文件存储目录
+        private static characterDataDir = FileSystem.documentDirectory + 'nodest_characters/';
+            // 辅助方法：获取角色数据文件路径
     private getCharacterDataFilePath(key: string): string {
         // key 形如 nodest_{conversationId}_{suffix}
         return NodeSTCore.characterDataDir + key + '.json';
@@ -735,152 +685,6 @@ export class NodeSTCore {
         }
     }
 
-    /**
-     * 删除指定 aiIndex 的 AI 消息及其对应的用户消息
-     * @param conversationId 会话ID
-     * @param messageIndex aiIndex+1
-     * @returns true/false
-     */
-    async deleteAiMessageByIndex(
-        conversationId: string,
-        messageIndex: number
-    ): Promise<boolean> {
-        try {
-            // 加载历史
-            const chatHistory = await this.loadJson<ChatHistoryEntity>(
-                this.getStorageKey(conversationId, '_history')
-            );
-            if (!chatHistory) {
-                console.error('[NodeSTCore] deleteAiMessageByIndex: 未找到聊天历史');
-                return false;
-            }
-            // 只保留非D类条目
-            const realMessages = chatHistory.parts.filter(msg => !msg.is_d_entry);
-            // 找到所有AI消息（非first_mes）
-            const aiMessages = realMessages.filter(msg =>
-                (msg.role === "model" || msg.role === "assistant") && !msg.is_first_mes
-            );
-            if (messageIndex < 1 || messageIndex > aiMessages.length) {
-                console.error('[NodeSTCore] deleteAiMessageByIndex: messageIndex超出范围');
-                return false;
-            }
-            // 目标AI消息
-            const targetAiMsg = aiMessages[messageIndex - 1];
-            // 找到其在realMessages中的索引
-            const aiIdxInReal = realMessages.findIndex(msg => msg === targetAiMsg);
-            if (aiIdxInReal === -1) {
-                console.error('[NodeSTCore] deleteAiMessageByIndex: 找不到AI消息在realMessages中的索引');
-                return false;
-            }
-            // 向前找到对应的用户消息
-            let userIdxInReal = -1;
-            for (let i = aiIdxInReal - 1; i >= 0; i--) {
-                if (realMessages[i].role === "user") {
-                    userIdxInReal = i;
-                    break;
-                }
-            }
-            if (userIdxInReal === -1) {
-                console.error('[NodeSTCore] deleteAiMessageByIndex: 找不到对应的用户消息');
-                return false;
-            }
-            // 记录要删除的消息内容
-            const aiMsgToDelete = realMessages[aiIdxInReal];
-            const userMsgToDelete = realMessages[userIdxInReal];
-            // 构建新的parts（只移除这两条，保留D类条目）
-            const newParts = chatHistory.parts.filter(msg =>
-                // 保留D类条目
-                msg.is_d_entry ||
-                // 保留非目标AI和用户消息
-                (msg !== aiMsgToDelete && msg !== userMsgToDelete)
-            );
-            // 更新历史
-            const updatedHistory: ChatHistoryEntity = {
-                ...chatHistory,
-                parts: newParts
-            };
-            await this.saveJson(
-                this.getStorageKey(conversationId, '_history'),
-                updatedHistory
-            );
-            // 可选：日志
-            console.log(`[NodeSTCore] 已删除AI消息及其用户消息，aiIndex=${messageIndex}, 新消息数=${updatedHistory.parts.length}`);
-            return true;
-        } catch (error) {
-            console.error('[NodeSTCore] deleteAiMessageByIndex error:', error);
-            return false;
-        }
-    }
-
-    /**
-      * 编辑指定 aiIndex 的 AI 消息内容
-     * @param conversationId 会话ID
-     * @param messageIndex aiIndex+1
-     * @param newContent 新内容
-     * @returns true/false
-     */
-    async editAiMessageByIndex(
-        conversationId: string,
-        messageIndex: number,
-        newContent: string
-    ): Promise<boolean> {
-        try {
-            // 加载历史
-            const chatHistory = await this.loadJson<ChatHistoryEntity>(
-                this.getStorageKey(conversationId, '_history')
-            );
-            if (!chatHistory) {
-                console.error('[NodeSTCore] editAiMessageByIndex: 未找到聊天历史');
-                return false;
-            }
-            // 只保留非D类条目
-            const realMessages = chatHistory.parts.filter(msg => !msg.is_d_entry);
-            // 找到所有AI消息（非first_mes）
-            const aiMessages = realMessages.filter(msg =>
-                (msg.role === "model" || msg.role === "assistant") && !msg.is_first_mes
-            );
-            if (messageIndex < 1 || messageIndex > aiMessages.length) {
-                console.error('[NodeSTCore] editAiMessageByIndex: messageIndex超出范围');
-                return false;
-            }
-            // 目标AI消息
-            const targetAiMsg = aiMessages[messageIndex - 1];
-
-            // 在parts中的索引（必须用 === 判断对象引用）
-            const aiMsgIdxInParts = chatHistory.parts.findIndex(msg => msg === targetAiMsg);
-            if (aiMsgIdxInParts === -1) {
-                console.error('[NodeSTCore] editAiMessageByIndex: 找不到AI消息在parts中的索引');
-                return false;
-            }
-
-            // 直接替换目标AI消息的内容
-            const updatedParts = [...chatHistory.parts];
-            updatedParts[aiMsgIdxInParts] = {
-                ...targetAiMsg,
-                parts: [{ text: newContent }]
-            };
-
-            // 构建新的历史对象
-            const updatedHistory: ChatHistoryEntity = {
-                ...chatHistory,
-                parts: updatedParts
-            };
-
-            // 立即保存
-            await this.saveJson(
-                this.getStorageKey(conversationId, '_history'),
-                updatedHistory
-            );
-            console.log(`[NodeSTCore] 已编辑AI消息内容，aiIndex=${messageIndex}，新内容已保存`);
-
-            // 不再自动重建D类条目，直接返回
-            return true;
-        } catch (error) {
-            console.error('[NodeSTCore] editAiMessageByIndex error:', error);
-            return false;
-        }
-    }
-
     async continueChat(
         conversationId: string,
         userMessage: string,
@@ -924,47 +728,9 @@ export class NodeSTCore {
             const worldBook = await this.loadJson<WorldBookJson>(
                 this.getStorageKey(conversationId, '_world')
             );
-            // === 新增：全局正则脚本处理 ===
-            let globalRegexScripts: any[] = [];
-            let globalRegexEnabled = false;
-            try {
-                globalRegexScripts = await StorageAdapter.loadGlobalRegexScriptList?.() || [];
-                const regexEnabledVal = await (await import('@react-native-async-storage/async-storage')).default.getItem('nodest_global_regex_enabled');
-                globalRegexEnabled = regexEnabledVal === 'true';
-            } catch (e) {
-                console.warn('[NodeSTCore][GlobalRegex] 加载全局正则脚本失败:', e);
-            }
-
-            // 新增日志：全局正则启用与否及脚本列表
-            if (globalRegexEnabled) {
-                console.log(`[全局正则] 已启用，脚本数量: ${globalRegexScripts.length}`);
-                globalRegexScripts.forEach((s, i) => {
-                    console.log(`[全局正则] 脚本#${i+1}: 名称=${s.scriptName}，查找=${s.findRegex}，替换=${s.replaceString}，placement=${JSON.stringify(s.placement)}，flags=${s.flags||''}`);
-                });
-            } else {
-                console.log('[全局正则] 未启用');
-            }
-
-            let processedUserMessage = userMessage;
-            if (globalRegexEnabled && globalRegexScripts.length > 0) {
-                // 仅应用 placement=1 的脚本
-                processedUserMessage = NodeSTCore.applyGlobalRegexScripts(userMessage, globalRegexScripts, 1);
-                if (processedUserMessage !== userMessage) {
-                    console.log(`[全局正则] 已对用户输入应用正则处理，原文: ${userMessage}，结果: ${processedUserMessage}`);
-                }
-            }
-            // === 新增：优先读取全局预设 ===
-            let preset: PresetJson | null = null;
-            const globalPresetConfig = await StorageAdapter.loadGlobalPresetConfig();
-            if (globalPresetConfig && globalPresetConfig.enabled && globalPresetConfig.presetJson) {
-                preset = globalPresetConfig.presetJson;
-                console.log('[NodeSTCore] Using global preset for continueChat');
-            } else {
-                preset = await this.loadJson<PresetJson>(
-                    this.getStorageKey(conversationId, '_preset')
-                );
-            }
-
+            const preset = await this.loadJson<PresetJson>(
+                this.getStorageKey(conversationId, '_preset')
+            );
             const authorNote = await this.loadJson<AuthorNoteJson>(
                 this.getStorageKey(conversationId, '_note')
             );
@@ -1238,25 +1004,13 @@ export class NodeSTCore {
                     characterId // 新增
                 );
 
-            // === 新增：对AI响应应用全局正则脚本（placement=2） ===
-            let processedResponse = response;
-            if (globalRegexEnabled && globalRegexScripts.length > 0 && typeof response === 'string') {
-                const before = response;
-                processedResponse = NodeSTCore.applyGlobalRegexScripts(response, globalRegexScripts, 2);
-                if (processedResponse !== before) {
-                    console.log(`[全局正则] 已对AI响应应用正则处理，原文: ${before}，结果: ${processedResponse}`);
-                } else {
-                    console.log('[全局正则] AI响应未被正则脚本修改。');
-                }
-            }
-
             // 如果收到响应，将AI回复也添加到历史记录
-            if (processedResponse) {
+            if (response) {
                 // 使用 updateChatHistory 方法
                 const updatedHistory = this.updateChatHistory(
                     updatedChatHistory,
                     userMessage,
-                    processedResponse, // 用正则处理后的响应
+                    response,
                     dEntries
                 );
 
@@ -1268,11 +1022,11 @@ export class NodeSTCore {
 
                 console.log('[NodeSTCore] Chat history saved:', {
                     totalMessages: updatedHistory.parts.length,
-                    lastMessage: processedResponse.substring(0, 50) + '...'
+                    lastMessage: response.substring(0, 50) + '...'
                 });
             }
 
-            return processedResponse; // 返回正则处理后的响应
+            return response;
 
         } catch (error) {
             console.error('[NodeSTCore] Error in continueChat:', error);
@@ -1551,9 +1305,9 @@ export class NodeSTCore {
         sessionId: string,
         roleCard: RoleCardJson,
         adapter?: GeminiAdapter | OpenRouterAdapter | OpenAIAdapter | null,
-        customUserName?: string,
-        memorySearchResults?: any,
-        characterId?: string
+        customUserName?: string, // Add optional customUserName parameter
+        memorySearchResults?: any, // 添加记忆搜索结果参数
+        characterId?: string // 新增参数
     ): Promise<string | null> {
         try {
             console.log('[NodeSTCore] Starting processChat with:', {
@@ -1565,102 +1319,47 @@ export class NodeSTCore {
                 characterId: characterId // <--- 记录characterId
             });
 
-            // === 新增：优先读取全局预设 ===
-            let preset: PresetJson | null = null;
-            const globalPresetConfig = await StorageAdapter.loadGlobalPresetConfig();
-            const isGlobalPreset = !!(globalPresetConfig && globalPresetConfig.enabled && globalPresetConfig.presetJson);
-            if (isGlobalPreset) {
-                preset = globalPresetConfig.presetJson;
-                console.log('[NodeSTCore] Using global preset for processChat');
-            } else {
-                preset = await this.loadJson<PresetJson>(`nodest_${sessionId}_preset`);
-            }
-
+            // 1. 加载框架内容
+            const preset = await this.loadJson<PresetJson>(`nodest_${sessionId}_preset`);
             const worldBook = await this.loadJson<WorldBookJson>(`nodest_${sessionId}_world`);
             if (!preset || !worldBook) {
                 throw new Error('Required data not found');
             }
 
+            // 2. Check if we need to rebuild the framework or reuse existing framework
             let contents: ChatMessage[] = [];
-            let needRebuildFramework = false;
-
-            if (isGlobalPreset) {
-                needRebuildFramework = true;
-            } else {
-                const existingContents = await this.loadJson<ChatMessage[]>(
-                    this.getStorageKey(sessionId, '_contents')
-                );
-                if (!existingContents || existingContents.length === 0) {
-                    needRebuildFramework = true;
-                } else {
-                    contents = [...existingContents];
-                }
-            }
-
-            if (needRebuildFramework) {
-                console.log('[NodeSTCore] Rebuilding framework due to global preset or missing contents...');
+            
+            // First try loading existing framework/contents
+            const existingContents = await this.loadJson<ChatMessage[]>(
+                this.getStorageKey(sessionId, '_contents')
+            );
+            
+            // Only rebuild framework if absolutely necessary - if it doesn't exist
+            if (!existingContents || existingContents.length === 0) {
+                console.log('[NodeSTCore] No existing framework found, rebuilding...');
+                // Rebuild framework
                 const [rFramework, _] = CharacterUtils.buildRFramework(
                     preset,
                     roleCard,
                     worldBook
                 );
                 contents = [...rFramework];
-                await this.saveContents(contents, sessionId);
+            } else {
+                console.log('[NodeSTCore] Using existing framework with length:', existingContents.length);
+                contents = [...existingContents];
             }
 
-            // === 全局正则处理脚本准备 ===
-            let globalRegexScripts: any[] = [];
-            let globalRegexEnabled = false;
-            try {
-                globalRegexScripts = await StorageAdapter.loadGlobalRegexScriptList?.() || [];
-                const regexEnabledVal = await (await import('@react-native-async-storage/async-storage')).default.getItem('nodest_global_regex_enabled');
-                globalRegexEnabled = regexEnabledVal === 'true';
-            } catch (e) {
-                console.warn('[NodeSTCore][GlobalRegex] 加载全局正则脚本失败:', e);
-            }
-
-            const applyAllRegex = (text: string) => {
-                let t = text;
-                if (globalRegexEnabled && globalRegexScripts.length > 0) {
-                    t = NodeSTCore.applyGlobalRegexScripts(t, globalRegexScripts, 1);
-                }
-                if (roleCard?.data?.extensions?.regex_scripts) {
-                    t = this.applyRegexScripts(t, roleCard.data.extensions.regex_scripts);
-                }
-                return t;
-            };
-
-            const regexProcessedContents: ChatMessage[] = contents.map(item => {
-                if (item.name === "Chat History" && Array.isArray(item.parts)) {
-                    return {
-                        ...item,
-                        parts: item.parts.map((msg: any) => ({
-                            ...msg,
-                            parts: msg.parts?.map((part: any) => ({
-                                ...part,
-                                text: applyAllRegex(part.text || "")
-                            })) || []
-                        }))
-                    };
-                } else {
-                    return {
-                        ...item,
-                        parts: item.parts?.map(part => ({
-                            ...part,
-                            text: applyAllRegex(part.text || "")
-                        })) || []
-                    };
-                }
-            });
-
-            // 3. 查找聊天历史占位符的位置
-            const chatHistoryPlaceholderIndex = regexProcessedContents.findIndex(
-                item => item.is_chat_history_placeholder ||
+            // 3. 查找聊天历史占位符的位置 
+            const chatHistoryPlaceholderIndex = contents.findIndex(
+                item => item.is_chat_history_placeholder || 
                        (item.identifier === chatHistory.identifier)
             );
 
-            // === 关键修正：用最新 chatHistory（含 userMessage/AI 回复）插入 D-entries ===
+            console.log('[NodeSTCore] Found chat history placeholder at index:', chatHistoryPlaceholderIndex);
+
+            // 确保已经清除旧的D类条目并基于最新消息插入新的D类条目
             const historyWithDEntries = this.insertDEntriesToHistory(
+                // 确保传入的历史不包含旧的D类条目
                 {
                     ...chatHistory,
                     parts: chatHistory.parts.filter(msg => !msg.is_d_entry)
@@ -1669,64 +1368,59 @@ export class NodeSTCore {
                 userMessage
             );
 
+            // 确保正确插入聊天历史
             if (chatHistoryPlaceholderIndex !== -1) {
-                regexProcessedContents[chatHistoryPlaceholderIndex] = {
+                // 将处理后的历史插入到框架中，替换占位符
+                const historyMessage: ChatMessage = {
                     name: "Chat History",
                     role: "system",
                     parts: historyWithDEntries.parts,
                     identifier: chatHistory.identifier
                 };
+
+                console.log(`[NodeSTCore] Replacing chat history placeholder at index ${chatHistoryPlaceholderIndex} with chat history containing ${historyWithDEntries.parts.length} messages`);
+                contents[chatHistoryPlaceholderIndex] = historyMessage;
             } else {
-                regexProcessedContents.push({
+                // 如果找不到占位符，追加到末尾（应该不会发生，但作为安全措施）
+                console.warn("[NodeSTCore] Chat history placeholder not found, appending to end");
+                contents.push({
                     name: "Chat History",
                     role: "system",
                     parts: historyWithDEntries.parts,
                     identifier: chatHistory.identifier
                 });
             }
-
-            // 7. 去重
-            const chatHistoryEntries = regexProcessedContents.filter(
-                item => item.name === "Chat History" ||
+            
+            // Make sure there's only one chat history entry in the contents
+            // This fixes potential duplication issues after loading saved histories
+            const chatHistoryEntries = contents.filter(
+                item => item.name === "Chat History" || 
                        (item.identifier && item.identifier.toLowerCase().includes('chathistory'))
             );
+            
             if (chatHistoryEntries.length > 1) {
-                regexProcessedContents.splice(
-                    regexProcessedContents.findIndex((item, idx) =>
-                        (item.name === "Chat History" ||
-                        (item.identifier && item.identifier.toLowerCase().includes('chathistory'))) &&
-                        idx !== chatHistoryPlaceholderIndex
-                    ), 1
-                );
+                console.warn(`[NodeSTCore] Multiple chat history entries detected (${chatHistoryEntries.length}), removing duplicates`);
+                // Remove duplicates by keeping only the entry at chatHistoryPlaceholderIndex
+                contents = contents.filter((item, index) => {
+                    // Skip entries that look like chat history but aren't at the correct index
+                    if ((item.name === "Chat History" || 
+                         (item.identifier && item.identifier.toLowerCase().includes('chathistory'))) && 
+                        index !== chatHistoryPlaceholderIndex) {
+                        return false;
+                    }
+                    return true;
+                });
+                console.log(`[NodeSTCore] Framework size after removing duplicates: ${contents.length}`);
             }
 
-            // 8. cleanContentsForGemini 只做宏替换，不再做正则
-            let cleanedContents = this.cleanContentsForGemini(
-                regexProcessedContents,
+            // 清理内容用于Gemini
+            const cleanedContents = this.cleanContentsForGemini(
+                contents,
                 userMessage,
                 roleCard.name,
-                customUserName || "",
+                customUserName || "", // Use customUserName if provided, otherwise empty string
                 roleCard
             );
-
-            // === 新增：对rframework整体应用全局正则（placement=1），但不影响chathistory和D-entry逻辑 ===
-            if (globalRegexEnabled && globalRegexScripts.length > 0) {
-                cleanedContents = cleanedContents.map(msg => {
-                    // 只对非chathistory的内容应用正则，且只对placement=1的脚本
-                    if (
-                        msg.role === "user" || msg.role === "model"
-                    ) {
-                        return {
-                            ...msg,
-                            parts: msg.parts.map(part => ({
-                                ...part,
-                                text: NodeSTCore.applyGlobalRegexScripts(part.text || "", globalRegexScripts, 1)
-                            }))
-                        };
-                    }
-                    return msg;
-                });
-            }
 
             // 添加最终请求内容的完整日志
             console.log('[NodeSTCore] Final Gemini request structure:', {
@@ -1755,11 +1449,11 @@ export class NodeSTCore {
 
             // 使用传入的适配器或获取活跃适配器
             const activeAdapter = adapter || this.getActiveAdapter();
+            // 移除严格检查，允许接口回退到云服务
             if (!activeAdapter) {
                 console.warn("[NodeSTCore] No API adapter available - will attempt to use cloud service");
-                // 不再抛出错误，让 generateContentWithTools 方法尝试云服务
+                // 不再抛出错误
             }
-
             // 添加适配器类型日志
             console.log('[NodeSTCore] Using adapter:', {
                 type:
@@ -1768,11 +1462,11 @@ export class NodeSTCore {
                         : activeAdapter instanceof OpenAIAdapter
                         ? 'OpenAICompatible'
                         : 'Gemini',
-                apiProvider: this.apiSettings?.apiProvider
+                apiProvider: this.apiSettings?.apiProvider,
+                hasMemoryResults: memorySearchResults && memorySearchResults.results && memorySearchResults.results.length > 0
             });
 
             // 发送到API
-            let responseText: string | null = null;
             if (activeAdapter instanceof OpenAIAdapter) {
                 // 转换为 OpenAI chat completion 格式
                 const openaiMessages = cleanedContents.map(msg => ({
@@ -1782,16 +1476,15 @@ export class NodeSTCore {
                 try {
                     const resp = await activeAdapter.chatCompletion(openaiMessages, {
                         temperature: this.apiSettings?.temperature ?? 0.7,
-                        max_tokens: this.apiSettings?.maxTokens ?? 800,
-                        // 修正：传递 memoryResults 和 characterId
-                        memoryResults: memorySearchResults,
-                        characterId: characterId
+                        max_tokens: this.apiSettings?.maxTokens ?? 800
                     });
                     if (resp && resp.choices && resp.choices[0]?.message?.content) {
-                        responseText = resp.choices[0].message.content;
+                        return resp.choices[0].message.content;
                     }
+                    return null;
                 } catch (err) {
                     console.error('[NodeSTCore] OpenAIAdapter chatCompletion error:', err);
+                    return null;
                 }
             }
 
@@ -1801,12 +1494,13 @@ export class NodeSTCore {
                                         memorySearchResults.results.length > 0;
                                         
                                         if (shouldUseMemoryResults && activeAdapter) {
-                console.log('[NodeSTCore] 调用generateContentWithTools，传递characterId:', characterId); // <--- 记录
-                const response = await activeAdapter.generateContentWithTools(cleanedContents, characterId, memorySearchResults, userMessage);
-                console.log('[NodeSTCore] API response received:', {
-                    hasResponse: !!response,
-                    responseLength: response?.length || 0
-                });
+                                            console.log('[NodeSTCore] 调用generateContentWithTools，传递characterId:', characterId); // <--- 记录
+                                            const response = await activeAdapter.generateContentWithTools(cleanedContents,characterId ,memorySearchResults, userMessage);
+                                            console.log('[NodeSTCore] API response received:', {
+                                                hasResponse: !!response,
+                                                responseLength: response?.length || 0
+                                            });
+                // 保存更新后的历史和框架
                 if (response) {
                     console.log('[NodeSTCore] Saving updated history and framework...');
                     // 保存更新后的框架内容
@@ -1830,39 +1524,17 @@ export class NodeSTCore {
                     hasResponse: !!response,
                     responseLength: response?.length || 0
                 });
+
+                // 保存更新后的历史和框架
                 if (response) {
-                    responseText = response;
+                    console.log('[NodeSTCore] Saving updated history and framework...');
+                    // 保存更新后的框架内容
+                    await this.saveContents(contents, sessionId);
+                    console.log('[NodeSTCore] Content framework and history saved successfully');
                 }
-            }
 
-            // === 新增：对AI响应应用全局正则脚本（placement=2） ===
-            if (globalRegexEnabled && globalRegexScripts.length > 0 && typeof responseText === 'string') {
-                const before = responseText;
-                responseText = NodeSTCore.applyGlobalRegexScripts(responseText, globalRegexScripts, 2);
-                if (responseText !== before) {
-                    console.log(`[全局正则] 已对AI响应应用正则处理，原文: ${before}，结果: ${responseText}`);
-                } else {
-                    console.log('[全局正则] AI响应未被正则脚本修改。');
-                }
-            }
-
-            // 保存更新后的历史和框架
-            if (responseText) {
-                console.log('[NodeSTCore] Saving updated history and framework...');
-                const updatedHistory = this.updateChatHistory(
-                    chatHistory,
-                    userMessage,
-                    responseText,
-                    dEntries
-                );
-                await this.saveJson(
-                    this.getStorageKey(sessionId, '_history'),
-                    updatedHistory
-                );
-                console.log('[NodeSTCore] Content framework and history saved successfully');
-            }
-
-            return responseText;
+                return response;
+            }  
         } catch (error) {
             console.error('[NodeSTCore] Error in processChat:', error);
             return null;
@@ -1876,9 +1548,9 @@ export class NodeSTCore {
         sessionId: string,
         roleCard: RoleCardJson,
         adapter?: GeminiAdapter | OpenRouterAdapter | OpenAIAdapter | null,
-        customUserName?: string,
-        memoryResults?: any,
-        characterId?: string
+        customUserName?: string, // Add optional customUserName parameter
+        memoryResults?: any, // This parameter already correctly receives memory search results
+        characterId?: string // 新增参数
     ): Promise<string | null> {
         try {
             console.log('[NodeSTCore] Starting processChatWithTools with:', {
@@ -1897,198 +1569,108 @@ export class NodeSTCore {
                 toolUserMessage = '需要搜索：' + toolUserMessage;
             }
 
-            // === 新增：优先读取全局预设 ===
-            let preset: PresetJson | null = null;
-            const globalPresetConfig = await StorageAdapter.loadGlobalPresetConfig();
-            const isGlobalPreset = !!(globalPresetConfig && globalPresetConfig.enabled && globalPresetConfig.presetJson);
-            if (isGlobalPreset) {
-                preset = globalPresetConfig.presetJson;
-                console.log('[NodeSTCore] Using global preset for processChatWithTools');
-            } else {
-                preset = await this.loadJson<PresetJson>(`nodest_${sessionId}_preset`);
-            }
-
+            // 1. 加载框架内容
+            const preset = await this.loadJson<PresetJson>(`nodest_${sessionId}_preset`);
             const worldBook = await this.loadJson<WorldBookJson>(`nodest_${sessionId}_world`);
             if (!preset || !worldBook) {
                 throw new Error('Required data not found');
             }
 
+            // 2. Check if we need to rebuild the framework or reuse existing framework
             let contents: ChatMessage[] = [];
-            let needRebuildFramework = false;
-
-            if (isGlobalPreset) {
-                needRebuildFramework = true;
-            } else {
-                const existingContents = await this.loadJson<ChatMessage[]>(
-                    this.getStorageKey(sessionId, '_contents')
-                );
-                if (!existingContents || existingContents.length === 0) {
-                    needRebuildFramework = true;
-                } else {
-                    contents = [...existingContents];
-                }
-            }
-
-            if (needRebuildFramework) {
-                console.log('[NodeSTCore] Rebuilding framework due to global preset or missing contents...');
+            
+            // First try loading existing framework/contents
+            const existingContents = await this.loadJson<ChatMessage[]>(
+                this.getStorageKey(sessionId, '_contents')
+            );
+            
+            // Only rebuild framework if absolutely necessary - if it doesn't exist
+            if (!existingContents || existingContents.length === 0) {
+                console.log('[NodeSTCore] No existing framework found, rebuilding...');
+                // Rebuild framework
                 const [rFramework, _] = CharacterUtils.buildRFramework(
                     preset,
                     roleCard,
                     worldBook
                 );
                 contents = [...rFramework];
-                await this.saveContents(contents, sessionId);
+            } else {
+                console.log('[NodeSTCore] Using existing framework with length:', existingContents.length);
+                contents = [...existingContents];
             }
 
-            // === 全局正则处理脚本准备 ===
-            let globalRegexScripts: any[] = [];
-            let globalRegexEnabled = false;
-            try {
-                globalRegexScripts = await StorageAdapter.loadGlobalRegexScriptList?.() || [];
-                const regexEnabledVal = await (await import('@react-native-async-storage/async-storage')).default.getItem('nodest_global_regex_enabled');
-                globalRegexEnabled = regexEnabledVal === 'true';
-            } catch (e) {
-                console.warn('[NodeSTCore][GlobalRegex] 加载全局正则脚本失败:', e);
-            }
-
-            const applyAllRegex = (text: string) => {
-                let t = text;
-                if (globalRegexEnabled && globalRegexScripts.length > 0) {
-                    t = NodeSTCore.applyGlobalRegexScripts(t, globalRegexScripts, 1);
-                }
-                if (roleCard?.data?.extensions?.regex_scripts) {
-                    t = this.applyRegexScripts(t, roleCard.data.extensions.regex_scripts);
-                }
-                return t;
-            };
-
-            const regexProcessedContents: ChatMessage[] = contents.map(item => {
-                if (item.name === "Chat History" && Array.isArray(item.parts)) {
-                    return {
-                        ...item,
-                        parts: item.parts.map((msg: any) => ({
-                            ...msg,
-                            parts: msg.parts?.map((part: any) => ({
-                                ...part,
-                                text: applyAllRegex(part.text || "")
-                            })) || []
-                        }))
-                    };
-                } else {
-                    return {
-                        ...item,
-                        parts: item.parts?.map(part => ({
-                            ...part,
-                            text: applyAllRegex(part.text || "")
-                        })) || []
-                    };
-                }
-            });
-
-            // 3. 查找聊天历史占位符的位置
-            const chatHistoryPlaceholderIndex = regexProcessedContents.findIndex(
-                item => item.is_chat_history_placeholder ||
+            // 3. 查找聊天历史占位符的位置 
+            const chatHistoryPlaceholderIndex = contents.findIndex(
+                item => item.is_chat_history_placeholder || 
                        (item.identifier === chatHistory.identifier)
             );
 
-            // === 关键修正：用最新 chatHistory（含 userMessage/AI 回复）插入 D-entries ===
+            console.log('[NodeSTCore] Found chat history placeholder at index:', chatHistoryPlaceholderIndex);
+
+            // 确保已经清除旧的D类条目并基于最新消息插入新的D类条目
             const historyWithDEntries = this.insertDEntriesToHistory(
+                // 确保传入的历史不包含旧的D类条目
                 {
                     ...chatHistory,
                     parts: chatHistory.parts.filter(msg => !msg.is_d_entry)
                 },
                 dEntries,
-                userMessage
+                toolUserMessage
             );
 
+            // 确保正确插入聊天历史
             if (chatHistoryPlaceholderIndex !== -1) {
-                regexProcessedContents[chatHistoryPlaceholderIndex] = {
+                // 将处理后的历史插入到框架中，替换占位符
+                const historyMessage: ChatMessage = {
                     name: "Chat History",
                     role: "system",
                     parts: historyWithDEntries.parts,
                     identifier: chatHistory.identifier
                 };
+
+                console.log(`[NodeSTCore] Replacing chat history placeholder at index ${chatHistoryPlaceholderIndex} with chat history containing ${historyWithDEntries.parts.length} messages`);
+                contents[chatHistoryPlaceholderIndex] = historyMessage;
             } else {
-                regexProcessedContents.push({
+                // 如果找不到占位符，追加到末尾（应该不会发生，但作为安全措施）
+                console.warn("[NodeSTCore] Chat history placeholder not found, appending to end");
+                contents.push({
                     name: "Chat History",
                     role: "system",
                     parts: historyWithDEntries.parts,
                     identifier: chatHistory.identifier
                 });
             }
-
-            // 7. 去重
-            const chatHistoryEntries = regexProcessedContents.filter(
-                item => item.name === "Chat History" ||
+            
+            // Make sure there's only one chat history entry in the contents
+            // This fixes potential duplication issues after loading saved histories
+            const chatHistoryEntries = contents.filter(
+                item => item.name === "Chat History" || 
                        (item.identifier && item.identifier.toLowerCase().includes('chathistory'))
             );
+            
             if (chatHistoryEntries.length > 1) {
-                regexProcessedContents.splice(
-                    regexProcessedContents.findIndex((item, idx) =>
-                        (item.name === "Chat History" ||
-                        (item.identifier && item.identifier.toLowerCase().includes('chathistory'))) &&
-                        idx !== chatHistoryPlaceholderIndex
-                    ), 1
-                );
+                console.warn(`[NodeSTCore] Multiple chat history entries detected (${chatHistoryEntries.length}), removing duplicates`);
+                // Remove duplicates by keeping only the entry at chatHistoryPlaceholderIndex
+                contents = contents.filter((item, index) => {
+                    // Skip entries that look like chat history but aren't at the correct index
+                    if ((item.name === "Chat History" || 
+                         (item.identifier && item.identifier.toLowerCase().includes('chathistory'))) && 
+                        index !== chatHistoryPlaceholderIndex) {
+                        return false;
+                    }
+                    return true;
+                });
+                console.log(`[NodeSTCore] Framework size after removing duplicates: ${contents.length}`);
             }
 
-            // 8. cleanContentsForGemini 只做宏替换，不再做正则
-            let cleanedContents = this.cleanContentsForGemini(
-                regexProcessedContents,
-                userMessage,
+            // 清理内容用于Gemini
+            const cleanedContents = this.cleanContentsForGemini(
+                contents,
+                toolUserMessage,
                 roleCard.name,
-                customUserName || "",
+                customUserName || "", // Use customUserName if provided, otherwise empty string
                 roleCard
             );
-
-           // === 新增：对rframework整体应用全局正则（placement=1），但不影响chathistory和D-entry逻辑 ===
-           if (globalRegexEnabled && globalRegexScripts.length > 0) {
-            cleanedContents = cleanedContents.map(msg => {
-                if (msg.role === "user" || msg.role === "model") {
-                    return {
-                        ...msg,
-                        parts: msg.parts.map(part => {
-                            const before = part.text || "";
-                            let after = before;
-                            let anyChanged = false;
-                            let usedScripts: string[] = [];
-                            for (const script of globalRegexScripts) {
-                                if (script.disabled) continue;
-                                if (!script.placement || !script.placement.includes(1)) continue;
-                                let findRegex = script.findRegex;
-                                const replaceString = script.replaceString ?? '';
-                                if (!findRegex) continue;
-                                let pattern = findRegex;
-                                let flags = script.flags || '';
-                                const regexMatch = /^\/(.+)\/([a-z]*)$/i.exec(findRegex);
-                                if (regexMatch) {
-                                    pattern = regexMatch[1];
-                                    flags = regexMatch[2] || flags;
-                                }
-                                const regex = new RegExp(pattern, flags);
-                                const replaced = after.replace(regex, replaceString);
-                                if (replaced !== after) {
-                                    anyChanged = true;
-                                    usedScripts.push(`${script.scriptName}(${pattern}/${flags})`);
-                                    console.log(`[全局正则][rframework] 应用脚本: ${script.scriptName}，查找: ${pattern}，替换为: ${replaceString}，flags: ${flags}，原文: ${after}，结果: ${replaced}`);
-                                }
-                                after = replaced;
-                            }
-                            if (!anyChanged) {
-                                console.log(`[全局正则][rframework] 未匹配任何脚本，原文未变: ${before}`);
-                            } else {
-                                console.log(`[全局正则][rframework] 总结: 原文: ${before}，最终结果: ${after}，用到脚本: ${usedScripts.join(', ')}`);
-                            }
-                            return {
-                                ...part,
-                                text: after
-                            };
-                        })
-                    };
-                }
-                return msg;
-            });
-            }
 
             // 添加最终请求内容的完整日志
             console.log('[NodeSTCore] Final Gemini request structure:', {
@@ -2134,74 +1716,53 @@ export class NodeSTCore {
             });
 
             // 发送到API，传递记忆搜索结果
-            let responseText: string | null = null;
+            console.log('[NodeSTCore] Sending to API with tool calls...', {
+                characterId_passed_to_adapter: characterId // <--- 记录传递给adapter的characterId
+            });
+            // 如果使用工具调用，则传递记忆搜索结果
             if (activeAdapter instanceof OpenAIAdapter) {
                 const openaiMessages = cleanedContents.map(msg => ({
                     role: msg.role === 'model' ? 'assistant' : msg.role,
                     content: msg.parts[0]?.text || ''
                 }));
                 try {
-                    console.log('[NodeSTCore][OpenAIAdapter] 调用 generateContent 参数:', {
-                        characterId,
-                        hasMemoryResults: !!memoryResults,
-                        memoryResultsType: typeof memoryResults,
-                        memoryResultsLength: memoryResults?.results?.length
-                    });
                     const resp = await activeAdapter.chatCompletion(openaiMessages, {
                         temperature: this.apiSettings?.temperature ?? 0.7,
-                        max_tokens: this.apiSettings?.maxTokens ?? 800,
-                        // 修正：传递 memoryResults 和 characterId
-                        memoryResults: memoryResults,
-                        characterId: characterId
+                        max_tokens: this.apiSettings?.maxTokens ?? 800
                     });
                     if (resp && resp.choices && resp.choices[0]?.message?.content) {
-                        responseText = resp.choices[0].message.content;
+                        return resp.choices[0].message.content;
                     }
+                    return null;
                 } catch (err) {
                     console.error('[NodeSTCore] OpenAIAdapter chatCompletion error:', err);
+                    return null;
                 }
-            } else if (activeAdapter) {
+            }
+
+            if (activeAdapter) {
                 console.log('[NodeSTCore] 调用generateContentWithTools，传递characterId:', characterId); // <--- 记录
                 const response = await activeAdapter.generateContentWithTools(
                     cleanedContents, characterId, memoryResults, toolUserMessage
-                );
+                );;
                 console.log('[NodeSTCore] API response received:', {
                     hasResponse: !!response,
                     responseLength: response?.length || 0
                 });
+
+                // 保存更新后的历史和框架
                 if (response) {
-                    responseText = response;
+                    console.log('[NodeSTCore] Saving updated history and framework...');
+                    // 保存更新后的框架内容
+                    await this.saveContents(contents, sessionId);
+                    console.log('[NodeSTCore] Content framework and history saved successfully');
                 }
-            }
 
-            // === 新增：对AI响应应用全局正则脚本（placement=2） ===
-            if (globalRegexEnabled && globalRegexScripts.length > 0 && typeof responseText === 'string') {
-                const before = responseText;
-                responseText = NodeSTCore.applyGlobalRegexScripts(responseText, globalRegexScripts, 2);
-                if (responseText !== before) {
-                    console.log(`[全局正则] 已对AI响应应用正则处理，原文: ${before}，结果: ${responseText}`);
-                } else {
-                    console.log('[全局正则] AI响应未被正则脚本修改。');
-                }
+                return response;
+            } else {
+                console.error('[NodeSTCore] No adapter available and cloud fallback failed');
+                return null;
             }
-
-            // 保存更新后的历史和框架
-            if (responseText) {
-                console.log('[NodeSTCore] Saving updated history and framework...');
-                const updatedHistory = this.updateChatHistory(
-                    chatHistory,
-                    userMessage,
-                    responseText,
-                    dEntries
-                );
-                await this.saveJson(
-                    this.getStorageKey(sessionId, '_history'),
-                    updatedHistory
-                );
-                console.log('[NodeSTCore] Content framework and history saved successfully');
-            }
-
-            return responseText;
         } catch (error) {
             console.error('[NodeSTCore] Error in processChatWithTools:', error);
             return null;
@@ -2219,6 +1780,7 @@ export class NodeSTCore {
         console.log('[NodeSTCore] Starting cleanContentsForGemini:', {
             totalContents: contents.length
         });
+
         const cleanedContents: GeminiMessage[] = [];
 
         for (const content of contents) {
@@ -2232,9 +1794,7 @@ export class NodeSTCore {
                 // 遍历历史消息
                 for (const historyMessage of historyParts) {
                     if (!historyMessage.parts?.[0]?.text) continue;
-
-                    let text = historyMessage.parts[0].text;
-
+                    
                     // Skip processing memory summary messages for role conversion
                     // but still include them in the API request
                     if (memoryService.isMemorySummary(historyMessage)) {
@@ -2261,49 +1821,37 @@ export class NodeSTCore {
                     })();
 
                     const geminiMessage: GeminiMessage = {
-                        role: (() => {
-                            switch (historyMessage.role) {
-                                case "assistant":
-                                case "model":
-                                    return "model";
-                                case "system":
-                                case "user":
-                                default:
-                                    return "user";
-                            }
-                        })(),
+                        role,
                         parts: [{
                             text: this.replacePlaceholders(
-                                text,
+                                historyMessage.parts[0].text,
                                 userMessage,
                                 charName,
-                                userName,
+                                userName, // Pass the userName parameter correctly
                                 roleCard
                             )
                         }]
                     };
+
                     cleanedContents.push(geminiMessage);
                 }
             } else {
-                let parts = content.parts.map(part => {
-                    let text = part.text || "";
-                    return {
-                        text: this.replacePlaceholders(
-                            text,
-                            userMessage,
-                            charName,
-                            userName,
-                            roleCard
-                        )
-                    };
-                });
                 // 处理常规消息
                 const geminiMessage: GeminiMessage = {
-                    role: content.role === "assistant" ? "model" :
-                        content.role === "system" ? "user" :
-                            content.role as "user" | "model",
-                    parts
+                    role: content.role === "assistant" ? "model" : 
+                          content.role === "system" ? "user" : 
+                          content.role as "user" | "model",
+                    parts: content.parts.map(part => ({
+                        text: this.replacePlaceholders(
+                            part.text || "", 
+                            userMessage, 
+                            charName, 
+                            userName, // Pass the userName parameter correctly 
+                            roleCard
+                        )
+                    }))
                 };
+
                 cleanedContents.push(geminiMessage);
             }
         }
@@ -2431,19 +1979,9 @@ export class NodeSTCore {
             const worldBook = await this.loadJson<WorldBookJson>(
                 this.getStorageKey(conversationId, '_world')
             );
-
-            // === 新增：优先读取全局预设 ===
-            let preset: PresetJson | null = null;
-            const globalPresetConfig = await StorageAdapter.loadGlobalPresetConfig();
-            if (globalPresetConfig && globalPresetConfig.enabled && globalPresetConfig.presetJson) {
-                preset = globalPresetConfig.presetJson;
-                console.log('[NodeSTCore] Using global preset for regenerateFromMessage');
-            } else {
-                preset = await this.loadJson<PresetJson>(
-                    this.getStorageKey(conversationId, '_preset')
-                );
-            }
-
+            const preset = await this.loadJson<PresetJson>(
+                this.getStorageKey(conversationId, '_preset')
+            );
             const authorNote = await this.loadJson<AuthorNoteJson>(
                 this.getStorageKey(conversationId, '_note')
             );
@@ -2785,29 +2323,11 @@ export class NodeSTCore {
             const worldBook = await this.loadJson<WorldBookJson>(
                 this.getStorageKey(conversationId, '_world')
             );
-
-            // === 新增：优先读取全局预设 ===
-            let preset: PresetJson | null = null;
-            const globalPresetConfig = await StorageAdapter.loadGlobalPresetConfig();
-            if (globalPresetConfig && globalPresetConfig.enabled && globalPresetConfig.presetJson) {
-                preset = globalPresetConfig.presetJson;
-                console.log('[NodeSTCore] Using global preset for continueChat');
-            } else {
-                preset = await this.loadJson<PresetJson>(
-                    this.getStorageKey(conversationId, '_preset')
-                );
-                // --- 新增: 回退为角色自身preset时，强制重建rframework ---
-                if (preset && roleCard && worldBook) {
-                    console.log('[NodeSTCore] Rebuilding rframework using character\'s own preset after global preset disabled');
-                    const [rFramework, _] = CharacterUtils.buildRFramework(
-                        preset,
-                        roleCard,
-                        worldBook
-                    );
-                    await this.saveJson(this.getStorageKey(conversationId, '_contents'), rFramework);
-                }
-            }
-
+            
+            const preset = await this.loadJson<PresetJson>(
+                this.getStorageKey(conversationId, '_preset')
+            );
+            
             const authorNote = await this.loadJson<AuthorNoteJson>(
                 this.getStorageKey(conversationId, '_note')
             );
@@ -2948,275 +2468,4 @@ export class NodeSTCore {
             return false;
         }
     }
-
-    /**
-     * 全局预设功能接口
-     * @param switchStr "开启"|"关闭"
-     * @param presetJsonStr JSON字符串
-     */
-    async setGlobalPreset(switchStr: string, presetJsonStr: string): Promise<boolean> {
-        try {
-            console.log(`[NodeSTCore][GlobalPreset] 操作: ${switchStr}`);
-            if (switchStr === "开启") {
-                console.log('[NodeSTCore][GlobalPreset] 传入数据:', presetJsonStr);
-                let presetJson: PresetJson = JSON.parse(presetJsonStr);
-
-                // === 新增：自动修正 prompt_order ===
-                if (
-                    !presetJson.prompt_order ||
-                    !Array.isArray(presetJson.prompt_order) ||
-                    !presetJson.prompt_order[0] ||
-                    !Array.isArray(presetJson.prompt_order[0].order) ||
-                    presetJson.prompt_order[0].order.length === 0
-                ) {
-                    // 自动生成 prompt_order，包含所有启用的 prompts
-                    const enabledPrompts = (presetJson.prompts || []).filter(p => p.enable !== false);
-                    presetJson.prompt_order = [
-                        {
-                            order: enabledPrompts.map(p => ({
-                                identifier: p.identifier,
-                                enabled: p.enable !== false
-                            }))
-                        }
-                    ];
-                    console.log('[NodeSTCore][GlobalPreset] 自动生成 prompt_order:', presetJson.prompt_order);
-                }
-
-                // 备份所有角色preset
-                const backup = await StorageAdapter.backupAllPresets();
-                await AsyncStorage.setItem('nodest_global_preset_backup', JSON.stringify(backup));
-                console.log('[NodeSTCore][GlobalPreset] 已备份所有角色preset');
-                // 替换所有角色preset
-                const affectedIds = await StorageAdapter.replaceAllPresets(presetJson);
-                console.log(`[NodeSTCore][GlobalPreset] 已批量替换preset，受影响角色ID:`, affectedIds);
-                // 保存全局配置
-                await StorageAdapter.saveGlobalPresetConfig({
-                    enabled: true,
-                    presetJson
-                });
-                console.log('[NodeSTCore][GlobalPreset] 全局预设配置已保存，功能已开启');
-                return true;
-            } else if (switchStr === "关闭") {
-                // 恢复所有角色preset
-                const backupStr = await AsyncStorage.getItem('nodest_global_preset_backup');
-                if (backupStr) {
-                    const backup = JSON.parse(backupStr);
-                    await StorageAdapter.restoreAllPresets(backup);
-                    console.log('[NodeSTCore][GlobalPreset] 已恢复所有角色preset');
-                } else {
-                    console.warn('[NodeSTCore][GlobalPreset] 未找到preset备份，跳过恢复');
-                }
-                await StorageAdapter.saveGlobalPresetConfig({
-                    enabled: false,
-                    presetJson: null
-                });
-                console.log('[NodeSTCore][GlobalPreset] 全局预设配置已保存，功能已关闭');
-                return true;
-            }
-            console.warn('[NodeSTCore][GlobalPreset] 未知操作类型:', switchStr);
-            return false;
-        } catch (e) {
-            console.error('[NodeSTCore][GlobalPreset] setGlobalPreset error:', e);
-            return false;
-        }
-    }
-
-    /**
-     * 全局世界书功能接口
-     * @param switchStr "开启"|"关闭"
-     * @param priority "全局优先"|"角色优先"
-     * @param worldbookJsonStr JSON字符串
-     */
-    async setGlobalWorldbook(switchStr: string, priority: '全局优先' | '角色优先', worldbookJsonStr: string): Promise<boolean> {
-        try {
-            console.log(`[NodeSTCore][GlobalWorldbook] 操作: ${switchStr}, 优先级: ${priority}`);
-            if (switchStr === "开启") {
-                console.log('[NodeSTCore][GlobalWorldbook] 传入数据:', worldbookJsonStr);
-                const worldbookJson: WorldBookJson = JSON.parse(worldbookJsonStr);
-                // 备份所有角色worldbook
-                const backup = await StorageAdapter.backupAllWorldbooks();
-                await AsyncStorage.setItem('nodest_global_worldbook_backup', JSON.stringify(backup));
-                console.log('[NodeSTCore][GlobalWorldbook] 已备份所有角色worldbook');
-                // 提取全局D类条目（position=4）
-                const globalDEntries: Record<string, any> = {};
-                Object.entries(worldbookJson.entries || {}).forEach(([k, v]) => {
-                    if (v && v.position === 4) globalDEntries[k] = v;
-                });
-                console.log(`[NodeSTCore][GlobalWorldbook] 提取全局D类条目数量: ${Object.keys(globalDEntries).length}`);
-                // 追加到所有角色
-                const affectedIds = await StorageAdapter.appendGlobalDEntriesToAllWorldbooks(globalDEntries, priority);
-                console.log(`[NodeSTCore][GlobalWorldbook] 已批量追加D类条目，受影响角色ID:`, affectedIds);
-                // 保存全局配置
-                await StorageAdapter.saveGlobalWorldbookConfig({
-                    enabled: true,
-                    priority,
-                    worldbookJson
-                });
-                console.log('[NodeSTCore][GlobalWorldbook] 全局世界书配置已保存，功能已开启');
-                return true;
-            } else if (switchStr === "关闭") {
-                // 恢复所有角色worldbook
-                const backupStr = await AsyncStorage.getItem('nodest_global_worldbook_backup');
-                if (backupStr) {
-                    const backup = JSON.parse(backupStr);
-                    await StorageAdapter.restoreAllWorldbooks(backup);
-                    console.log('[NodeSTCore][GlobalWorldbook] 已恢复所有角色worldbook');
-                } else {
-                    console.warn('[NodeSTCore][GlobalWorldbook] 未找到worldbook备份，跳过恢复');
-                }
-                // 清除全局D类条目
-                await StorageAdapter.removeGlobalDEntriesFromAllWorldbooks();
-                console.log('[NodeSTCore][GlobalWorldbook] 已移除所有角色中的全局D类条目');
-                await StorageAdapter.saveGlobalWorldbookConfig({
-                    enabled: false,
-                    priority,
-                    worldbookJson: null
-                });
-                console.log('[NodeSTCore][GlobalWorldbook] 全局世界书配置已保存，功能已关闭');
-                return true;
-            }
-            console.warn('[NodeSTCore][GlobalWorldbook] 未知操作类型:', switchStr);
-            return false;
-        } catch (e) {
-            console.error('[NodeSTCore][GlobalWorldbook] setGlobalWorldbook error:', e);
-            return false;
-        }
-    }
-
-
-    
-        /**
-     * 构建rframework（prompt消息数组），并插入自定义chatHistory内容
-     * @param inputText 聊天历史内容（字符串）
-     * @param presetJsonStr 预设JSON字符串（标准格式）
-     * @param adapterType 适配器类型："gemini" | "openrouter" | "openai-compatible"
-     * @returns 格式化后的消息数组
-     */
-        static async buildRFrameworkWithChatHistory(
-            inputText: string,
-            presetJsonStr: string,
-            adapterType: 'gemini' | 'openrouter' | 'openai-compatible'
-        ): Promise<any[]> {
-            // 1. 解析预设JSON
-            let preset: any;
-            try {
-                preset = typeof presetJsonStr === 'string' ? JSON.parse(presetJsonStr) : presetJsonStr;
-            } catch (e) {
-                throw new Error('Invalid presetJsonStr: ' + (e instanceof Error ? e.message : String(e)));
-            }
-            if (!preset || !Array.isArray(preset.prompts) || !Array.isArray(preset.prompt_order)) {
-                throw new Error('Invalid preset format');
-            }
-    
-            // 2. 查找chatHistory identifier
-            const promptOrderArr = preset.prompt_order[0]?.order || [];
-            let chatHistoryIdentifier = '';
-            for (const item of promptOrderArr) {
-                if (
-                    typeof item.identifier === 'string' &&
-                    (item.identifier.toLowerCase().includes('chathistory') ||
-                     item.identifier.toLowerCase().includes('chat_history'))
-                ) {
-                    chatHistoryIdentifier = item.identifier;
-                    break;
-                }
-            }
-            if (!chatHistoryIdentifier) {
-                // fallback: 尝试找第一个role为system或user的prompt
-                const fallback = preset.prompts.find((p: any) =>
-                    typeof p.identifier === 'string' &&
-                    (p.identifier.toLowerCase().includes('chathistory') ||
-                     p.identifier.toLowerCase().includes('chat_history'))
-                );
-                chatHistoryIdentifier = fallback?.identifier || 'chatHistory';
-            }
-    
-            // 3. 构造chatHistory消息对象
-            // 支持多轮对话（如输入为多行，偶数行为user，奇数行为assistant）
-            let chatHistoryMessages: any[] = [];
-            if (inputText.includes('\n')) {
-                // 尝试按常见对话格式分割
-                // 支持格式：用户: ...\n角色: ...\n
-                const lines = inputText.split('\n').map(l => l.trim()).filter(Boolean);
-                for (const line of lines) {
-                    if (/^(用户|user)[:：]/i.test(line)) {
-                        chatHistoryMessages.push({
-                            role: 'user',
-                            content: line.replace(/^(用户|user)[:：]/i, '').trim()
-                        });
-                    } else if (/^(角色|assistant|model|bot)[:：]/i.test(line)) {
-                        chatHistoryMessages.push({
-                            role: 'assistant',
-                            content: line.replace(/^(角色|assistant|model|bot)[:：]/i, '').trim()
-                        });
-                    } else {
-                        // fallback: 交替分配
-                        const last = chatHistoryMessages[chatHistoryMessages.length - 1];
-                        chatHistoryMessages.push({
-                            role: (!last || last.role === 'assistant') ? 'user' : 'assistant',
-                            content: line
-                        });
-                    }
-                }
-            } else {
-                // 单条输入，默认为user
-                chatHistoryMessages.push({
-                    role: 'user',
-                    content: inputText
-                });
-            }
-    
-            // 4. 按prompt_order组装rframework
-            const promptMap = new Map<string, any>();
-            for (const p of preset.prompts) {
-                if (p.identifier) promptMap.set(p.identifier, p);
-            }
-            const rframework: any[] = [];
-            for (const orderItem of promptOrderArr) {
-                const identifier = orderItem.identifier;
-                if (identifier === chatHistoryIdentifier) {
-                    // 插入chatHistory消息数组
-                    for (const msg of chatHistoryMessages) {
-                        rframework.push({
-                            role: msg.role,
-                            content: msg.content
-                        });
-                    }
-                } else if (promptMap.has(identifier)) {
-                    const prompt = promptMap.get(identifier);
-                    if (prompt && prompt.content && prompt.content.trim() !== '') {
-                        rframework.push({
-                            role: prompt.role || 'user',
-                            content: prompt.content
-                        });
-                    }
-                }
-            }
-    
-            // 5. 按适配器类型转换格式
-            let result: any[] = [];
-            if (adapterType === 'gemini' || adapterType === 'openrouter') {
-                // gemini: assistant→model, 其它保持user
-                result = rframework.map(msg => ({
-                    role: msg.role === 'assistant' ? 'model' : (msg.role === 'model' ? 'model' : 'user'),
-                    parts: [{ text: msg.content }]
-                }));
-            } else if (adapterType === 'openai-compatible') {
-                // openai: 保持assistant/user
-                result = rframework.map(msg => ({
-                    role: msg.role === 'model' ? 'assistant' : msg.role,
-                    content: msg.content
-                }));
-            } else {
-                // 默认openai格式
-                result = rframework.map(msg => ({
-                    role: msg.role === 'model' ? 'assistant' : msg.role,
-                    content: msg.content
-                }));
-            }
-    
-            return result;
-        }
-        
 }
-

@@ -96,6 +96,7 @@ const { applyRegexTools } = useRegex();
  const [useSeed, setUseSeed] = useState<boolean>(false);
  const [novelAIConfig, setNovelAIConfig] = useState<any>(null);
  const [allPositiveTags, setAllPositiveTags] = useState<string[]>([]);
+ 
   useEffect(() => {
     const keyboardDidHideListener = Keyboard.addListener(
       'keyboardDidHide',

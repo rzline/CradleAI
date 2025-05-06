@@ -210,6 +210,48 @@ const FontRenderer: CustomTextualRenderer = function FontRenderer({
   );
 };
 
+// 添加通用未知标签渲染器
+const UnknownTagRenderer = ({ 
+  tnode, 
+  ...props 
+}: CustomRendererProps<TBlock>) => {
+  // 获取原始标签名
+  const tagName = tnode.tagName;
+  
+  // 获取原始子内容
+  let innerContent = '';
+  if (tnode.children && tnode.children.length > 0) {
+    // 需要递归处理子内容，确保完整显示
+    const processChildren = (children: readonly any[]): string => {
+      return children.map(child => {
+        if (child.type === 'text') {
+          return child.data;
+        } else if (child.type === 'element') {
+          const attrs = child.attributes ? 
+            Object.entries(child.attributes)
+              .map(([k, v]) => ` ${k}="${v}"`)
+              .join('') : '';
+          
+          return `<${child.tagName}${attrs}>${processChildren(child.children)}</${child.tagName}>`;
+        }
+        return '';
+      }).join('');
+    };
+    
+    innerContent = processChildren(tnode.children);
+  }
+  
+  // 构建原始标签文本
+  const originalTag = `<${tagName}>${innerContent}</${tagName}>`;
+  
+  // 以斜体红色显示未知标签
+  return (
+    <Text style={{ color: '#e57373', fontStyle: 'italic' }}>
+      {originalTag}
+    </Text>
+  );
+};
+
 // Main function to parse HTML content with React Native Render HTML
 export const parseHtmlToReactNative = (
   html: string,
@@ -232,6 +274,21 @@ export const parseHtmlToReactNative = (
   const processedHtml = html.replace(/(?<=>|^)([^<]+)(?=<|$)/g, (match) => {
     return match.replace(/\n/g, '<br/>');
   });
+
+  // 定义已知标签列表
+  const knownTags = [
+    // 自定义标签
+    'img', 'thinking', 'think', 'mem', 'status', 'StatusBlock', 
+    'statusblock', 'websearch', 'char-think', 'font',
+    // 新增 summary/details
+    'summary', 'details',
+    // 标准HTML标签
+    'p', 'a', 'h1', 'h2', 'h3', 'h4', 'h5', 'h6', 'div', 'span',
+    'b', 'strong', 'i', 'em', 'u', 'br', 'hr', 'ul', 'ol', 'li',
+    'table', 'tr', 'td', 'th', 'thead', 'tbody', 'blockquote',
+    'pre', 'code', 'mark', 'figure', 'figcaption', 'video', 'audio',
+    'source', 'section', 'article', 'aside', 'nav', 'header', 'footer'
+  ];
 
   const renderers = {
     img: ({ tnode }: CustomRendererProps<TBlock>) => {
@@ -288,9 +345,13 @@ export const parseHtmlToReactNative = (
     status: StatusRenderer,
     StatusBlock: StatusRenderer, // Case sensitive tag name
     statusblock: StatusRenderer, // Lowercase version for case-insensitive matching
+    // 新增 summary/details
+    summary: StatusRenderer,
+    details: StatusRenderer,
     websearch: WebsearchRenderer,
     'char-think': ThinkingRenderer,
     font: FontRenderer, // Now properly typed as CustomTextualRenderer
+    _unknown: UnknownTagRenderer, // 添加通用未知标签渲染器
   };
 
   const customHTMLElementModels = {
@@ -319,6 +380,15 @@ export const parseHtmlToReactNative = (
       tagName: 'statusblock',
       contentModel: HTMLContentModel.block
     }),
+    // 新增 summary/details
+    summary: HTMLElementModel.fromCustomModel({
+      tagName: 'summary',
+      contentModel: HTMLContentModel.block
+    }),
+    details: HTMLElementModel.fromCustomModel({
+      tagName: 'details',
+      contentModel: HTMLContentModel.block
+    }),
     websearch: HTMLElementModel.fromCustomModel({
       tagName: 'websearch',
       contentModel: HTMLContentModel.block
@@ -332,8 +402,14 @@ export const parseHtmlToReactNative = (
       tagName: 'font',
       contentModel: HTMLContentModel.textual
     }),
+    // 添加通用未知标签模型
+    _unknown: HTMLElementModel.fromCustomModel({
+      tagName: '_unknown',
+      contentModel: HTMLContentModel.block
+    }),
   };
 
+  // 定义标签样式
   const tagsStyles = {
     p: { marginBottom: 10, ...baseStyle },
     a: { color: '#3498db', textDecorationLine: 'underline' as const },
@@ -362,14 +438,36 @@ export const parseHtmlToReactNative = (
         color: '#fff', 
         fontSize: 16, 
         ...baseStyle,
-        // Add explicit whitespace handling for better text formatting
         textAlignVertical: 'center',
-        // Ensure whitespace is preserved
         whiteSpace: 'pre-wrap' as any,
       }}
-      // Improve text rendering with specific settings
+      ignoredDomTags={[]} 
+      domVisitors={{
+        onElement: (element) => {
+          // 只处理未注册的自定义标签
+          if (!knownTags.includes(element.tagName.toLowerCase())) {
+            // 将未知标签转为 _unknown，并把原始标签名和内容作为属性传递
+            return {
+              ...element,
+              tagName: '_unknown',
+              attributes: {
+                ...(element.attributes || {}),
+                'data-original-tag': element.tagName
+              },
+              // 保留原始子节点
+              children: element.children
+            };
+          }
+          return element;
+        }
+      }}
       enableExperimentalBRCollapsing={false}
       enableExperimentalGhostLinesPrevention={true}
+      renderersProps={{
+        _unknown: {
+          // 可扩展
+        }
+      }}
     />
   );
 };

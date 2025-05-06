@@ -137,26 +137,104 @@ export class OpenAIAdapter {
     return [...this.availableModels];
   }
 
-  async chatCompletion(messages: Array<{ role: string; content: string }>, options?: {
-    temperature?: number;
-    max_tokens?: number;
-    stream?: boolean;
-    [key: string]: any;
-  }) {
+  async chatCompletion(
+    messages: Array<{ role: string; content: string }>,
+    options?: {
+      temperature?: number;
+      max_tokens?: number;
+      stream?: boolean;
+      [key: string]: any;
+      // 新增参数
+      memoryResults?: any;
+      characterId?: string;
+    }
+  ) {
+    // === 新增：表格记忆注入逻辑迁移到这里 ===
+    let enhancedMessages = [...messages];
+    let tableMemoryText = '';
+    let effectiveCharacterId: string | undefined = options?.characterId;
+    const {
+      memoryResults,
+      characterId,
+      temperature,
+      max_tokens,
+      stream,
+      ...restOptions
+    } = options || {};
+
+    // 兼容参数传递方式
+    if (!effectiveCharacterId && memoryResults) {
+      effectiveCharacterId =
+        memoryResults.characterId ||
+        memoryResults.agentId ||
+        memoryResults.results?.[0]?.characterId ||
+        memoryResults.results?.[0]?.agentId;
+    }
+
+    // 如果memoryResults存在，优先从memoryResults获取characterId
+    if (memoryResults) {
+      if (!effectiveCharacterId && messages.length > 0) {
+        effectiveCharacterId = (messages[0] as any)?.characterId;
+      }
+    }
+
+    // 获取表格记忆
+    if (effectiveCharacterId) {
+      try {
+        const tableData = await getCharacterTablesData(effectiveCharacterId);
+        if (tableData.success && tableData.tables.length > 0) {
+          tableMemoryText += `[角色长期记忆表格]\n`;
+          tableData.tables.forEach(table => {
+            const headerRow = '| ' + table.headers.join(' | ') + ' |';
+            const sepRow = '| ' + table.headers.map(() => '---').join(' | ') + ' |';
+            const dataRows = table.rows.map(row => '| ' + row.join(' | ') + ' |').join('\n');
+            tableMemoryText += `表格：${table.name}\n${headerRow}\n${sepRow}\n${dataRows}\n\n`;
+          });
+        }
+      } catch (e) {
+        console.warn('[OpenAIAdapter] 获取角色表格记忆失败:', e);
+      }
+    }
+
+    // 如果有表格记忆，将其插入到最后一个user消息前
+    if (tableMemoryText) {
+      let lastUserIdx = -1;
+      for (let i = enhancedMessages.length - 1; i >= 0; i--) {
+        if (enhancedMessages[i].role === 'user') {
+          lastUserIdx = i;
+          break;
+        }
+      }
+      let insertIdx = lastUserIdx !== -1 ? lastUserIdx : enhancedMessages.length;
+      enhancedMessages.splice(insertIdx, 0, {
+        role: "assistant",
+        content: tableMemoryText + `
+<response_guidelines>
+- 我会在回复中结合上面的表格记忆内容，表格中记录了角色相关的重要信息和事实。
+- 我会确保回复与表格中的信息保持一致，不会捏造表格中不存在的信息。
+- 我的回复会自然融入表格中的信息，不会生硬地提及"根据表格"之类的字眼。
+- 我会确保回复保持角色人设的一致性。
+</response_guidelines>`
+      });
+    }
+
     const url = `${this.endpoint}/v1/chat/completions`;
     const headers = {
       'Content-Type': 'application/json',
       'Authorization': `Bearer ${this.apiKey}`
     };
+
     const data = {
       model: this.model,
-      messages,
-      temperature: options?.temperature ?? 0.7,
-      max_tokens: options?.max_tokens,
-      stream: options?.stream ?? false,
-      ...options
+      messages: enhancedMessages,
+      ...restOptions // 不包含 memoryResults/characterId
     };
-
+    // 新增：详细打印请求内容，包括完整的messages数组
+    console.log('[OpenAIAdapter] 发送chatCompletion请求 FULL:', JSON.stringify({
+      url,
+      headers: { ...headers, Authorization: 'Bearer ***' },
+      data
+    }, null, 2));
     console.log(`[OpenAIAdapter] 发送chatCompletion请求:`, {
       url,
       headers: { ...headers, Authorization: 'Bearer ***' },
@@ -186,6 +264,24 @@ export class OpenAIAdapter {
    */
   private convertToOpenAIMessages(messages: ChatMessage[]): Array<{ role: string; content: any }> {
     return messages.map(message => {
+
+      
+            // 优先处理 Gemini 风格的 parts 字段
+            if (Array.isArray((message as any).parts) && (message as any).parts.length > 0) {
+              // 拼接所有 part.text
+              const textContent = (message as any).parts
+                .map((part: any) => (typeof part === 'object' && part.text) ? part.text : '')
+                .join(' ')
+                .trim();
+              let role = message.role;
+              if (role === 'model') role = 'assistant';
+              if (role === 'user') role = 'user';
+              if (role === 'system') role = 'system';
+              return { role, content: textContent };
+            }
+
+
+
       // Handle multimodal content (text + images)
       if (message.parts && Array.isArray(message.parts) && message.parts.length > 0) {
         // Check if there are image parts
@@ -252,21 +348,15 @@ export class OpenAIAdapter {
         }
       }
 
-      // Simple text message
+      // OpenAI风格或兜底
       let textContent = "";
-      if (message.parts && Array.isArray(message.parts)) {
-        textContent = message.parts
-          .map(part => (typeof part === 'object' && part.text) ? part.text : '')
-          .join(' ')
-          .trim();
+      if (typeof message.content === 'string') {
+        textContent = message.content;
       }
-
-      // Map Gemini roles to OpenAI roles
       let role = message.role;
       if (role === 'model') role = 'assistant';
       if (role === 'user') role = 'user';
       if (role === 'system') role = 'system';
-
       return {
         role,
         content: textContent
@@ -277,7 +367,7 @@ export class OpenAIAdapter {
   /**
    * Generate content from messages
    */
-  async generateContent(contents: ChatMessage[], characterId?: string): Promise<string> {
+  async generateContent(contents: ChatMessage[], characterId?: string,memoryResults?: any): Promise<string> {
     // Always check cloud service status before making requests
     this.updateCloudServiceStatus();
     
@@ -299,13 +389,45 @@ export class OpenAIAdapter {
     try {
       // ==== 新增：获取角色表格记忆 ====
       let tableMemoryText = '';
-      // 获取角色ID
-      console.log('[OpenAIAdapter][表格记忆] characterId参数值:', characterId);
+      // 统一 characterId 获取逻辑，和 Gemini-adapter 保持一致
+      let effectiveCharacterId: string | undefined = undefined;
+      let effectiveConversationId: string | undefined = undefined;
+      // 检查 memoryResults 结构
+
+      if (typeof arguments[1] === 'object' && arguments[1] !== null && 'results' in arguments[1]) {
+        memoryResults = arguments[1];
+      }
+      if (memoryResults) {
+        // 详细日志，和 Gemini-adapter 一致
+        console.log('[OpenAIAdapter][表格记忆] memoryResults.characterId:', memoryResults.characterId, typeof memoryResults.characterId);
+        console.log('[OpenAIAdapter][表格记忆] memoryResults.agentId:', memoryResults.agentId, typeof memoryResults.agentId);
+        console.log('[OpenAIAdapter][表格记忆] memoryResults.results[0]?.characterId:', memoryResults.results?.[0]?.characterId, typeof memoryResults.results?.[0]?.characterId);
+        console.log('[OpenAIAdapter][表格记忆] memoryResults.results[0]?.agentId:', memoryResults.results?.[0]?.agentId, typeof memoryResults.results?.[0]?.agentId);
+        console.log('[OpenAIAdapter][表格记忆] memoryResults.conversationId:', memoryResults.conversationId, typeof memoryResults.conversationId);
+        console.log('[OpenAIAdapter][表格记忆] memoryResults.results[0]?.conversationId:', memoryResults.results?.[0]?.conversationId, typeof memoryResults.results?.[0]?.conversationId);
+        effectiveCharacterId =
+          memoryResults.characterId ||
+          memoryResults.agentId ||
+          memoryResults.results?.[0]?.characterId ||
+          memoryResults.results?.[0]?.agentId;
+        effectiveConversationId =
+          memoryResults.conversationId ||
+          memoryResults.results?.[0]?.conversationId;
+        if (!effectiveCharacterId && contents.length > 0) {
+          effectiveCharacterId = (contents[0] as any)?.characterId;
+          console.log('[OpenAIAdapter][表格记忆] 尝试从contents[0]获取characterId:', effectiveCharacterId, typeof effectiveCharacterId);
+        }
+        console.log('[OpenAIAdapter][表格记忆] 最终用于查询的 characterId:', effectiveCharacterId, 'conversationId:', effectiveConversationId);
+      } else if (characterId) {
+        effectiveCharacterId = characterId;
+        console.log('[OpenAIAdapter][表格记忆] characterId参数值:', effectiveCharacterId, typeof effectiveCharacterId);
+      }
+ 
       
-      if (characterId) {
+      if (effectiveCharacterId) {
         try {
-          console.log('[OpenAIAdapter][表格记忆] 调用 getCharacterTablesData 前参数:', { characterId });
-          const tableData = await getCharacterTablesData(characterId);
+          console.log('[OpenAIAdapter][表格记忆] 调用 getCharacterTablesData 前参数:', { characterId: effectiveCharacterId });
+          const tableData = await getCharacterTablesData(effectiveCharacterId);
           console.log('[OpenAIAdapter][表格记忆] getCharacterTablesData 返回:', tableData);
           if (tableData.success && tableData.tables.length > 0) {
             tableMemoryText += `[角色长期记忆表格]\n`;
@@ -324,7 +446,7 @@ export class OpenAIAdapter {
           console.warn('[OpenAIAdapter][表格记忆] 获取角色表格记忆失败:', e);
         }
       } else {
-        console.log('[OpenAIAdapter][表格记忆] 未提供有效的characterId，跳过表格记忆注入');
+        console.log('[OpenAIAdapter][表格记忆] 未提供有效的characterId/agentId，跳过表格记忆注入');
       }
       // ==== 表格记忆获取结束 ====
       
@@ -410,17 +532,46 @@ export class OpenAIAdapter {
   /**
    * Execute content generation using cloud service
    */
-  private async executeGenerateContentWithCloudService(contents: ChatMessage[], characterId: string): Promise<string> {
+  private async executeGenerateContentWithCloudService(contents: ChatMessage[], characterId: string,memoryResults?:any): Promise<string> {
     console.log('[OpenAIAdapter] 使用云服务生成内容');
     try {
-      // ==== 新增：获取角色表格记忆 ====
       let tableMemoryText = '';
-      console.log('[OpenAIAdapter][表格记忆/云服务] characterId参数值:', characterId);
-      
-      if (characterId) {
+      // 统一 characterId 获取逻辑，和 Gemini-adapter 保持一致
+      let effectiveCharacterId: string | undefined = undefined;
+      let effectiveConversationId: string | undefined = undefined;
+
+      if (typeof arguments[1] === 'object' && arguments[1] !== null && 'results' in arguments[1]) {
+        memoryResults = arguments[1];
+      }
+      if (memoryResults) {
+        console.log('[OpenAIAdapter][表格记忆/云服务] memoryResults.characterId:', memoryResults.characterId, typeof memoryResults.characterId);
+        console.log('[OpenAIAdapter][表格记忆/云服务] memoryResults.agentId:', memoryResults.agentId, typeof memoryResults.agentId);
+        console.log('[OpenAIAdapter][表格记忆/云服务] memoryResults.results[0]?.characterId:', memoryResults.results?.[0]?.characterId, typeof memoryResults.results?.[0]?.characterId);
+        console.log('[OpenAIAdapter][表格记忆/云服务] memoryResults.results[0]?.agentId:', memoryResults.results?.[0]?.agentId, typeof memoryResults.results?.[0]?.agentId);
+        console.log('[OpenAIAdapter][表格记忆/云服务] memoryResults.conversationId:', memoryResults.conversationId, typeof memoryResults.conversationId);
+        console.log('[OpenAIAdapter][表格记忆/云服务] memoryResults.results[0]?.conversationId:', memoryResults.results?.[0]?.conversationId, typeof memoryResults.results?.[0]?.conversationId);
+        effectiveCharacterId =
+          memoryResults.characterId ||
+          memoryResults.agentId ||
+          memoryResults.results?.[0]?.characterId ||
+          memoryResults.results?.[0]?.agentId;
+        effectiveConversationId =
+          memoryResults.conversationId ||
+          memoryResults.results?.[0]?.conversationId;
+        if (!effectiveCharacterId && contents.length > 0) {
+          effectiveCharacterId = (contents[0] as any)?.characterId;
+          console.log('[OpenAIAdapter][表格记忆/云服务] 尝试从contents[0]获取characterId:', effectiveCharacterId, typeof effectiveCharacterId);
+        }
+        console.log('[OpenAIAdapter][表格记忆/云服务] 最终用于查询的 characterId:', effectiveCharacterId, 'conversationId:', effectiveConversationId);
+      } else if (characterId) {
+        effectiveCharacterId = characterId;
+        console.log('[OpenAIAdapter][表格记忆/云服务] characterId参数值:', effectiveCharacterId, typeof effectiveCharacterId);
+      }
+
+      if (effectiveCharacterId) {
         try {
-          console.log('[OpenAIAdapter][表格记忆/云服务] 调用 getCharacterTablesData 前参数:', { characterId });
-          const tableData = await getCharacterTablesData(characterId);
+          console.log('[OpenAIAdapter][表格记忆/云服务] 调用 getCharacterTablesData 前参数:', { characterId: effectiveCharacterId });
+          const tableData = await getCharacterTablesData(effectiveCharacterId);
           console.log('[OpenAIAdapter][表格记忆/云服务] getCharacterTablesData 返回:', tableData);
           if (tableData.success && tableData.tables.length > 0) {
             tableMemoryText += `[角色长期记忆表格]\n`;
@@ -439,7 +590,7 @@ export class OpenAIAdapter {
           console.warn('[OpenAIAdapter][表格记忆/云服务] 获取角色表格记忆失败:', e);
         }
       } else {
-        console.log('[OpenAIAdapter][表格记忆/云服务] 未提供有效的characterId，跳过表格记忆注入');
+        console.log('[OpenAIAdapter][表格记忆/云服务] 未提供有效的characterId/agentId，跳过表格记忆注入');
       }
       // ==== 表格记忆获取结束 ====
       

@@ -43,10 +43,12 @@ import * as TableMemoryAPI from '@/src/memory/plugins/table-memory/api';
 import Mem0Service from '@/src/memory/services/Mem0Service'; // 新增：导入Mem0Service
 import { StorageAdapter } from '@/NodeST/nodest/utils/storage-adapter'; // 新增：导入StorageAdapter
 import * as Sharing from 'expo-sharing'; // 新增：用于分享导出文件
+import { characterViewModeCache } from './index'; // 新增：导入缓存变量
 
 const VIEW_MODE_SMALL = 'small';
 const VIEW_MODE_LARGE = 'large';
 const VIEW_MODE_VERTICAL = 'vertical'; // New view mode
+const VIEW_MODE_STORAGE_KEY = 'character_view_mode'; // 新增：视图模式存储key
 
 const { width, height } = Dimensions.get('window');
 const CARD_WIDTH = (width - 48) / 2;
@@ -148,6 +150,34 @@ const CharactersScreen: React.FC = () => {
       setImportLoading(false);
     }
   }, [showCreationModal, importLoading]);
+
+  // 修改：初始化时优先读取全局缓存
+  useEffect(() => {
+    (async () => {
+      // 优先使用 index.tsx 导出的缓存变量
+      if (
+        characterViewModeCache === VIEW_MODE_LARGE ||
+        characterViewModeCache === VIEW_MODE_SMALL ||
+        characterViewModeCache === VIEW_MODE_VERTICAL
+      ) {
+        setViewMode(characterViewModeCache);
+        return;
+      }
+      // fallback: 兜底异步读取
+      try {
+        const storedViewMode = await AsyncStorage.getItem(VIEW_MODE_STORAGE_KEY);
+        if (
+          storedViewMode === VIEW_MODE_LARGE ||
+          storedViewMode === VIEW_MODE_SMALL ||
+          storedViewMode === VIEW_MODE_VERTICAL
+        ) {
+          setViewMode(storedViewMode);
+        }
+      } catch (e) {
+        // ignore
+      }
+    })();
+  }, []);
 
   const handleManage = () => {
     setIsManaging((prevIsManaging) => !prevIsManaging);
@@ -470,12 +500,15 @@ const CharactersScreen: React.FC = () => {
     }, 300);
   };
 
+  // 修改切换视图逻辑，切换后写入AsyncStorage
   const handleViewModeToggle = () => {
-    // Cycle through view modes: large -> small -> vertical -> large
     setViewMode(prevMode => {
-      if (prevMode === VIEW_MODE_LARGE) return VIEW_MODE_SMALL;
-      if (prevMode === VIEW_MODE_SMALL) return VIEW_MODE_VERTICAL;
-      return VIEW_MODE_LARGE;
+      let nextMode: typeof prevMode;
+      if (prevMode === VIEW_MODE_LARGE) nextMode = VIEW_MODE_SMALL;
+      else if (prevMode === VIEW_MODE_SMALL) nextMode = VIEW_MODE_VERTICAL;
+      else nextMode = VIEW_MODE_LARGE;
+      AsyncStorage.setItem(VIEW_MODE_STORAGE_KEY, nextMode).catch(() => {});
+      return nextMode;
     });
   };
 

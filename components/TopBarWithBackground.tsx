@@ -17,6 +17,7 @@ import { Character } from '@/shared/types';
 import { BlurView } from 'expo-blur';
 import { LinearGradient } from 'expo-linear-gradient';
 import RegexToolModal from '@/components/RegexToolModal';
+import { useRouter } from 'expo-router';
 
 import { Group } from '@/src/group/group-types';
 import { GroupAvatar } from './GroupAvatar';
@@ -76,6 +77,7 @@ const TopBarWithBackground: React.FC<TopBarWithBackgroundProps> = ({
   const [isRegexModalVisible, setIsRegexModalVisible] = useState(false);
   const [isMemoryControlVisible, setIsMemoryControlVisible] = useState(false);
   const [groupMembers, setGroupMembers] = useState<Character[]>([]);
+  const router = useRouter();
 
   useEffect(() => {
     if (isGroupMode && selectedGroup) {
@@ -229,17 +231,6 @@ const TopBarWithBackground: React.FC<TopBarWithBackgroundProps> = ({
               </TouchableOpacity>
             )}
 
-            {/* Show settings button in group mode or if not empty in character mode */}
-            {(isGroupMode || !isEmpty) && (
-              <TouchableOpacity
-                style={styles.actionButton}
-                onPress={isGroupMode ? onGroupSettingsPress : onSettingsPress}
-                hitSlop={ACTION_BUTTON_HIT_SLOP}
-              >
-                <Ionicons name="settings-outline" size={BUTTON_SIZE} color="#fff" />
-              </TouchableOpacity>
-            )}
-
             {/* Only show save manager button if not in empty state and not in group mode */}
             {!isEmpty && !isGroupMode && onSaveManagerPress && (
               <TouchableOpacity 
@@ -261,6 +252,28 @@ const TopBarWithBackground: React.FC<TopBarWithBackgroundProps> = ({
                 <Ionicons name="people" size={BUTTON_SIZE} color="#fff" />
               </TouchableOpacity>
             )}
+
+            {/* 全局设置按钮，仅在非空状态下显示，可根据需要调整显示条件 */}
+            {!isEmpty && (
+              <TouchableOpacity
+                style={styles.actionButton}
+                onPress={() => router.push('/pages/global-settings')}
+                hitSlop={ACTION_BUTTON_HIT_SLOP}
+              >
+                <Ionicons name="earth-outline" size={BUTTON_SIZE} color="#fff" />
+              </TouchableOpacity>
+            )}
+
+             {(isGroupMode || !isEmpty) && (
+              <TouchableOpacity
+                style={styles.actionButton}
+                onPress={isGroupMode ? onGroupSettingsPress : onSettingsPress}
+                hitSlop={ACTION_BUTTON_HIT_SLOP}
+              >
+                <Ionicons name="settings-outline" size={BUTTON_SIZE} color="#fff" />
+              </TouchableOpacity>
+            )}
+
           </View>
         </View>
       </Animated.View>

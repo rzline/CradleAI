@@ -48,7 +48,7 @@ import {
   AuthorNoteSection
 } from '@/components/character/CharacterSections';
 
-const DEFAULT_PRESET_ENTRIES = {
+export const DEFAULT_PRESET_ENTRIES = {
   EDITABLE: [
     { 
       id: "main", 
@@ -201,6 +201,7 @@ const DEFAULT_PRESET_ENTRIES = {
   ]
 };
 
+
 export async function updateAuthorNoteDataForCharacter(
   character: Character,
   authorNoteData: Partial<AuthorNoteJson>,
@@ -305,6 +306,10 @@ const CharacterDetail: React.FC = () => {
   const [deleteDialogVisible, setDeleteDialogVisible] = useState(false);
   const [selectedDeleteEntry, setSelectedDeleteEntry] = useState<string | null>(null);
   const [selectedDeleteType, setSelectedDeleteType] = useState<'worldbook' | 'preset' | null>(null);
+
+  // 新增：多开场白状态
+  const [alternateGreetings, setAlternateGreetings] = useState<string[]>([]);
+  const [selectedGreetingIndex, setSelectedGreetingIndex] = useState<number>(0);
 
   const openTextEditorModal = (
     field: keyof RoleCardJson,
@@ -465,6 +470,22 @@ const CharacterDetail: React.FC = () => {
               setUploadMode('generate');
             }
           }
+
+          // 初始化多开场白
+          let greetings: string[] = [];
+          if (Array.isArray(foundCharacter.extraGreetings) && foundCharacter.extraGreetings.length > 0) {
+            greetings = foundCharacter.extraGreetings;
+          } else if (data?.alternateGreetings && Array.isArray(data.alternateGreetings)) {
+            greetings = data.alternateGreetings;
+          } else {
+            greetings = [roleCard.first_mes || ''];
+          }
+          setAlternateGreetings(greetings);
+          setSelectedGreetingIndex(0);
+          setRoleCard(prev => ({
+            ...prev,
+            first_mes: greetings[0] || ''
+          }));
           
         } catch (parseError) {
           setRoleCard({
@@ -589,11 +610,17 @@ const CharacterDetail: React.FC = () => {
 
   const handleRoleCardChange = (field: keyof RoleCardJson, value: string) => {
     setRoleCard(prev => ({ ...prev, [field]: value }));
-    
+    if (field === 'first_mes') {
+      setAlternateGreetings(prevGreetings => {
+        if (prevGreetings.length === 0) return [value];
+        const updated = [...prevGreetings];
+        updated[selectedGreetingIndex] = value;
+        return updated;
+      });
+    }
     if (field === 'name') {
       setAuthorNote(prev => ({ ...prev, charname: value }));
     }
-    
     setHasUnsavedChanges(true);
   };
 
@@ -701,7 +728,8 @@ const CharacterDetail: React.FC = () => {
         personality: roleCard.personality || '',
         updatedAt: Date.now(),
         jsonData: JSON.stringify(jsonData),
-        ...cradleFields
+        ...cradleFields,
+        extraGreetings: alternateGreetings.length > 0 ? alternateGreetings : undefined
       };
       
       await updateCharacter(updatedCharacter);
@@ -979,6 +1007,37 @@ const CharacterDetail: React.FC = () => {
     confirmDeleteEntry(id, 'preset');
   };
 
+  const handleSelectGreeting = (idx: number) => {
+    setSelectedGreetingIndex(idx);
+    setRoleCard(prev => ({
+      ...prev,
+      first_mes: alternateGreetings[idx] || ''
+    }));
+    setHasUnsavedChanges(true);
+  };
+
+  const handleAddGreeting = () => {
+    setAlternateGreetings(prev => {
+      const newArr = [...prev, ''];
+      setSelectedGreetingIndex(newArr.length - 1);
+      setRoleCard(prevCard => ({ ...prevCard, first_mes: '' }));
+      return newArr;
+    });
+    setHasUnsavedChanges(true);
+  };
+
+  const handleDeleteGreeting = () => {
+    if (alternateGreetings.length <= 1) return;
+    setAlternateGreetings(prev => {
+      const newGreetings = prev.filter((_, i) => i !== selectedGreetingIndex);
+      const newIndex = Math.min(selectedGreetingIndex, newGreetings.length - 1);
+      setSelectedGreetingIndex(newIndex);
+      setRoleCard(prevCard => ({ ...prevCard, first_mes: newGreetings[newIndex] }));
+      return newGreetings;
+    });
+    setHasUnsavedChanges(true);
+  };
+
   const renderTagGenerationSection = () => (
     <View style={styles.tagGenerateContainer}>
       <Text style={styles.tagInstructionsText}>
@@ -1252,21 +1311,42 @@ const CharacterDetail: React.FC = () => {
         <ScrollView style={styles.content}>
           {activeTab === 'basic' ? (
             <View style={styles.tabContent}>
-              <CharacterAttributeEditor
-                title="开场白"
-                value={roleCard.first_mes || ''}
-                onChangeText={(text) => handleRoleCardChange('first_mes', text)}
-                placeholder="角色与用户的第一次对话内容..."
-                onPress={() =>
-                  openTextEditorModal(
-                    'first_mes',
-                    '编辑开场白',
-                    roleCard.first_mes || '',
-                    '角色与用户的第一次对话内容...'
-                  )
-                }
-              />
-              
+              {/* 新增：多开场白UI */}
+              <View style={styles.greetingsContainer}>
+                <View style={styles.greetingsHeader}>
+                  <Text style={styles.greetingsTitle}>开场白</Text>
+                  <View style={styles.greetingsActions}>
+                    <TouchableOpacity 
+                      style={styles.greetingActionButton}
+                      onPress={handleAddGreeting}
+                    >
+                      <Ionicons name="add-circle-outline" size={20} color="#FFD700" />
+                      <Text style={styles.greetingActionText}>添加</Text>
+                    </TouchableOpacity>
+                    <TouchableOpacity 
+                      style={[
+                        styles.greetingActionButton, 
+                        alternateGreetings.length <= 1 && styles.disabledButton
+                      ]}
+                      onPress={handleDeleteGreeting}
+                      disabled={alternateGreetings.length <= 1}
+                    >
+                      <Ionicons name="trash-outline" size={20} color={alternateGreetings.length <= 1 ? "#666" : "#ff6666"} />
+                      <Text style={[styles.greetingActionText, alternateGreetings.length <= 1 && styles.disabledText]}>删除</Text>
+                    </TouchableOpacity>
+                  </View>
+                </View>
+                <CharacterAttributeEditor
+                  title={`开场白 #${selectedGreetingIndex + 1}`}
+                  value={roleCard.first_mes || ''}
+                  onChangeText={(text) => handleRoleCardChange('first_mes', text)}
+                  placeholder="角色与用户的第一次对话内容..."
+                  style={styles.attributeSection}
+                  alternateGreetings={alternateGreetings}
+                  selectedGreetingIndex={selectedGreetingIndex}
+                  onSelectGreeting={handleSelectGreeting}
+                />
+              </View>
               <CharacterAttributeEditor
                 title="角色描述"
                 value={roleCard.description || ''}
@@ -1845,6 +1925,42 @@ const styles = StyleSheet.create({
     color: theme.colors.primary,
     marginLeft: 4,
     fontSize: 12,
+  },
+  greetingsContainer: {
+    marginTop: 16,
+  },
+  greetingsHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 8,
+  },
+  greetingsTitle: {
+    fontSize: 16,
+    fontWeight: 'bold',
+    color: theme.colors.text,
+  },
+  greetingsActions: {
+    flexDirection: 'row',
+  },
+  greetingActionButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginLeft: 8,
+    padding: 4,
+    borderRadius: 4,
+    backgroundColor: 'rgba(255, 255, 255, 0.1)',
+  },
+  greetingActionText: {
+    marginLeft: 4,
+    fontSize: 12,
+    color: theme.colors.textSecondary,
+  },
+  disabledButton: {
+    backgroundColor: 'rgba(255, 255, 255, 0.05)',
+  },
+  disabledText: {
+    color: '#666',
   },
 });
 

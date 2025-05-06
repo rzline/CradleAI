@@ -1,5 +1,5 @@
 import * as FileSystem from 'expo-file-system';
-import base64 from 'react-native-base64';
+import base64 from 'base-64';
 
 interface ChunkData {
   type: string;
@@ -52,12 +52,41 @@ export class PNGParser {
               const text = data.slice(nullIndex + 1);
               
               try {
-                const decodedText = new TextDecoder().decode(
-                  Uint8Array.from(atob(new TextDecoder().decode(text)), c => c.charCodeAt(0))
-                );
-                foundData[keyword] = JSON.parse(decodedText);
+                let decodedText;
+                try {
+                  // Try to decode as base64 first
+                  decodedText = new TextDecoder().decode(
+                    Uint8Array.from(atob(new TextDecoder().decode(text)), c => c.charCodeAt(0))
+                  );
+                } catch (decodeError) {
+                  // If base64 decoding fails, try regular text
+                  decodedText = new TextDecoder().decode(text);
+                }
+
+                try {
+                  // Try to parse as JSON
+                  foundData[keyword] = JSON.parse(decodedText);
+                  
+                  // Log successful parsing
+                  console.log(`Successfully parsed JSON for ${keyword}, found keys:`, 
+                    Object.keys(foundData[keyword]));
+                  
+                  // Special handling for chara keyword - extract nested data structure
+                  if (keyword === 'chara' && foundData.chara.data) {
+                    console.log('Found chara.data with keys:', Object.keys(foundData.chara.data));
+                    // Log if alternate_greetings exists
+                    if (Array.isArray(foundData.chara.data.alternate_greetings)) {
+                      console.log('Found alternate_greetings:', 
+                        foundData.chara.data.alternate_greetings.length);
+                    }
+                  }
+                } catch (jsonError) {
+                  // If JSON parsing fails, store as plain text
+                  foundData[keyword] = decodedText;
+                  console.log(`Stored ${keyword} as plain text`);
+                }
               } catch (e) {
-                console.error(`Failed to parse JSON for ${keyword}:`, e);
+                console.error(`Failed to decode text for ${keyword}:`, e);
               }
             }
           } catch (e) {

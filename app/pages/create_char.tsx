@@ -262,6 +262,27 @@ const CreateChar: React.FC<CreateCharProps> = ({
     id?: string; // Add id for deletion
   } | null>(null);
 
+  // 新增：alternateGreetings和选中索引
+  const [alternateGreetings, setAlternateGreetings] = useState<string[]>([]);
+  const [selectedGreetingIndex, setSelectedGreetingIndex] = useState<number>(0);
+
+  // 新增：添加/删除开场白功能
+  const handleAddGreeting = () => {
+    setAlternateGreetings(prev => [...prev, '']);
+    setSelectedGreetingIndex(alternateGreetings.length);
+    setRoleCard(prev => ({ ...prev, first_mes: '' }));
+  };
+
+  const handleDeleteGreeting = () => {
+    if (alternateGreetings.length <= 1) return;
+    setAlternateGreetings(prev => {
+      const newGreetings = prev.filter((_, i) => i !== selectedGreetingIndex);
+      const newIndex = Math.min(selectedGreetingIndex, newGreetings.length - 1);
+      setSelectedGreetingIndex(newIndex);
+      setRoleCard(prevCard => ({ ...prevCard, first_mes: newGreetings[newIndex] }));
+      return newGreetings;
+    });
+  };
   // Handle detail view for world book, preset, and author note entries
   const handleViewDetail = (
     title: string, 
@@ -288,10 +309,27 @@ const CreateChar: React.FC<CreateCharProps> = ({
       id: entryId // Store the ID for deletion
     });
   };
+  // 处理开场白选择
+  const handleSelectGreeting = (idx: number) => {
+    setSelectedGreetingIndex(idx);
+    setRoleCard(prev => ({
+      ...prev,
+      first_mes: alternateGreetings[idx] || ''
+    }));
+    setHasUnsavedChanges(true);
+  };
 
-  // Handle role card field changes
+  // 修改handleRoleCardChange以同步alternateGreetings
   const handleRoleCardChange = (field: keyof RoleCardJson, value: string) => {
     setRoleCard(prev => ({ ...prev, [field]: value }));
+    if (field === 'first_mes') {
+      setAlternateGreetings(prevGreetings => {
+        if (prevGreetings.length === 0) return [value];
+        const updated = [...prevGreetings];
+        updated[selectedGreetingIndex] = value;
+        return updated;
+      });
+    }
     // 同步更新角色基本信息
     if (field === 'name') {
       setCharacter(prev => ({ ...prev, name: value }));
@@ -574,7 +612,7 @@ const CreateChar: React.FC<CreateCharProps> = ({
   const [voiceGender, setVoiceGender] = useState<'male' | 'female'>('male');
   const [voiceTemplateId, setVoiceTemplateId] = useState<string | undefined>(undefined); // Changed from null to undefined
 
-  // Saving character - update to include cradle fields
+  // 保存角色时，写入extraGreetings
   const saveCharacter = async () => {
     if (!roleCard.name?.trim()) {
       Alert.alert('保存失败', '角色名称不能为空。');
@@ -689,7 +727,9 @@ const CreateChar: React.FC<CreateCharProps> = ({
         updatedAt: Date.now(),
         jsonData: JSON.stringify(jsonData),
         // Add cradle-specific fields
-        ...cradleFields
+        ...cradleFields,
+        // 新增：保存额外开场白
+        extraGreetings: alternateGreetings.length > 0 ? alternateGreetings : undefined
       };
   
       console.log('[CreateChar] Saving character:', characterId);
@@ -854,7 +894,7 @@ const CreateChar: React.FC<CreateCharProps> = ({
     };
   }, [creationMode]);
 
-  // Load imported data if available
+  // 加载导入数据时，处理alternateGreetings
   useEffect(() => {
     const loadImportedData = async () => {
       try {
@@ -946,6 +986,21 @@ const CreateChar: React.FC<CreateCharProps> = ({
           if (data.authorNote) {
             console.log('[CreateChar] Loading author note');
             setAuthorNote(data.authorNote);
+          }
+
+          // 修复：导入alternateGreetings时，直接填充所有开场白
+          if (Array.isArray(data.alternateGreetings) && data.alternateGreetings.length > 0) {
+            setAlternateGreetings(data.alternateGreetings);
+            setSelectedGreetingIndex(0);
+            setRoleCard(prev => ({ ...prev, first_mes: data.alternateGreetings[0] || '' }));
+          } else if (Array.isArray(data.data?.alternate_greetings) && data.data.alternate_greetings.length > 0) {
+            setAlternateGreetings(data.data.alternate_greetings);
+            setSelectedGreetingIndex(0);
+            setRoleCard(prev => ({ ...prev, first_mes: data.data.alternate_greetings[0] || '' }));
+          } else if (data.roleCard?.first_mes) {
+            setAlternateGreetings([data.roleCard.first_mes]);
+            setSelectedGreetingIndex(0);
+            setRoleCard(prev => ({ ...prev, first_mes: data.roleCard.first_mes }));
           }
 
           // Only clear temporarily stored import data after successful load
@@ -1386,13 +1441,41 @@ const CreateChar: React.FC<CreateCharProps> = ({
             placeholder="角色名称..."
           />
           
-          <CharacterAttributeEditor
-            title="开场白"
-            value={roleCard.first_mes || ''}
-            onChangeText={(text) => handleRoleCardChange('first_mes', text)}
-            placeholder="角色与用户的第一次对话内容..."
-            style={styles.attributeSection}
-          />
+          <View style={styles.greetingsContainer}>
+            <View style={styles.greetingsHeader}>
+              <Text style={styles.greetingsTitle}>开场白</Text>
+              <View style={styles.greetingsActions}>
+                <TouchableOpacity 
+                  style={styles.greetingActionButton}
+                  onPress={handleAddGreeting}
+                >
+                  <Ionicons name="add-circle-outline" size={20} color="#FFD700" />
+                  <Text style={styles.greetingActionText}>添加</Text>
+                </TouchableOpacity>
+                <TouchableOpacity 
+                  style={[
+                    styles.greetingActionButton, 
+                    alternateGreetings.length <= 1 && styles.disabledButton
+                  ]}
+                  onPress={handleDeleteGreeting}
+                  disabled={alternateGreetings.length <= 1}
+                >
+                  <Ionicons name="trash-outline" size={20} color={alternateGreetings.length <= 1 ? "#666" : "#ff6666"} />
+                  <Text style={[styles.greetingActionText, alternateGreetings.length <= 1 && styles.disabledText]}>删除</Text>
+                </TouchableOpacity>
+              </View>
+            </View>
+            <CharacterAttributeEditor
+              title={`开场白 #${selectedGreetingIndex + 1}`}
+              value={roleCard.first_mes || ''}
+              onChangeText={(text) => handleRoleCardChange('first_mes', text)}
+              placeholder="角色与用户的第一次对话内容..."
+              style={styles.attributeSection}
+              alternateGreetings={alternateGreetings}
+              selectedGreetingIndex={selectedGreetingIndex}
+              onSelectGreeting={handleSelectGreeting}
+            />
+          </View>
           
           <CharacterAttributeEditor
             title="角色描述"
@@ -1809,6 +1892,42 @@ const CreateChar: React.FC<CreateCharProps> = ({
       color: theme.colors.primary, // Updated to use theme colors
       marginLeft: 4,
       fontSize: 12,
+    },
+    greetingsContainer: {
+      marginTop: 16,
+    },
+    greetingsHeader: {
+      flexDirection: 'row',
+      justifyContent: 'space-between',
+      alignItems: 'center',
+      marginBottom: 8,
+    },
+    greetingsTitle: {
+      fontSize: 16,
+      fontWeight: 'bold',
+      color: theme.colors.text,
+    },
+    greetingsActions: {
+      flexDirection: 'row',
+    },
+    greetingActionButton: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      marginLeft: 8,
+      padding: 4,
+      borderRadius: 4,
+      backgroundColor: 'rgba(255, 255, 255, 0.1)',
+    },
+    greetingActionText: {
+      marginLeft: 4,
+      fontSize: 12,
+      color: theme.colors.textSecondary,
+    },
+    disabledButton: {
+      backgroundColor: 'rgba(255, 255, 255, 0.05)',
+    },
+    disabledText: {
+      color: '#666',
     },
     // ...existing code...
 selectedArtistPromptContainer: {

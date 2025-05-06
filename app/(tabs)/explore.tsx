@@ -2188,7 +2188,7 @@ const styles = StyleSheet.create({
     backgroundColor: theme.colors.disabled,
   },
   postSubmitButtonText: {
-    color: theme.colors.text,
+    color: theme.colors.black,
     fontWeight: '500',
     fontSize: theme.fontSizes.md,
   },

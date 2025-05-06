@@ -239,9 +239,13 @@ export const CharactersProvider: React.FC<{ children: React.ReactNode }> = ({ ch
       // 保存到文件系统
       console.log('[Context 5] Saving to filesystem...');
       const updatedCharacters = [...existingCharacters, character];
+      // 新增：确保extraGreetings被写入
       await FileSystem.writeAsStringAsync(
         FileSystem.documentDirectory + 'characters.json',
-        JSON.stringify(updatedCharacters)
+        JSON.stringify(updatedCharacters.map(c => ({
+          ...c,
+          ...(c.extraGreetings ? { extraGreetings: c.extraGreetings } : {})
+        })))
       ).catch(error => {
         console.error('[Context Error 4] Filesystem write failed:', error);
         throw error;
@@ -314,7 +318,10 @@ const updateCharacter = async (character: Character) => {
         // Save to filesystem
         await FileSystem.writeAsStringAsync(
           FileSystem.documentDirectory + 'characters.json',
-          JSON.stringify(updatedCharacters),
+          JSON.stringify(updatedCharacters.map(c => ({
+            ...c,
+            ...(c.extraGreetings ? { extraGreetings: c.extraGreetings } : {})
+          }))),
           { encoding: FileSystem.EncodingType.UTF8 }
         );
         
@@ -370,7 +377,10 @@ const updateCharacter = async (character: Character) => {
     // Save to filesystem
     await FileSystem.writeAsStringAsync(
       FileSystem.documentDirectory + 'characters.json',
-      JSON.stringify(updatedCharacters),
+      JSON.stringify(updatedCharacters.map(c => ({
+        ...c,
+        ...(c.extraGreetings ? { extraGreetings: c.extraGreetings } : {})
+      }))),
       { encoding: FileSystem.EncodingType.UTF8 }
     );
 

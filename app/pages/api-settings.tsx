@@ -20,15 +20,15 @@ import { Ionicons } from '@expo/vector-icons';
 import { useUser } from '@/constants/UserContext';
 import { ApiServiceProvider } from '@/services/api-service-provider';
 import ModelSelector from '@/components/settings/ModelSelector';
-import { GlobalSettings, CloudServiceConfig } from '@/shared/types';
+import { GlobalSettings, CloudServiceConfig, OpenAICompatibleProviderConfig } from '@/shared/types';
 import { theme } from '@/constants/theme';
 import { licenseService, LicenseInfo } from '@/services/license-service';
 import { DeviceUtils } from '@/utils/device-utils';
-import { API_CONFIG } from '@/constants/api-config';
 import { CloudServiceProvider } from '@/services/cloud-service-provider';
 import { updateCloudServiceStatus } from '@/utils/settings-helper';
 import { mcpAdapter } from '@/NodeST/nodest/utils/mcp-adapter';
 import { NovelAIService } from '@/components/NovelAIService';
+import { v4 as uuidv4 } from 'uuid'; // For unique ids
 
 const ApiSettings = () => {
   const router = useRouter();
@@ -53,6 +53,19 @@ const ApiSettings = () => {
   const handleProviderTypeChange = (type: 'gemini' | 'openrouter' | 'openai-compatible') => {
     setProviderType(type);
     setShowProviderDropdown(false);
+
+    // 强制同步 provider 相关状态，避免切换后残留旧 provider 的配置
+    if (type === 'gemini') {
+      // 重置 openrouter/openai-compatible 状态
+      setOpenRouterEnabled(false);
+      setNewProviderEnabled(false);
+    } else if (type === 'openrouter') {
+      setOpenRouterEnabled(true);
+      setNewProviderEnabled(false);
+    } else if (type === 'openai-compatible') {
+      setOpenRouterEnabled(false);
+      setNewProviderEnabled(true);
+    }
   };
 
   const getProviderDisplayName = (type: string): string => {
@@ -93,6 +106,7 @@ const ApiSettings = () => {
 
   const availableGeminiModels = [
     'gemini-2.5-pro-exp-03-25',
+    'gemini-2.5-flash-preview-04-17', // 新增
     'gemini-2.0-flash-exp',
     'gemini-2.0-pro-exp-02-05',
     'gemini-exp-1206',
@@ -180,19 +194,77 @@ const ApiSettings = () => {
     'gemini-1.5-flash-8b-exp-0827'
   ];
 
-  // 新增 NewProvider 设置
+  // 新增：OpenAI兼容渠道管理相关状态
+  const [openAIProviders, setOpenAIProviders] = useState<OpenAICompatibleProviderConfig[]>(
+    user?.settings?.chat?.OpenAIcompatible?.providers && user.settings.chat.OpenAIcompatible.providers.length > 0
+      ? user.settings.chat.OpenAIcompatible.providers
+      : [
+          {
+            id: uuidv4(),
+            name: '默认渠道',
+            apiKey: user?.settings?.chat?.OpenAIcompatible?.apiKey || '',
+            model: user?.settings?.chat?.OpenAIcompatible?.model || '',
+            endpoint: user?.settings?.chat?.OpenAIcompatible?.endpoint || '',
+          },
+        ]
+  );
+  const [selectedProviderId, setSelectedProviderId] = useState<string>(
+    user?.settings?.chat?.OpenAIcompatible?.selectedProviderId ||
+    (user?.settings?.chat?.OpenAIcompatible?.providers?.[0]?.id ??
+      (openAIProviders.length > 0 ? openAIProviders[0].id : ''))
+  );
+  const [openAIManageMode, setOpenAIManageMode] = useState(false);
+  const [openAIExpandedId, setOpenAIExpandedId] = useState<string | null>(selectedProviderId);
+
+  // 当前选中的provider对象
+  const currentOpenAIProvider = openAIProviders.find(p => p.id === selectedProviderId) || openAIProviders[0];
+
+  // 编辑当前provider的字段
+  const updateCurrentOpenAIProvider = (field: keyof OpenAICompatibleProviderConfig, value: string) => {
+    setOpenAIProviders(providers =>
+      providers.map(p =>
+        p.id === selectedProviderId ? { ...p, [field]: value } : p
+      )
+    );
+  };
+
+  // 新增provider
+  const addOpenAIProvider = () => {
+    const newProvider: OpenAICompatibleProviderConfig = {
+      id: uuidv4(),
+      name: `渠道${openAIProviders.length + 1}`,
+      apiKey: '',
+      model: '',
+      endpoint: '',
+    };
+    setOpenAIProviders([...openAIProviders, newProvider]);
+    setSelectedProviderId(newProvider.id);
+    setOpenAIExpandedId(newProvider.id);
+  };
+
+  // 删除provider
+  const deleteOpenAIProvider = (id: string) => {
+    let newProviders = openAIProviders.filter(p => p.id !== id);
+    let newSelectedId = selectedProviderId;
+    if (id === selectedProviderId) {
+      newSelectedId = newProviders.length > 0 ? newProviders[0].id : '';
+    }
+    setOpenAIProviders(newProviders);
+    setSelectedProviderId(newSelectedId);
+    setOpenAIExpandedId(null);
+  };
+
+  // 切换provider
+  const selectOpenAIProvider = (id: string) => {
+    setSelectedProviderId(id);
+    setOpenAIExpandedId(id);
+  };
+
+  // 退出编辑
+  const collapseOpenAIProvider = () => setOpenAIExpandedId(null);
+
   const [OpenAIcompatibleEnabled, setNewProviderEnabled] = useState(
     user?.settings?.chat?.OpenAIcompatible?.enabled || false
-  );
-  const [OpenAIcompatibleKey, setNewProviderKey] = useState(
-    user?.settings?.chat?.OpenAIcompatible?.apiKey || ''
-  );
-  const [OpenAIcompatibleModel, setNewProviderModel] = useState(
-    user?.settings?.chat?.OpenAIcompatible?.model || ''
-  );
-  // 新增 endpoint 字段
-  const [OpenAIcompatibleEndpoint, setNewProviderEndpoint] = useState(
-    user?.settings?.chat?.OpenAIcompatible?.endpoint || ''
   );
 
   // 修复：如果未填写geminiKey，则设为'123'以触发回退
@@ -343,8 +415,24 @@ const ApiSettings = () => {
     try {
       setIsTesting(true);
 
-      const apiKey = openRouterEnabled ? openRouterKey : (geminiKey && geminiKey.trim() !== '' ? geminiKey : '123');
-      const apiProvider = openRouterEnabled ? 'openrouter' : 'gemini';
+      // 动态获取 providerType，避免异步 setState 导致的不同步
+      let currentProviderType = providerType;
+      let apiKey = '';
+      let apiProvider = '';
+      let validAdditionalKeys: string[] = [];
+
+      if (currentProviderType === 'openrouter') {
+        apiKey = openRouterKey;
+        apiProvider = 'openrouter';
+      } else if (currentProviderType === 'openai-compatible') {
+        // 取当前选中的 openAI provider
+        apiKey = currentOpenAIProvider?.apiKey || '';
+        apiProvider = 'openai-compatible';
+      } else {
+        apiKey = geminiKey && geminiKey.trim() !== '' ? geminiKey : '123';
+        apiProvider = 'gemini';
+        validAdditionalKeys = additionalGeminiKeys.filter(key => key && key.trim() !== '');
+      }
 
       if (!apiKey) {
         Alert.alert('错误', '请输入API密钥');
@@ -352,16 +440,12 @@ const ApiSettings = () => {
       }
 
       // Validate additional keys for Gemini
-      const validAdditionalKeys = apiProvider === 'gemini' ? 
-        additionalGeminiKeys.filter(key => key && key.trim() !== '') : [];
-      
-      // Test connection using ApiServiceProvider
-      const testMessage = "This is a test message. Please respond with 'OK' if you receive this.";
-      const messages = [{ role: 'user', parts: [{ text: testMessage }] }];
-
-      let response;
-      if (apiProvider === 'openrouter') {
-        response = await ApiServiceProvider.generateContent(
+      if (apiProvider === 'gemini' && validAdditionalKeys.length > 0) {
+        Alert.alert('连接成功', `成功连接到Gemini API服务，已配置${1 + validAdditionalKeys.length}个API密钥`);
+      } else if (apiProvider === 'openrouter') {
+        const testMessage = "This is a test message. Please respond with 'OK' if you receive this.";
+        const messages = [{ role: 'user', parts: [{ text: testMessage }] }];
+        const response = await ApiServiceProvider.generateContent(
           messages,
           apiKey,
           {
@@ -376,31 +460,14 @@ const ApiSettings = () => {
             }
           }
         );
-      } else {
-        // Test with the primary key and all additional valid keys
-        response = await ApiServiceProvider.generateContent(
-          messages, 
-          apiKey,
-          {
-            apiProvider: 'gemini',
-            additionalGeminiKeys: validAdditionalKeys,
-            useGeminiModelLoadBalancing,
-            useGeminiKeyRotation,
-            geminiPrimaryModel,
-            geminiBackupModel,
-            retryDelay
-          }
-        );
-      }
-
-      if (response) {
-        if (apiProvider === 'gemini' && validAdditionalKeys.length > 0) {
-          Alert.alert('连接成功', `成功连接到Gemini API服务，已配置${1 + validAdditionalKeys.length}个API密钥`);
-        } else {
+        if (response) {
           Alert.alert('连接成功', '成功连接到API服务');
+        } else {
+          Alert.alert('连接失败', '未能获得有效响应');
         }
-      } else {
-        Alert.alert('连接失败', '未能获得有效响应');
+      } else if (apiProvider === 'openai-compatible') {
+        await testOpenAIcompatibleConnection();
+        return;
       }
     } catch (error) {
       console.error('连接测试失败:', error);
@@ -534,20 +601,23 @@ const ApiSettings = () => {
   // Test OpenAIcompatible connection
   const testOpenAIcompatibleConnection = async () => {
     try {
-      if (!OpenAIcompatibleEndpoint || !OpenAIcompatibleKey || !OpenAIcompatibleModel) {
+      if (
+        !currentOpenAIProvider.endpoint ||
+        !currentOpenAIProvider.apiKey ||
+        !currentOpenAIProvider.model
+      ) {
         Alert.alert('错误', '请填写完整的 Endpoint、API Key 和模型名称');
         return;
       }
       setIsTesting(true);
 
-      // 直接用 fetch 实现等效 curl 测试
-      const url = `${OpenAIcompatibleEndpoint.replace(/\/$/, '')}/v1/chat/completions`;
+      const url = `${currentOpenAIProvider.endpoint.replace(/\/$/, '')}/v1/chat/completions`;
       const headers = {
         'Content-Type': 'application/json',
-        'Authorization': `Bearer ${OpenAIcompatibleKey}`
+        'Authorization': `Bearer ${currentOpenAIProvider.apiKey}`,
       };
       const body = JSON.stringify({
-        model: OpenAIcompatibleModel,
+        model: currentOpenAIProvider.model,
         messages: [
           { role: 'user', content: 'Explain quantum computing in simple terms.' }
         ],
@@ -574,7 +644,6 @@ const ApiSettings = () => {
       }
 
       const data = await resp.json();
-      // 兼容 OpenAI 格式
       const content =
         data?.choices?.[0]?.message?.content ||
         data?.choices?.[0]?.text ||
@@ -639,8 +708,11 @@ const ApiSettings = () => {
       const validAdditionalKeys = additionalGeminiKeys.filter(key => key && key.trim() !== '');
 
       let apiProvider = providerType;
-      let openrouterEnabled = providerType === 'openrouter';
-      let openaiCompatibleEnabled = providerType === 'openai-compatible';
+      let openrouterEnabled = apiProvider === 'openrouter';
+      let openaiCompatibleEnabled = apiProvider === 'openai-compatible';
+
+      // 取当前 openai-compatible provider
+      const openaiProvider = openAIProviders.find(p => p.id === selectedProviderId) || openAIProviders[0];
 
       if (useActivationCode && licenseInfo) {
         const apiSettings: Partial<GlobalSettings> = {
@@ -682,9 +754,11 @@ const ApiSettings = () => {
             },
             OpenAIcompatible: {
               enabled: openaiCompatibleEnabled,
-              apiKey: OpenAIcompatibleKey,
-              model: OpenAIcompatibleModel,
-              endpoint: OpenAIcompatibleEndpoint
+              apiKey: openaiProvider?.apiKey || '',
+              model: openaiProvider?.model || '',
+              endpoint: openaiProvider?.endpoint || '',
+              providers: openAIProviders,
+              selectedProviderId: selectedProviderId,
             }
           },
           search: {
@@ -757,6 +831,16 @@ const ApiSettings = () => {
           updateCloudServiceStatus(false);
         }
 
+        // 日志：如果当前provider为openai-compatible，输出当前保存的渠道信息
+        if (apiProvider === 'openai-compatible') {
+          console.log('[API设置] 当前保存的OpenAI兼容渠道:', {
+            id: selectedProviderId,
+            name: openaiProvider?.name,
+            endpoint: openaiProvider?.endpoint,
+            model: openaiProvider?.model,
+          });
+        }
+
         Alert.alert('成功', '设置已保存', [
           { text: '确定', onPress: () => router.back() }
         ]);
@@ -806,9 +890,11 @@ const ApiSettings = () => {
             },
             OpenAIcompatible: {
               enabled: openaiCompatibleEnabled,
-              apiKey: OpenAIcompatibleKey,
-              model: OpenAIcompatibleModel,
-              endpoint: OpenAIcompatibleEndpoint
+              apiKey: openaiProvider?.apiKey || '',
+              model: openaiProvider?.model || '',
+              endpoint: openaiProvider?.endpoint || '',
+              providers: openAIProviders,
+              selectedProviderId: selectedProviderId,
             }
           },
           search: {
@@ -845,6 +931,16 @@ const ApiSettings = () => {
           } catch (memError) {
             console.error('Failed to update zhipuApiKey in Mem0Service:', memError);
           }
+        }
+
+        // 日志：如果当前provider为openai-compatible，输出当前保存的渠道信息
+        if (apiProvider === 'openai-compatible') {
+          console.log('[API设置] 当前保存的OpenAI兼容渠道:', {
+            id: selectedProviderId,
+            name: openaiProvider?.name,
+            endpoint: openaiProvider?.endpoint,
+            model: openaiProvider?.model,
+          });
         }
 
         Alert.alert('成功', '设置已保存', [
@@ -1140,55 +1236,150 @@ const ApiSettings = () => {
             <View style={styles.section}>
               <View style={styles.sectionHeader}>
                 <Text style={styles.sectionTitle}>OpenAI兼容API</Text>
+                <View style={{ flexDirection: 'row', alignItems: 'center' }}>
+                  <TouchableOpacity
+                    style={{ marginRight: 8 }}
+                    onPress={addOpenAIProvider}
+                  >
+                    <Ionicons name="add-circle-outline" size={22} color={theme.colors.primary} />
+                  </TouchableOpacity>
+                  <TouchableOpacity
+                    onPress={() => setOpenAIManageMode(!openAIManageMode)}
+                  >
+                    <Ionicons name="settings-outline" size={22} color={openAIManageMode ? '#f44336' : '#fff'} />
+                  </TouchableOpacity>
+                </View>
               </View>
               <View style={styles.contentSection}>
-                <Text style={styles.inputLabel}>OpenAI兼容端点</Text>
-                <TextInput
-                  style={styles.input}
-                  value={OpenAIcompatibleEndpoint}
-                  onChangeText={setNewProviderEndpoint}
-                  placeholder="如 https://api.openai.com"
-                  placeholderTextColor="#999"
-                  autoCapitalize="none"
-                />
-                <Text style={styles.helperText}>
-                  填写支持OpenAI API格式的服务端点
-                </Text>
+                {/* 渠道列表 */}
+                {openAIProviders.length === 0 && (
+                  <Text style={{ color: '#aaa', marginBottom: 8 }}>暂无渠道，请点击右上角添加</Text>
+                )}
+                {openAIProviders.map((provider, idx) => (
+                  <View
+                    key={provider.id}
+                    style={{
+                      flexDirection: 'row',
+                      alignItems: 'center',
+                      marginBottom: 4,
+                      backgroundColor: provider.id === selectedProviderId ? 'rgba(100,210,255,0.08)' : 'transparent',
+                      borderRadius: 6,
+                      paddingVertical: 4,
+                      paddingHorizontal: 8,
+                    }}
+                  >
+                    <TouchableOpacity
+                      style={{ flex: 1, flexDirection: 'row', alignItems: 'center' }}
+                      onPress={() => {
+                        setSelectedProviderId(provider.id);
+                        setOpenAIExpandedId(provider.id);
+                      }}
+                      disabled={openAIManageMode}
+                    >
+                      <Ionicons
+                        name={provider.id === selectedProviderId ? 'radio-button-on' : 'radio-button-off'}
+                        size={18}
+                        color={provider.id === selectedProviderId ? theme.colors.primary : '#aaa'}
+                        style={{ marginRight: 8 }}
+                      />
+                      <Text style={{ color: '#fff', fontWeight: provider.id === selectedProviderId ? 'bold' : 'normal' }}>
+                        {provider.name || `渠道${idx + 1}`}
+                      </Text>
+                      <Text style={{ color: '#aaa', marginLeft: 8, fontSize: 12 }}>
+                        {provider.endpoint ? provider.endpoint.replace(/^https?:\/\//, '').split('/')[0] : ''}
+                      </Text>
+                    </TouchableOpacity>
+                    {openAIManageMode && (
+                      <TouchableOpacity
+                        onPress={() => deleteOpenAIProvider(provider.id)}
+                        style={{ marginLeft: 8 }}
+                        disabled={openAIProviders.length <= 1}
+                      >
+                        <Ionicons name="trash-outline" size={20} color={openAIProviders.length <= 1 ? '#888' : '#f44336'} />
+                      </TouchableOpacity>
+                    )}
+                  </View>
+                ))}
 
-                <View style={{marginTop: 16}}>
-                  <Text style={styles.inputLabel}>OpenAI兼容APIKey</Text>
-                  <TextInput
-                    style={styles.input}
-                    value={OpenAIcompatibleKey}
-                    onChangeText={setNewProviderKey}
-                    placeholder="输入 API Key"
-                    placeholderTextColor="#999"
-                    secureTextEntry={true}
-                  />
-                </View>
-
-                <View style={{marginTop: 16}}>
-                  <Text style={styles.inputLabel}>模型</Text>
-                  <TextInput
-                    style={styles.input}
-                    value={OpenAIcompatibleModel}
-                    onChangeText={setNewProviderModel}
-                    placeholder="输入模型名"
-                    placeholderTextColor="#999"
-                  />
-                </View>
-                
-                <TouchableOpacity
-                  style={[styles.testButton, { marginTop: 16 }]}
-                  onPress={testOpenAIcompatibleConnection}
-                  disabled={isTesting}
-                >
-                  {isTesting ? (
-                    <ActivityIndicator size="small" color="#fff" />
-                  ) : (
-                    <Text style={styles.buttonText}>测试OpenAI兼容连接</Text>
-                  )}
-                </TouchableOpacity>
+                {/* 展开编辑区域 */}
+                {openAIExpandedId && (
+                  (() => {
+                    const editingProvider = openAIProviders.find(p => p.id === openAIExpandedId);
+                    if (!editingProvider) return null;
+                    return (
+                      <View style={{
+                        marginTop: 12,
+                        padding: 12,
+                        backgroundColor: 'rgba(40,40,40,0.7)',
+                        borderRadius: 8,
+                        borderWidth: 1,
+                        borderColor: 'rgba(255,255,255,0.08)'
+                      }}>
+                        <Text style={styles.inputLabel}>渠道名称</Text>
+                        <TextInput
+                          style={styles.input}
+                          value={editingProvider.name}
+                          onChangeText={v => setOpenAIProviders(providers =>
+                            providers.map(p => p.id === editingProvider.id ? { ...p, name: v } : p)
+                          )}
+                          placeholder="自定义名称"
+                          placeholderTextColor="#999"
+                        />
+                        <Text style={styles.inputLabel}>OpenAI兼容端点</Text>
+                        <TextInput
+                          style={styles.input}
+                          value={editingProvider.endpoint}
+                          onChangeText={v => setOpenAIProviders(providers =>
+                            providers.map(p => p.id === editingProvider.id ? { ...p, endpoint: v } : p)
+                          )}
+                          placeholder="如 https://api.openai.com"
+                          placeholderTextColor="#999"
+                          autoCapitalize="none"
+                        />
+                        <Text style={styles.inputLabel}>API Key</Text>
+                        <TextInput
+                          style={styles.input}
+                          value={editingProvider.apiKey}
+                          onChangeText={v => setOpenAIProviders(providers =>
+                            providers.map(p => p.id === editingProvider.id ? { ...p, apiKey: v } : p)
+                          )}
+                          placeholder="输入 API Key"
+                          placeholderTextColor="#999"
+                          secureTextEntry={true}
+                        />
+                        <Text style={styles.inputLabel}>模型</Text>
+                        <TextInput
+                          style={styles.input}
+                          value={editingProvider.model}
+                          onChangeText={v => setOpenAIProviders(providers =>
+                            providers.map(p => p.id === editingProvider.id ? { ...p, model: v } : p)
+                          )}
+                          placeholder="输入模型名"
+                          placeholderTextColor="#999"
+                        />
+                        <View style={{ flexDirection: 'row', marginTop: 12 }}>
+                          <TouchableOpacity
+                            style={[styles.testButton, { flex: 1 }]}
+                            onPress={testOpenAIcompatibleConnection}
+                            disabled={isTesting}
+                          >
+                            {isTesting ? (
+                              <ActivityIndicator size="small" color="#fff" />
+                            ) : (
+                              <Text style={styles.buttonText}>测试连接</Text>
+                            )}
+                          </TouchableOpacity>
+                          <TouchableOpacity
+                            style={[styles.saveButton, { flex: 1, marginLeft: 8 }]}
+                            onPress={collapseOpenAIProvider}
+                          >
+                            <Text style={styles.savebuttonText}>收起</Text>
+                          </TouchableOpacity>
+                        </View>
+                      </View>
+                    );
+                  })()
+                )}
               </View>
             </View>
           )}

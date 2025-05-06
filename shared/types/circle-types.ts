@@ -93,7 +93,7 @@ export interface CircleRFramework {
 }
 
 export interface CirclePostOptions {
-    type: 'newPost' | 'replyToComment' | 'replyToPost' | 'forwardedPost' | 'continuedConversation'  // Added new types
+    type: 'newPost' | 'replyToComment' | 'replyToPost' | 'forwardedPost' | 'continuedConversation' | 'selfPost'  // Added new types
     content: {
         authorId: string;
         authorName?: string;  
@@ -102,6 +102,7 @@ export interface CirclePostOptions {
         images?: string[];  // Add support for images array
         conversationHistory?: string; // NEW: Add support for conversation history
         characterJsonData?: string;   // NEW: Add support for character JSON data
+        postComments?: string; // NEW: Add support for post comments
     };
     responderId: string; 
     responderCharacter?: Character;

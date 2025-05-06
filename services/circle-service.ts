@@ -616,7 +616,18 @@ export class CircleService {
           context: context,
           images: post.images, // Include any images from the post
           conversationHistory: conversationHistory, // Add conversation history
-          characterJsonData: characterJsonData // Add character JSON data
+          characterJsonData: characterJsonData, // Add character JSON data
+          // 新增：全部评论内容，便于 continuedConversation 场景
+          ...(interactionType === 'continuedConversation'
+            ? {
+                postComments: post.comments && post.comments.length > 0
+                  ? post.comments.map((c, idx) => {
+                      const replyPrefix = c.replyTo ? `回复${c.replyTo.userName}: ` : '';
+                      return `${idx + 1}. ${c.userName}: ${replyPrefix}${c.content}`;
+                    }).join('\n')
+                  : ''
+              }
+            : {})
         },
         responderId: character.id,
         responderCharacter: character

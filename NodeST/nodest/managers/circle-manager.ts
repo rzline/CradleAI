@@ -1116,12 +1116,9 @@ export class CircleManager {
         
         // 获取用户自定义称呼 (针对用户回复)
         let userIdentification = options.content.authorName || '某人';
-        
-        // 使用 customUserName 而不是上下文来判断
-        if (isUserComment) { // 检查是否是用户评论
-            userIdentification = options.responderCharacter?.customUserName ? 
-                `用户${options.responderCharacter.customUserName}` : 
-                '用户';
+        // 优先 customUserName
+        if (isUserComment && options.responderCharacter?.customUserName) {
+            userIdentification = options.responderCharacter.customUserName;
         }
         
         // 获取角色名称 - 添加这一段以确保角色名称传递给提示词
@@ -1134,6 +1131,15 @@ export class CircleManager {
             console.log(`【CircleManager】为用户-角色互动添加聊天历史记录，长度: ${chatHistory.length}`);
         }
         
+        // 新增：收集原帖全部评论内容（仅 continuedConversation 类型需要）
+        let allCommentsText = '';
+        if (options.type === 'continuedConversation' && options.content.postComments && Array.isArray(options.content.postComments)) {
+            allCommentsText = options.content.postComments.map((c: any, idx: number) => {
+                const replyPrefix = c.replyTo ? `回复${c.replyTo.userName}: ` : '';
+                return `${idx + 1}. ${c.userName}: ${replyPrefix}${c.content}`;
+            }).join('\n');
+        }
+
         // 准备场景参数
         const params: ScenePromptParams = {
             contentText,
@@ -1143,10 +1149,9 @@ export class CircleManager {
             charDescription: framework.base.charDescription,
             charName, // 添加角色名称
             userIdentification,
-            // Add chat history if available
             conversationHistory: chatHistory || options.content.conversationHistory,
-            // Pass character JSON data if available
-            characterJsonData: options.content.characterJsonData
+            characterJsonData: options.content.characterJsonData,
+            allCommentsText // 新增：全部评论内容
         };
 
         // 根据互动类型选择合适的提示词模板
@@ -1165,21 +1170,20 @@ export class CircleManager {
                 scenePrompt = CirclePrompts.createNewPost(params);
                 break;
                 
-            case 'replyToPost':
-                // 修复: 优先检查是否有图片，只有在没有图片的情况下才进一步考虑是否为自己的帖子或用户评论
-                if (hasImages) {
-                    console.log('【朋友圈】检测到帖子包含图片，使用replyToPostWithImage模板');
-                    scenePrompt = CirclePrompts.replyToPostWithImage(params);
-                } 
-                // 只有在没有图片的情况下，才考虑是否为自己的帖子或用户评论
-                else if (isOwnPost || (isUserComment && options.content.authorId !== 'user-1')) {
-                    console.log('【朋友圈】检测到用户评论角色帖子或角色查看自己帖子，使用selfPost模板');
-                    scenePrompt = CirclePrompts.selfPost(params);
-                } 
-                else {
-                    scenePrompt = CirclePrompts.replyToPost(params);
-                }
-                break;
+                case 'replyToPost':
+                    // --- FIX LOGIC HERE ---
+                    if (hasImages) {
+                        scenePrompt = CirclePrompts.replyToPostWithImage(params);
+                    } else if (isOwnPost) {
+                        // 角色自己查看自己帖子
+                        scenePrompt = CirclePrompts.selfPost(params);
+                    } else if (isUserComment) {
+                        // 用户评论角色帖子，应该用 replyToComment
+                        scenePrompt = CirclePrompts.replyToComment(params);
+                    } else {
+                        scenePrompt = CirclePrompts.replyToPost(params);
+                    }
+                    break;
                 
             case 'replyToComment':
                 if (hasImages) {

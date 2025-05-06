@@ -132,7 +132,195 @@ const createStableMemoryConfig: CreateConfigFunction = (user: any): MemoryConfig
   return createStableMemoryConfig.config;
 };
 
+// 新增：全局变量用于缓存character视图模式
+export let characterViewModeCache: string | null = null;
+
 const App = () => {
+    // 新增：AI消息编辑
+    const handleEditAiMessage = async (messageId: string, aiIndex: number, newContent: string) => {
+      if (!selectedConversationId) return;
+      try {
+        // 调用 NodeSTManager
+        const result = await NodeSTManager.editAiMessageByIndex({
+          conversationId: selectedConversationId,
+          messageIndex: aiIndex + 1,
+          newContent
+        });
+        if (result.success) {
+          // --- 核心修复：彻底同步消息流 ---
+          // 1. 清空本地和context消息
+          await clearMessages(selectedConversationId);
+
+          // 2. 从NodeST历史读取最新消息流
+          // 读取NodeST历史
+          let latestHistory: any = null;
+          try {
+            // NodeST历史存储路径
+            const historyKey = `nodest_${selectedConversationId}_history`;
+            // 兼容 FileSystem/AsyncStorage
+            let historyStr = null;
+            if (typeof FileSystem !== 'undefined' && FileSystem.documentDirectory) {
+              // expo-file-system
+              const filePath = FileSystem.documentDirectory + 'nodest_characters/' + historyKey + '.json';
+              const fileInfo = await FileSystem.getInfoAsync(filePath);
+              if (fileInfo.exists) {
+                historyStr = await FileSystem.readAsStringAsync(filePath);
+              }
+            }
+            if (!historyStr && typeof AsyncStorage !== 'undefined') {
+              historyStr = await AsyncStorage.getItem(historyKey);
+            }
+            if (historyStr) {
+              latestHistory = JSON.parse(historyStr);
+            }
+          } catch (e) {
+            latestHistory = null;
+          }
+
+          // 3. 解析NodeST历史为Message[]，同步到context和本地
+          if (latestHistory && Array.isArray(latestHistory.parts)) {
+            // 只保留非D类条目
+            const realMessages = latestHistory.parts.filter((msg: any) => !msg.is_d_entry);
+            // 转换为Message[]
+            const newMessages: Message[] = [];
+            let aiIndexCounter = 0;
+            for (let i = 0; i < realMessages.length; i++) {
+              const msg = realMessages[i];
+              if (msg.role === 'user') {
+                newMessages.push({
+                  id: `${selectedConversationId}-user-${i}-${Date.now()}`,
+                  text: msg.parts?.[0]?.text ?? '',
+                  sender: 'user',
+                  isLoading: false,
+                  timestamp: Date.now(),
+                  metadata: {}
+                });
+              } else if ((msg.role === 'model' || msg.role === 'assistant')) {
+                // 跳过first_mes的aiIndex
+                const isFirstMes = !!msg.is_first_mes;
+                newMessages.push({
+                  id: `${selectedConversationId}-bot-${i}-${Date.now()}`,
+                  text: msg.parts?.[0]?.text ?? '',
+                  sender: 'bot',
+                  isLoading: false,
+                  timestamp: Date.now(),
+                  metadata: {
+                    aiIndex: isFirstMes ? 0 : aiIndexCounter
+                  }
+                });
+                if (!isFirstMes) aiIndexCounter++;
+              }
+            }
+            // 4. 批量写入context
+            for (const m of newMessages) {
+              await addMessage(selectedConversationId, m);
+            }
+            // 5. 更新本地状态
+            setMessages(newMessages);
+          } else {
+            // fallback: 只清空
+            setMessages([]);
+          }
+          Alert.alert('编辑成功', 'AI消息内容已更新');
+        } else {
+          Alert.alert('编辑失败', result.error || '未知错误');
+        }
+      } catch (e) {
+        Alert.alert('编辑失败', e instanceof Error ? e.message : '未知错误');
+      }
+    };
+
+    // 新增：AI消息删除
+    const handleDeleteAiMessage = async (messageId: string, aiIndex: number) => {
+      if (!selectedConversationId) return;
+      try {
+        const result = await NodeSTManager.deleteAiMessageByIndex({
+          conversationId: selectedConversationId,
+          messageIndex: aiIndex + 1
+        });
+        if (result.success) {
+      // --- 核心修复：彻底同步消息流 ---
+      // 1. 清空本地和context消息
+      await clearMessages(selectedConversationId);
+
+      // 2. 从NodeST历史读取最新消息流
+      // 读取NodeST历史
+      let latestHistory: any = null;
+      try {
+        // NodeST历史存储路径
+        const historyKey = `nodest_${selectedConversationId}_history`;
+        // 兼容 FileSystem/AsyncStorage
+        let historyStr = null;
+        if (typeof FileSystem !== 'undefined' && FileSystem.documentDirectory) {
+          // expo-file-system
+          const filePath = FileSystem.documentDirectory + 'nodest_characters/' + historyKey + '.json';
+          const fileInfo = await FileSystem.getInfoAsync(filePath);
+          if (fileInfo.exists) {
+            historyStr = await FileSystem.readAsStringAsync(filePath);
+          }
+        }
+        if (!historyStr && typeof AsyncStorage !== 'undefined') {
+          historyStr = await AsyncStorage.getItem(historyKey);
+        }
+        if (historyStr) {
+          latestHistory = JSON.parse(historyStr);
+        }
+      } catch (e) {
+        latestHistory = null;
+      }
+
+      // 3. 解析NodeST历史为Message[]，同步到context和本地
+      if (latestHistory && Array.isArray(latestHistory.parts)) {
+        // 只保留非D类条目
+        const realMessages = latestHistory.parts.filter((msg: any) => !msg.is_d_entry);
+        // 转换为Message[]
+        const newMessages: Message[] = [];
+        let aiIndexCounter = 0;
+        for (let i = 0; i < realMessages.length; i++) {
+          const msg = realMessages[i];
+          if (msg.role === 'user') {
+            newMessages.push({
+              id: `${selectedConversationId}-user-${i}-${Date.now()}`,
+              text: msg.parts?.[0]?.text ?? '',
+              sender: 'user',
+              isLoading: false,
+              timestamp: Date.now(),
+              metadata: {}
+            });
+          } else if ((msg.role === 'model' || msg.role === 'assistant')) {
+            // 跳过first_mes的aiIndex
+            const isFirstMes = !!msg.is_first_mes;
+            newMessages.push({
+              id: `${selectedConversationId}-bot-${i}-${Date.now()}`,
+              text: msg.parts?.[0]?.text ?? '',
+              sender: 'bot',
+              isLoading: false,
+              timestamp: Date.now(),
+              metadata: {
+                aiIndex: isFirstMes ? 0 : aiIndexCounter
+              }
+            });
+            if (!isFirstMes) aiIndexCounter++;
+          }
+        }
+        // 4. 批量写入context
+        for (const m of newMessages) {
+          await addMessage(selectedConversationId, m);
+        }
+        // 5. 更新本地状态
+        setMessages(newMessages);
+      } else {
+        // fallback: 只清空
+        setMessages([]);
+      }
+      Alert.alert('删除成功', 'AI消息及其对应用户消息已删除');
+    } else {
+      Alert.alert('删除失败', result.error || '未知错误');
+    }
+  } catch (e) {
+    Alert.alert('删除失败', e instanceof Error ? e.message : '未知错误');
+  }
+};
   const [isTestMarkdownVisible, setIsTestMarkdownVisible] = useState(false);
   const router = useRouter();
   const params = useLocalSearchParams();
@@ -255,8 +443,25 @@ const App = () => {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-
-
+  // 新增：启动时读取character_view_mode并缓存
+  useEffect(() => {
+    (async () => {
+      try {
+        const mode = await AsyncStorage.getItem('character_view_mode');
+        if (
+          mode === 'large' ||
+          mode === 'small' ||
+          mode === 'vertical'
+        ) {
+          characterViewModeCache = mode;
+        } else {
+          characterViewModeCache = null;
+        }
+      } catch (e) {
+        characterViewModeCache = null;
+      }
+    })();
+  }, []);
 
   // 兜底逻辑：如果 context 里查不到角色，尝试直接从 characters.json 读取
   useEffect(() => {
@@ -321,7 +526,10 @@ const App = () => {
   const [isPreviewMode, setIsPreviewMode] = useState(false);
   const [currentPreviewSave, setCurrentPreviewSave] = useState<ChatSave | null>(null);
   const [previewBannerVisible, setPreviewBannerVisible] = useState(false);
-
+  const handleSendUnknownTagTest = () => {
+    if (!selectedConversationId) return;
+    handleSendMessage('<anything>123456</anything>', 'user');
+  };
   // 添加一个跟踪处理过的图片URL的集合
   const [processedImageUrls, setProcessedImageUrls] = useState<Set<string>>(new Set());
   // 添加一个引用来跟踪处理中的任务ID
@@ -2243,23 +2451,9 @@ const getBackgroundImage = () => {
         </View>
       )}
              
-      {/* <TouchableOpacity  //新增：测试按钮，重置初始化状态
-        style={{
-          position: 'absolute',
-          top: 40,
-          right: 20,
-          zIndex: 999999,
-          backgroundColor: '#fff',
-          borderRadius: 8,
-          paddingVertical: 6,
-          paddingHorizontal: 14,
-          elevation: 8,
-        }}
-        onPress={handleResetDefaultCharacterInit}
-      >
-        <Text style={{ color: '#333', fontWeight: 'bold' }}>重置默认角色初始化</Text>
-      </TouchableOpacity> */}
-            {/* <TouchableOpacity
+
+{/* /* 
+        <TouchableOpacity
         style={{
           position: 'absolute',
           bottom: 32,
@@ -2277,9 +2471,9 @@ const getBackgroundImage = () => {
         activeOpacity={0.85}
       >
         <Text style={{ color: '#fff', fontWeight: 'bold', fontSize: 22 }}>M↓</Text>
-      </TouchableOpacity> */}
-                {/* Markdown 测试按钮（右下角悬浮） */}
-      {/* <TouchableOpacity
+      </TouchableOpacity> */
+
+      /* <TouchableOpacity
         style={{
           position: 'absolute',
           bottom: 32,
@@ -2329,7 +2523,7 @@ const getBackgroundImage = () => {
             <Text style={{ color: '#fff', fontSize: 15 }}>关闭</Text>
           </TouchableOpacity>
           </View>
-      )} */}
+      )} */ }
 
       
       <MemoryProvider config={memoryConfig}>
@@ -2354,7 +2548,7 @@ const getBackgroundImage = () => {
                   setVideoError(error?.toString() || 'Failed to load video');
                 }}
                 useNativeControls={false}
-              />
+              /> */
               
               {/* Show loading indicator while video is loading */}
               {!isVideoReady && !videoError && (
@@ -2580,6 +2774,8 @@ const getBackgroundImage = () => {
                       isHistoryModalVisible={isHistoryModalVisible}
                       setHistoryModalVisible={setHistoryModalVisible}
                       onShowFullHistory={handleShowFullHistory}
+                    onEditMessage={handleEditAiMessage}
+                    onDeleteMessage={handleDeleteAiMessage}
                     />
                   )}
                 </View>

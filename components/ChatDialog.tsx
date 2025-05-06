@@ -13,6 +13,7 @@ import {
   FlatList,
   Keyboard,
   Platform,
+  TextInput,
 } from 'react-native';
 import Animated, {
   useSharedValue,
@@ -29,54 +30,50 @@ import { parseHtmlText, containsComplexHtml, optimizeHtmlForRendering } from '@/
 import { ratingService } from '@/services/ratingService';
 import RichTextRenderer from '@/components/RichTextRenderer';
 import ImageManager from '@/utils/ImageManager';
-import { ttsService, AudioState } from '@/services/ttsService'; // Import the TTS service
+import { ttsService, AudioState } from '@/services/ttsService';
 import { useDialogMode } from '@/constants/DialogModeContext';
 import { GestureResponderEvent } from 'react-native';
-import Markdown from 'react-native-markdown-display'; // Import Markdown renderer
+import Markdown from 'react-native-markdown-display';
 
-// Update ChatDialogProps interface in the file or in shared/types.ts to include messageMemoryState
 interface ExtendedChatDialogProps extends ChatDialogProps {
   messageMemoryState?: Record<string, string>;
-  regeneratingMessageId?: string | null; // Add this new prop
-  user?: User | null; // Add user prop
-  isHistoryModalVisible?: boolean; // 新增
-  setHistoryModalVisible?: (visible: boolean) => void; // 新增
-  onShowFullHistory?: () => void; // 新增
+  regeneratingMessageId?: string | null;
+  user?: User | null;
+  isHistoryModalVisible?: boolean;
+  setHistoryModalVisible?: (visible: boolean) => void;
+  onShowFullHistory?: () => void;
+  onEditMessage?: (messageId: string, aiIndex: number, oldContent: string) => void;
+  onDeleteMessage?: (messageId: string, aiIndex: number) => void;
 }
 
 const { width, height } = Dimensions.get('window');
-// Calculate responsive sizes based on screen dimensions
-// Adjust the maximum width to ensure proper margins on different screen sizes
-const MAX_WIDTH = Math.min(width * 0.88, 500); // Cap at 500px for larger tablets
-const MIN_PADDING = 8; // Minimum padding for small screens
-const RESPONSIVE_PADDING = Math.max(MIN_PADDING, width * 0.02); // Responsive padding
-const MAX_IMAGE_HEIGHT = Math.min(300, height * 0.4); // Adaptive max height for images
+const MAX_WIDTH = Math.min(width * 0.88, 500);
+const MIN_PADDING = 8;
+const RESPONSIVE_PADDING = Math.max(MIN_PADDING, width * 0.02);
+const MAX_IMAGE_HEIGHT = Math.min(300, height * 0.4);
 const DEFAULT_IMAGE_WIDTH = Math.min(240, width * 0.6);
 const DEFAULT_IMAGE_HEIGHT = Math.min(360, height * 0.5);
-const AVATAR_SIZE = Math.max(Math.min(width * 0.075, 30), 24); // Between 24-30dp
+const AVATAR_SIZE = Math.max(Math.min(width * 0.075, 30), 24);
+const BUTTON_SIZE = width < 360 ? 28 : 32;
+const BUTTON_ICON_SIZE = width < 360 ? 16 : 18;
+const BUTTON_MARGIN = width < 360 ? 3 : 6;
 
 const getImageDisplayStyle = (imageInfo?: any) => {
-  // 默认比例 832x1216
   let width = DEFAULT_IMAGE_WIDTH;
   let height = DEFAULT_IMAGE_HEIGHT;
   if (imageInfo && imageInfo.originalPath) {
-    // 尝试读取图片实际宽高
-    // 如果 imageInfo 里有 width/height 字段，优先用
     if (imageInfo.width && imageInfo.height) {
       const maxW = 260;
       const maxH = MAX_IMAGE_HEIGHT;
       const ratio = imageInfo.width / imageInfo.height;
       if (ratio > 1) {
-        // 横图
         width = maxW;
         height = Math.round(maxW / ratio);
       } else {
-        // 竖图
         height = maxH;
         width = Math.round(maxH * ratio);
       }
     } else {
-      // fallback: 832x1216
       width = 208;
       height = 304;
     }
@@ -84,7 +81,7 @@ const getImageDisplayStyle = (imageInfo?: any) => {
   return {
     width,
     height,
-    maxWidth: Math.min(320, width * 0.8), // Responsive max width
+    maxWidth: Math.min(320, width * 0.8),
     maxHeight: MAX_IMAGE_HEIGHT,
     borderRadius: 8,
     backgroundColor: 'rgba(42, 42, 42, 0.5)',
@@ -100,12 +97,14 @@ const ChatDialog: React.FC<ExtendedChatDialogProps> = ({
   onRegenerateMessage,
   savedScrollPosition,
   onScrollPositionChange,
-  messageMemoryState = {}, // Default to empty object
-  regeneratingMessageId = null, // Default to null
-  user = null, // Add user prop with default
-  isHistoryModalVisible = false, // 新增
-  setHistoryModalVisible,        // 新增
-  onShowFullHistory,             // 新增
+  messageMemoryState = {},
+  regeneratingMessageId = null,
+  user = null,
+  isHistoryModalVisible = false,
+  setHistoryModalVisible,
+  onShowFullHistory,
+  onEditMessage,
+  onDeleteMessage,
 }) => {
   const flatListRef = useRef<FlatList<Message>>(null);
   const fadeAnim = useSharedValue(0);
@@ -117,71 +116,51 @@ const ChatDialog: React.FC<ExtendedChatDialogProps> = ({
   const [fullscreenImageId, setFullscreenImageId] = useState<string | null>(null);
   const [imageLoading, setImageLoading] = useState<boolean>(false);
   const [ratedMessages, setRatedMessages] = useState<Record<string, boolean>>({});
-  
-  // Add state to track scroll position for different conversations
   const [scrollPositions, setScrollPositions] = useState<Record<string, number>>({});
   const [currentConversationId, setCurrentConversationId] = useState<string | null>(null);
-  
-  // Add state for TTS functionality
   const [audioStates, setAudioStates] = useState<Record<string, AudioState>>({});
-  
-  // Add state for TTS enhancer settings
   const [ttsEnhancerEnabled, setTtsEnhancerEnabled] = useState(false);
-  
-  // Get dialog mode from context
   const { mode, visualNovelSettings, isHistoryModalVisible: contextHistoryModalVisible, setHistoryModalVisible: contextSetHistoryModalVisible } = useDialogMode();
-  
-  // Add a ref to track if we're programmatically scrolling
   const isAutoScrollingRef = useRef(false);
 
-  // 新增：长按空白区域自动滑到底部
   const handleLongPressOutside = () => {
     if (flatListRef.current) {
       try {
         flatListRef.current.scrollToEnd({ animated: true });
-      } catch (e) {
-        // ignore
-      }
+      } catch (e) {}
     }
   };
 
-  // Check TTS enhancer status when component mounts
   useEffect(() => {
     const checkTtsEnhancerStatus = () => {
       const settings = ttsService.getEnhancerSettings();
       setTtsEnhancerEnabled(settings.enabled);
     };
-    
+
     checkTtsEnhancerStatus();
-    
-    // Set up interval to periodically check enhancer status
     const intervalId = setInterval(checkTtsEnhancerStatus, 5000);
-    
     return () => clearInterval(intervalId);
   }, []);
-  
-  // Update current conversation ID when it changes
+
   useEffect(() => {
     if (selectedCharacter?.id && selectedCharacter.id !== currentConversationId) {
       setCurrentConversationId(selectedCharacter.id);
     }
   }, [selectedCharacter?.id, currentConversationId]);
 
-  // --- 自动滚动到底部逻辑，恢复滚动时跳过，视觉小说模式下不自动滚动 ---
   useEffect(() => {
     if (messages.length > 0 && mode !== 'visual-novel') {
       const timer = setTimeout(() => {
         if (flatListRef.current) {
           try {
             flatListRef.current.scrollToEnd({ animated: false });
-          } catch (e) { /* ignore */ }
+          } catch (e) {}
         }
       }, 100);
       return () => clearTimeout(timer);
     }
   }, [messages.length, mode]);
 
-  // Handle scroll
   const handleScroll = (event: any) => {
     const yOffset = event.nativeEvent.contentOffset.y;
     if (currentConversationId) {
@@ -195,7 +174,6 @@ const ChatDialog: React.FC<ExtendedChatDialogProps> = ({
     }
   };
 
-  // Animate new messages
   useEffect(() => {
     fadeAnim.value = withTiming(1, { duration: 300 });
     translateAnim.value = withTiming(0, { duration: 300 });
@@ -218,38 +196,37 @@ const ChatDialog: React.FC<ExtendedChatDialogProps> = ({
         )
       );
     };
-    
+
     setupDotAnimation(dot1Scale, 0);
     setupDotAnimation(dot2Scale, 200);
     setupDotAnimation(dot3Scale, 400);
-    
+
     const interval = setInterval(() => {
       setupDotAnimation(dot1Scale, 0);
       setupDotAnimation(dot2Scale, 200);
       setupDotAnimation(dot3Scale, 400);
     }, 1200);
-    
+
     return () => clearInterval(interval);
   };
-  
+
   useEffect(() => {
     const cleanup = animateDots();
     return cleanup;
   }, []);
-  
+
   const dot1Style = useAnimatedStyle(() => ({
     transform: [{ scale: dot1Scale.value }]
   }));
-  
+
   const dot2Style = useAnimatedStyle(() => ({
     transform: [{ scale: dot2Scale.value }]
   }));
-  
+
   const dot3Style = useAnimatedStyle(() => ({
     transform: [{ scale: dot3Scale.value }]
   }));
 
-  // Update audio states when they change in the service
   const updateAudioState = (messageId: string) => {
     const state = ttsService.getAudioState(messageId);
     setAudioStates(prev => ({
@@ -257,14 +234,13 @@ const ChatDialog: React.FC<ExtendedChatDialogProps> = ({
       [messageId]: state
     }));
   };
-  
-  // Handle TTS button press
+
   const handleTTSButtonPress = async (messageId: string, text: string) => {
     try {
       const templateId = selectedCharacter?.voiceType || 'template1';
-      
+
       console.log(`[ChatDialog] Using voice template: ${templateId} for character: ${selectedCharacter?.name}`);
-      
+
       setAudioStates(prev => ({
         ...prev,
         [messageId]: {
@@ -273,11 +249,11 @@ const ChatDialog: React.FC<ExtendedChatDialogProps> = ({
           error: null
         }
       }));
-      
+
       const result = await ttsService.generateTTS(messageId, text, templateId);
-      
+
       updateAudioState(messageId);
-      
+
       if (result.hasAudio && !result.error) {
         await handlePlayAudio(messageId);
       } else if (result.error) {
@@ -297,26 +273,24 @@ const ChatDialog: React.FC<ExtendedChatDialogProps> = ({
       }));
     }
   };
-  
-  // Handle play audio button press
+
   const handlePlayAudio = async (messageId: string) => {
     try {
       const state = ttsService.getAudioState(messageId);
-      
+
       if (state.isPlaying) {
         await ttsService.stopAudio(messageId);
       } else {
         await ttsService.playAudio(messageId);
       }
-      
+
       updateAudioState(messageId);
     } catch (error) {
       console.error('Failed to play audio:', error);
       Alert.alert('播放失败', '无法播放语音，请稍后再试。');
     }
   };
-  
-  // Clean up audio resources when component unmounts
+
   useEffect(() => {
     return () => {
       ttsService.cleanup();
@@ -352,7 +326,7 @@ const ChatDialog: React.FC<ExtendedChatDialogProps> = ({
     const date = new Date(timestamp);
     const hours = date.getHours().toString().padStart(2, '0');
     const minutes = date.getMinutes().toString().padStart(2, '0');
-    
+
     return (
       <View style={styles.timeGroup}>
         <Text style={styles.timeText}>{`${hours}:${minutes}`}</Text>
@@ -361,8 +335,8 @@ const ChatDialog: React.FC<ExtendedChatDialogProps> = ({
   };
 
   const containsCustomTags = (text: string): boolean => {
-      return /(<\s*(thinking|think|status|mem|websearch|char-think|StatusBlock|statusblock|font)[^>]*>[\s\S]*?<\/\s*(thinking|think|status|mem|websearch|char-think|StatusBlock|statusblock|font)\s*>)/i.test(text);
-   };
+    return /(<\s*(thinking|think|status|mem|websearch|char-think|StatusBlock|statusblock|font)[^>]*>[\s\S]*?<\/\s*(thinking|think|status|mem|websearch|char-think|StatusBlock|statusblock|font)\s*>)/i.test(text);
+  };
 
   const processMessageContent = (text: string, isUser: boolean) => {
     if (!text || text.trim() === '') {
@@ -373,7 +347,6 @@ const ChatDialog: React.FC<ExtendedChatDialogProps> = ({
       );
     }
 
-    // 检测是否为自定义标签或 HTML
     if (containsCustomTags(text) || /<\/?[a-z][^>]*>/i.test(text)) {
       return (
         <RichTextRenderer
@@ -385,7 +358,6 @@ const ChatDialog: React.FC<ExtendedChatDialogProps> = ({
       );
     }
 
-    // 检测是否为 markdown（包含代码块、标题、表格、列表、引用等）
     const markdownPattern = /(^|\n)(\s{0,3}#|```|>\s|[*+-]\s|\d+\.\s|\|.*\|)/;
     if (markdownPattern.test(text)) {
       return (
@@ -394,8 +366,25 @@ const ChatDialog: React.FC<ExtendedChatDialogProps> = ({
             style={{
               body: isUser ? styles.userMessageText : styles.botMessageText,
               text: isUser ? styles.userMessageText : styles.botMessageText,
-              code_block: { backgroundColor: '#111', color: '#fff', borderRadius: 6, padding: 8, fontSize: 14 }, // 修改为黑色背景
-              code_inline: { backgroundColor: '#111', color: '#fff', borderRadius: 4, padding: 2, fontSize: 14 },
+              code_block: { 
+                backgroundColor: '#111', // 修改为黑色
+                color: '#fff', 
+                borderRadius: 6, 
+                padding: 8, 
+                fontSize: 14 
+              },
+              code_block_text: {
+                backgroundColor: '#111', // 关键：同步设置
+                color: '#fff',
+                fontSize: 14,
+              },
+              code_inline: { 
+                backgroundColor: '#111', // 修改为黑色
+                color: '#fff', 
+                borderRadius: 4, 
+                padding: 2, 
+                fontSize: 14 
+              },
               heading1: { fontSize: 24, fontWeight: 'bold', marginVertical: 10 },
               heading2: { fontSize: 22, fontWeight: 'bold', marginVertical: 8 },
               heading3: { fontSize: 20, fontWeight: 'bold', marginVertical: 6 },
@@ -413,7 +402,6 @@ const ChatDialog: React.FC<ExtendedChatDialogProps> = ({
               hr: { borderBottomWidth: 1, borderColor: '#aaa', marginVertical: 8 },
               link: { color: '#3498db', textDecorationLine: 'underline' },
               image: { width: 220, height: 160, borderRadius: 8, marginVertical: 8, alignSelf: 'center' },
-              // 可根据需要继续自定义
             }}
             onLinkPress={(url: string) => {
               if (url.startsWith('http://') || url.startsWith('https://') || url.startsWith('mailto:')) {
@@ -433,14 +421,13 @@ const ChatDialog: React.FC<ExtendedChatDialogProps> = ({
       );
     }
 
-    // ...existing code for image markdown, links, fallback...
     const rawImageMarkdownRegex = /^!\[(.*?)\]\(image:([a-f0-9]+)\)$/;
     const rawImageMatch = text.trim().match(rawImageMarkdownRegex);
-    
+
     if (rawImageMatch) {
       const alt = rawImageMatch[1] || "图片";
       const imageId = rawImageMatch[2];
-      
+
       const imageInfo = ImageManager.getImageInfo(imageId);
       const imageStyle = getImageDisplayStyle(imageInfo);
 
@@ -476,7 +463,7 @@ const ChatDialog: React.FC<ExtendedChatDialogProps> = ({
       /<\s*(thinking|think|status|mem|websearch)[^>]*>([\s\S]*?)<\/\s*(thinking|think|status|mem|websearch)\s*>/i.test(text) || 
       /<\s*char\s+think\s*>([\s\S]*?)<\/\s*char\s+think\s*>/i.test(text)
     );
-    
+
     const hasMarkdown = /```[\w]*\s*([\s\S]*?)```/.test(text) || 
                        /!\[[\s\S]*?\]\([\s\S]*?\)/.test(text) ||
                        /\*\*([\s\S]*?)\*\*/.test(text) ||
@@ -487,14 +474,14 @@ const ChatDialog: React.FC<ExtendedChatDialogProps> = ({
     const imageIdRegex = /!\[(.*?)\]\(image:([^\s)]+)\)/g;
     let match: RegExpExecArray | null;
     const matches: { alt: string, id: string }[] = [];
-    
+
     while ((match = imageIdRegex.exec(text)) !== null) {
       matches.push({
         alt: match[1] || "图片",
         id: match[2]
       });
     }
-    
+
     if (matches.length > 0) {
       return (
         <View>
@@ -502,7 +489,6 @@ const ChatDialog: React.FC<ExtendedChatDialogProps> = ({
             const imageInfo = ImageManager.getImageInfo(img.id);
             const imageStyle = getImageDisplayStyle(imageInfo);
             if (imageInfo) {
-              // 确保 key 直接传递给 TouchableOpacity
               return (
                 <TouchableOpacity 
                   key={img.id + '-' + idx}
@@ -519,7 +505,6 @@ const ChatDialog: React.FC<ExtendedChatDialogProps> = ({
                 </TouchableOpacity>
               );
             } else {
-              // key 直接传递给 View
               return (
                 <View key={idx} style={styles.imageError}>
                   <Ionicons name="alert-circle" size={36} color="#e74c3c" />
@@ -534,25 +519,24 @@ const ChatDialog: React.FC<ExtendedChatDialogProps> = ({
 
     const imageMarkdownRegex = /!\[(.*?)\]\((https?:\/\/[^\s)]+|data:image\/[^\s)]+)\)/g;
     let urlMatches: { alt: string, url: string }[] = [];
-    
+
     imageMarkdownRegex.lastIndex = 0;
-    
+
     while ((match = imageMarkdownRegex.exec(text)) !== null) {
       urlMatches.push({
         alt: match[1] || "图片",
         url: match[2]
       });
     }
-    
+
     if (urlMatches.length > 0) {
       return (
         <View>
           {urlMatches.map((img, idx) => {
             const isDataUrl = img.url.startsWith('data:');
             const isLargeDataUrl = isDataUrl && img.url.length > 100000;
-            
+
             if (isLargeDataUrl) {
-              // key 直接传递给 View
               return (
                 <View key={idx} style={styles.imageWrapper}>
                   <TouchableOpacity
@@ -567,8 +551,7 @@ const ChatDialog: React.FC<ExtendedChatDialogProps> = ({
                 </View>
               );
             }
-            
-            // key 直接传递给 TouchableOpacity
+
             return (
               <TouchableOpacity 
                 key={idx}
@@ -588,41 +571,40 @@ const ChatDialog: React.FC<ExtendedChatDialogProps> = ({
         </View>
       );
     }
-    
+
     const linkRegex = /\[(.*?)\]\((https?:\/\/[^\s)]+|data:image\/[^\s)]+)\)/g;
     let linkMatches: { text: string, url: string }[] = [];
-    
+
     while ((match = linkRegex.exec(text)) !== null) {
       linkMatches.push({
         text: match[1],
         url: match[2]
       });
     }
-    
-// ...existing code...
-if (linkMatches.length > 0) {
-  return (
-    <View>
-      {linkMatches.map((link, idx) => (
-        <TouchableOpacity
-          key={idx}
-          style={styles.linkButton}
-          onPress={() => {
-            if (typeof window !== 'undefined') {
-              window.open(link.url, '_blank');
-            } else {
-              setFullscreenImage(link.url);
-            }
-          }}
-        >
-          <Ionicons name="link" size={16} color="#3498db" style={styles.linkIcon} />
-          <Text style={styles.linkText}>{link.text}</Text>
-        </TouchableOpacity>
-      ))}
-    </View>
-  );
-}
-    
+
+    if (linkMatches.length > 0) {
+      return (
+        <View>
+          {linkMatches.map((link, idx) => (
+            <TouchableOpacity
+              key={idx}
+              style={styles.linkButton}
+              onPress={() => {
+                if (typeof window !== 'undefined') {
+                  window.open(link.url, '_blank');
+                } else {
+                  setFullscreenImage(link.url);
+                }
+              }}
+            >
+              <Ionicons name="link" size={16} color="#3498db" style={styles.linkIcon} />
+              <Text style={styles.linkText}>{link.text}</Text>
+            </TouchableOpacity>
+          ))}
+        </View>
+      );
+    }
+
     return renderMessageText(text, isUser);
   };
 
@@ -657,84 +639,84 @@ if (linkMatches.length > 0) {
     if (messageId in ratedMessages) {
       return ratedMessages[messageId];
     }
-    return null; // Not rated
+    return null;
   };
 
   const renderTTSButtons = (message: Message) => {
     if (message.sender !== 'bot' || message.isLoading) return null;
-
     const audioState = audioStates[message.id] || ttsService.getAudioState(message.id);
     const isVisualNovel = mode === 'visual-novel';
 
-    const ttsButtonBg = { backgroundColor: '#FFE0C3' };
-    const ttsButtonEnhancedBg = { backgroundColor: '#FFD580' };
-
+    if (audioState.isLoading) {
+      return (
+        <View style={[
+          styles.actionCircleButton,
+          { width: BUTTON_SIZE, height: BUTTON_SIZE, marginRight: BUTTON_MARGIN }
+        ]}>
+          <ActivityIndicator size="small" color="#fff" />
+        </View>
+      );
+    }
+    if (audioState.hasAudio) {
+      return (
+        <TouchableOpacity
+          style={[
+            styles.actionCircleButton,
+            audioState.isPlaying && styles.actionCircleButtonActive,
+            { width: BUTTON_SIZE, height: BUTTON_SIZE, marginRight: BUTTON_MARGIN }
+          ]}
+          onPress={() => handlePlayAudio(message.id)}
+        >
+          <Ionicons
+            name={audioState.isPlaying ? "pause" : audioState.isComplete ? "refresh" : "play"}
+            size={BUTTON_ICON_SIZE}
+            color="#fff"
+          />
+        </TouchableOpacity>
+      );
+    }
     return (
-      <View style={isVisualNovel ? styles.visualNovelTTSContainer : styles.ttsButtonContainer}>
-        {audioState.isLoading ? (
-          <View style={isVisualNovel ? styles.visualNovelTTSButtonWithLabel : styles.ttsButtonWithLabel}>
-            <View style={[
-              isVisualNovel ? styles.visualNovelTTSButton : styles.ttsButton,
-              ttsButtonBg
-            ]}>
-              <ActivityIndicator size="small" color="black" />
-            </View>
-            {!isVisualNovel && <Text style={styles.ttsLoadingText}>生成中...</Text>}
-          </View>
-        ) : audioState.hasAudio ? (
-          <TouchableOpacity
-            style={[
-              isVisualNovel ? styles.visualNovelTTSButton : styles.ttsButton,
-              audioState.isPlaying && (isVisualNovel ? styles.visualNovelTTSButtonActive : styles.ttsButtonActive),
-              ttsButtonBg,
-              ttsEnhancerEnabled && ttsButtonEnhancedBg
-            ]}
-            onPress={() => handlePlayAudio(message.id)}
-          >
-            {audioState.isPlaying ? (
-              <Ionicons name="pause" size={isVisualNovel ? 22 : 18} color="black" />
-            ) : audioState.isComplete ? (
-              <Ionicons name="refresh" size={isVisualNovel ? 22 : 18} color="black" />
-            ) : (
-              <Ionicons name="play" size={isVisualNovel ? 22 : 18} color="black" />
-            )}
-            {ttsEnhancerEnabled && (
-              <View style={isVisualNovel ? styles.visualNovelTTSEnhancerIndicator : styles.ttsEnhancerIndicator}>
-                <Ionicons name="sparkles-outline" size={isVisualNovel ? 12 : 10} color="black" />
-              </View>
-            )}
-          </TouchableOpacity>
-        ) : (
-          <TouchableOpacity
-            style={[
-              isVisualNovel ? styles.visualNovelTTSButton : styles.ttsButton,
-              ttsButtonBg,
-              ttsEnhancerEnabled && ttsButtonEnhancedBg
-            ]}
-            onPress={() => handleTTSButtonPress(message.id, message.text)}
-          >
-            <Ionicons name="volume-high" size={isVisualNovel ? 22 : 18} color="black" />
-            {ttsEnhancerEnabled && (
-              <View style={isVisualNovel ? styles.visualNovelTTSEnhancerIndicator : styles.ttsEnhancerIndicator}>
-                <Ionicons name="sparkles-outline" size={isVisualNovel ? 12 : 10} color="black" />
-              </View>
-            )}
-          </TouchableOpacity>
-        )}
-        {audioState.error && !audioState.isLoading && !audioState.hasAudio && !isVisualNovel && (
-          <TouchableOpacity 
-            style={styles.ttsRetryButton}
-            onPress={() => handleTTSButtonPress(message.id, message.text)}
-          >
-            <Ionicons name="refresh" size={16} color="#ff6666" />
-            <Text style={styles.ttsErrorText}>重试</Text>
-          </TouchableOpacity>
-        )}
-      </View>
+      <TouchableOpacity
+        style={[
+          styles.actionCircleButton,
+          { width: BUTTON_SIZE, height: BUTTON_SIZE, marginRight: BUTTON_MARGIN }
+        ]}
+        onPress={() => handleTTSButtonPress(message.id, message.text)}
+      >
+        <Ionicons name="volume-high" size={BUTTON_ICON_SIZE} color="#fff" />
+      </TouchableOpacity>
     );
   };
 
   const [activeTooltipId, setActiveTooltipId] = useState<string | null>(null);
+  const [editModalVisible, setEditModalVisible] = useState(false);
+  const [editModalText, setEditModalText] = useState('');
+  const [editTargetMsgId, setEditTargetMsgId] = useState<string | null>(null);
+  const [editTargetAiIndex, setEditTargetAiIndex] = useState<number>(-1);
+
+  const handleEditButton = (message: Message, aiIndex: number) => {
+    setEditModalText(message.text);
+    setEditTargetMsgId(message.id);
+    setEditTargetAiIndex(aiIndex);
+    setEditModalVisible(true);
+  };
+
+  const handleDeleteButton = (message: Message, aiIndex: number) => {
+    Alert.alert(
+      '删除AI消息',
+      '确定要删除该AI消息及其对应的用户消息吗？',
+      [
+        { text: '取消', style: 'cancel' },
+        {
+          text: '删除',
+          style: 'destructive',
+          onPress: () => {
+            if (onDeleteMessage) onDeleteMessage(message.id, aiIndex);
+          }
+        }
+      ]
+    );
+  };
 
   const renderMessageContent = (message: Message, isUser: boolean, index: number) => {
     return (
@@ -786,56 +768,100 @@ if (linkMatches.length > 0) {
       </View>
     );
   };
-  
+
   const renderMessageActions = (message: Message, index: number) => {
     if (message.isLoading) return null;
-
-    // 新增：判断是否为AI消息且不是自动消息
     const isBot = message.sender === 'bot' && !message.isLoading;
     const isAutoMessage = !!message.metadata?.isAutoMessageResponse;
     const isRegenerating = regeneratingMessageId === message.id;
+    const aiIndex = getAiMessageIndex(index);
+
+    // --- 新增: 判断是否为first_mes ---
+    let isFirstMes = false;
+    if (message.metadata?.isFirstMes) {
+      isFirstMes = true;
+    } else if (
+      selectedCharacter &&
+      selectedCharacter.jsonData
+    ) {
+      try {
+        const characterData = JSON.parse(selectedCharacter.jsonData);
+        if (
+          characterData.roleCard?.first_mes &&
+          message.text === characterData.roleCard.first_mes
+        ) {
+          isFirstMes = true;
+        }
+      } catch (e) {
+        // ignore
+      }
+    }
 
     return (
-      <View style={styles.messageActions}>
-        {isBot && !isAutoMessage && (
-          <>
-            {renderTTSButtons(message)}
-            {/* 重新生成按钮 */}
-            <TouchableOpacity
-              style={[
-                styles.actionButton,
-                isRegenerating && styles.regeneratingButton
-              ]}
-              disabled={isRegenerating || !!regeneratingMessageId} // 禁用所有重新生成按钮当有任何一个消息正在重新生成时
-              onPress={() => onRegenerateMessage && onRegenerateMessage(message.id, getAiMessageIndex(index))}
-            >
-              {isRegenerating ? (
-                <ActivityIndicator size="small" color="#ffffff" />
-              ) : (
-                <Ionicons 
-                  name="refresh" 
-                  size={18} 
-                  color={regeneratingMessageId ? "#999999" : "#3498db"} 
-                />
-              )}
-            </TouchableOpacity>
-          </>
-        )}
-        {/* 其他操作按钮可继续添加 */}
+      <View style={styles.messageActionsRow}>
+        <View style={styles.messageActionsLeft}>
+          {isBot && !isAutoMessage && renderTTSButtons(message)}
+        </View>
+        <View style={styles.messageActionsRight}>
+          {/* 只允许非first_mes的AI消息显示编辑/删除/再生按钮 */}
+          {isBot && !isAutoMessage && !isFirstMes && (
+            <>
+              <TouchableOpacity
+                style={[
+                  styles.actionCircleButton,
+                  { width: BUTTON_SIZE, height: BUTTON_SIZE, marginLeft: BUTTON_MARGIN }
+                ]}
+                onPress={() => handleEditButton(message, aiIndex)}
+                disabled={!!regeneratingMessageId}
+              >
+                <Ionicons name="create-outline" size={BUTTON_ICON_SIZE} color={regeneratingMessageId ? "#999999" : "#f1c40f"} />
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={[
+                  styles.actionCircleButton,
+                  { width: BUTTON_SIZE, height: BUTTON_SIZE, marginLeft: BUTTON_MARGIN }
+                ]}
+                onPress={() => handleDeleteButton(message, aiIndex)}
+                disabled={!!regeneratingMessageId}
+              >
+                <Ionicons name="trash-outline" size={BUTTON_ICON_SIZE} color={regeneratingMessageId ? "#999999" : "#e74c3c"} />
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={[
+                  styles.actionCircleButton,
+                  isRegenerating && styles.actionCircleButtonActive,
+                  { width: BUTTON_SIZE, height: BUTTON_SIZE, marginLeft: BUTTON_MARGIN }
+                ]}
+                disabled={isRegenerating || !!regeneratingMessageId}
+                onPress={() => onRegenerateMessage && onRegenerateMessage(message.id, aiIndex)}
+              >
+                {isRegenerating ? (
+                  <ActivityIndicator size="small" color="#fff" />
+                ) : (
+                  <Ionicons
+                    name="refresh"
+                    size={BUTTON_ICON_SIZE}
+                    color={regeneratingMessageId ? "#999999" : "#3498db"}
+                  />
+                )}
+              </TouchableOpacity>
+            </>
+          )}
+        </View>
       </View>
     );
   };
 
   const isMessageLastAIMessage = (message: Message, index: number): boolean => {
     if (message.sender !== 'bot' || message.isLoading) return false;
-    
+
     for (let i = index + 1; i < messages.length; i++) {
       const laterMessage = messages[i];
       if (laterMessage.sender === 'bot' && !laterMessage.isLoading) {
         return false;
       }
     }
-    
+
     return true;
   };
 
@@ -843,7 +869,7 @@ if (linkMatches.length > 0) {
     if (imageId) {
       setFullscreenImageId(imageId);
       const imageInfo = ImageManager.getImageInfo(imageId);
-      
+
       if (imageInfo) {
         setFullscreenImage(imageInfo.originalPath);
         setImageLoading(false);
@@ -871,13 +897,13 @@ if (linkMatches.length > 0) {
   const handleShareImage = async () => {
     try {
       let success = false;
-      
+
       if (fullscreenImageId) {
         success = await ImageManager.shareImage(fullscreenImageId);
       } else if (fullscreenImage) {
         success = await ImageManager.shareImage(fullscreenImage);
       }
-      
+
       if (!success) {
         Alert.alert('错误', '分享功能不可用');
       }
@@ -891,11 +917,11 @@ if (linkMatches.length > 0) {
       ? messages[messages.length - 1]
       : null;
     if (!lastMessage || !selectedCharacter) return null;
-  
+
     const showUserMessage =
       lastMessage.sender === 'user' ||
       (lastMessage.sender === 'bot' && lastMessage.isLoading && messages.length >= 2 && messages[messages.length - 2].sender === 'user');
-  
+
     let displayName, displayAvatar, displayText;
     if (showUserMessage) {
       const userMsg = lastMessage.sender === 'user'
@@ -909,15 +935,15 @@ if (linkMatches.length > 0) {
       displayAvatar = selectedCharacter.avatar ? { uri: String(selectedCharacter.avatar) } : require('@/assets/images/default-avatar.png');
       displayText = lastMessage.text;
     }
-  
+
     const aiIndex = lastMessage.metadata?.aiIndex !== undefined
       ? lastMessage.metadata.aiIndex
       : messages.filter(m => m.sender === 'bot' && !m.isLoading).length - 1;
-  
+
     const isUser = showUserMessage;
     const isRegenerating = regeneratingMessageId === lastMessage.id;
     const messageRating = getMessageRating(lastMessage.id);
-  
+
     return (
       <View style={[
         styles.visualNovelContainer,
@@ -1050,7 +1076,6 @@ if (linkMatches.length > 0) {
   }, [messages, selectedCharacter, ratedMessages, audioStates, user]);
 
   const keyExtractor = useCallback((item: Message, index: number) => {
-    // 保证 key 唯一性：id + sender + timestamp + index
     return `${item.id}-${item.sender}-${item.timestamp || ''}-${index}`;
   }, []);
 
@@ -1165,6 +1190,80 @@ if (linkMatches.length > 0) {
           </View>
         </View>
       </Modal>
+
+      <Modal
+        visible={editModalVisible}
+        transparent
+        animationType="fade"
+        onRequestClose={() => setEditModalVisible(false)}
+      >
+        <View style={{
+          flex: 1,
+          backgroundColor: 'rgba(0,0,0,0.5)',
+          justifyContent: 'center',
+          alignItems: 'center'
+        }}>
+          <View style={{
+            backgroundColor: '#fff',
+            borderRadius: 12,
+            padding: 20,
+            width: '85%',
+            maxWidth: 400
+          }}>
+            <Text style={{ fontWeight: 'bold', fontSize: 16, marginBottom: 10 }}>编辑AI消息内容</Text>
+            <TextInput
+              style={{
+                color: '#333',
+                fontSize: 15,
+                minHeight: 80,
+                borderColor: '#ccc',
+                borderWidth: 1,
+                borderRadius: 8,
+                marginBottom: 16,
+                padding: 8,
+                textAlignVertical: 'top',
+              }}
+              multiline
+              value={editModalText}
+              onChangeText={setEditModalText}
+              autoFocus
+              placeholder="请输入新的AI消息内容"
+            />
+            <TouchableOpacity
+              style={{
+                backgroundColor: '#3498db',
+                borderRadius: 8,
+                paddingVertical: 10,
+                alignItems: 'center',
+                marginBottom: 8
+              }}
+              onPress={async () => {
+                if (!editModalText.trim()) {
+                  Alert.alert('内容不能为空');
+                  return;
+                }
+                if (onEditMessage && editTargetMsgId && editTargetAiIndex >= 0) {
+                  onEditMessage(editTargetMsgId, editTargetAiIndex, editModalText);
+                  setEditModalVisible(false);
+                }
+              }}
+            >
+              <Text style={{ color: '#fff', fontWeight: 'bold' }}>确定修改</Text>
+            </TouchableOpacity>
+            <TouchableOpacity
+              style={{
+                backgroundColor: '#aaa',
+                borderRadius: 8,
+                paddingVertical: 10,
+                alignItems: 'center'
+              }}
+              onPress={() => setEditModalVisible(false)}
+            >
+              <Text style={{ color: '#fff' }}>取消</Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+      </Modal>
     </>
   );
 };
@@ -1175,7 +1274,7 @@ const styles = StyleSheet.create({
     backgroundColor: 'transparent',
   },
   content: {
-    paddingVertical: RESPONSIVE_PADDING + 8, // Add extra top/bottom padding
+    paddingVertical: RESPONSIVE_PADDING + 8,
   },
   emptyContent: {
     flex: 1,
@@ -1187,8 +1286,8 @@ const styles = StyleSheet.create({
     paddingHorizontal: 12,
   },
   messageWrapper: {
-    marginBottom: Math.max(12, height * 0.02), // Responsive vertical spacing between messages
-    width: '100%', // Ensure full width
+    marginBottom: Math.max(12, height * 0.02),
+    width: '100%',
   },
   messageContainer: {
     flexDirection: 'row',
@@ -1197,11 +1296,11 @@ const styles = StyleSheet.create({
   },
   userMessageContainer: {
     justifyContent: 'flex-end',
-    paddingRight: RESPONSIVE_PADDING, // Add padding on the right for user messages
+    paddingRight: RESPONSIVE_PADDING,
   },
   botMessageContainer: {
     justifyContent: 'flex-start',
-    paddingLeft: RESPONSIVE_PADDING, // Add padding on the left for bot messages
+    paddingLeft: RESPONSIVE_PADDING,
   },
   avatarContainer: {
     width: 36,
@@ -1220,7 +1319,7 @@ const styles = StyleSheet.create({
     alignItems: 'flex-start',
     maxWidth: '100%',
     minHeight: 40,
-    marginHorizontal: RESPONSIVE_PADDING, // Responsive horizontal margin
+    marginHorizontal: RESPONSIVE_PADDING,
     alignSelf: 'center',
     position: 'relative',
   },
@@ -1245,22 +1344,22 @@ const styles = StyleSheet.create({
   },
   userMessageText: {
     color: '#333',
-    fontSize: Math.min(Math.max(14, width * 0.04), 16), // Responsive font size between 14-16
+    fontSize: Math.min(Math.max(14, width * 0.04), 16),
   },
   botMessageTextContainer: {
-    backgroundColor: 'rgba(68, 68, 68, 0.85)', // Semi-transparent background
+    backgroundColor: 'rgba(68, 68, 68, 0.85)',
     borderRadius: 18,
     borderTopLeftRadius: 4,
     padding: RESPONSIVE_PADDING + 4,
     paddingHorizontal: RESPONSIVE_PADDING + 8,
-    width: '100%', // Ensure content takes full width available
-    paddingTop: RESPONSIVE_PADDING + 12, // Extra padding at top to accommodate avatar
-    maxWidth: '98%', // Ensure it doesn't exceed parent width
-    marginTop: AVATAR_SIZE / 2, // Adjust space for the avatar
+    width: '100%',
+    paddingTop: RESPONSIVE_PADDING + 12,
+    maxWidth: '98%',
+    marginTop: AVATAR_SIZE / 2,
   },
   botMessageText: {
     color: '#fff',
-    fontSize: Math.min(Math.max(14, width * 0.04), 16), // Responsive font size between 14-16
+    fontSize: Math.min(Math.max(14, width * 0.04), 16),
   },
   loadingMessage: {
     minWidth: 80,
@@ -1279,21 +1378,40 @@ const styles = StyleSheet.create({
     marginHorizontal: 2,
     opacity: 0.7,
   },
-  messageActions: {
+  messageActionsRow: {
     flexDirection: 'row',
-    justifyContent: 'flex-end',
-    marginTop: RESPONSIVE_PADDING,
+    justifyContent: 'space-between',
     alignItems: 'center',
-    flexWrap: 'wrap', // Allow wrapping of buttons on small screens
+    marginTop: BUTTON_MARGIN,
+    width: '100%',
+    minHeight: BUTTON_SIZE,
   },
-  rateButton: {
-    padding: 8,
-    marginLeft: 8,
-    borderRadius: 18,
-    backgroundColor: 'rgba(255, 255, 255, 0.12)',
+  messageActionsLeft: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    flex: 1,
   },
-  rateButtonActive: {
-    backgroundColor: 'rgba(255, 255, 255, 0.25)',
+  messageActionsRight: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'flex-end',
+    flex: 1,
+  },
+  actionCircleButton: {
+    backgroundColor: 'rgba(0,0,0,0.5)',
+    borderRadius: BUTTON_SIZE / 2,
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginHorizontal: 0,
+    marginVertical: 0,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.12,
+    shadowRadius: 2,
+    elevation: 2,
+  },
+  actionCircleButtonActive: {
+    backgroundColor: 'rgba(255,224,195,0.85)',
   },
   timeGroup: {
     alignItems: 'center',
@@ -1301,7 +1419,7 @@ const styles = StyleSheet.create({
   },
   timeText: {
     color: '#ddd',
-    fontSize: Math.min(Math.max(10, width * 0.03), 12), // Responsive font size between 10-12
+    fontSize: Math.min(Math.max(10, width * 0.03), 12),
     backgroundColor: 'rgba(0, 0, 0, 0.4)',
     paddingHorizontal: 10,
     paddingVertical: 2,
@@ -1343,7 +1461,7 @@ const styles = StyleSheet.create({
     height: 200,
     maxHeight: MAX_IMAGE_HEIGHT,
     borderRadius: 8,
-    backgroundColor: 'rgba(42, 42, 42, 0.5)', // Semi-transparent background
+    backgroundColor: 'rgba(42, 42, 42, 0.5)',
   },
   imageCaption: {
     fontSize: 12,
@@ -1352,7 +1470,7 @@ const styles = StyleSheet.create({
     textAlign: 'center',
   },
   imageDataUrlWarning: {
-    backgroundColor: 'rgba(51, 51, 51, 0.8)', // Semi-transparent background
+    backgroundColor: 'rgba(51, 51, 51, 0.8)',
     padding: 12,
     borderRadius: 8,
     alignItems: 'center',
@@ -1399,17 +1517,11 @@ const styles = StyleSheet.create({
     textDecorationLine: 'underline',
     fontSize: 16,
   },
-  actionButton: {
-    padding: 8,
-    marginRight: 4,
-    backgroundColor: 'rgba(255, 255, 255, 0.15)',
-    borderRadius: 18,
-  },
   richContentWrapper: {
     width: '100%',
     overflow: 'hidden',
     borderRadius: 4,
-    marginBottom: 5, // Add some margin at the bottom
+    marginBottom: 5,
   },
   memoryIndicatorContainer: {
     position: 'absolute',
@@ -1488,71 +1600,16 @@ const styles = StyleSheet.create({
     marginLeft: 8,
     fontSize: 16,
   },
-  ttsButtonContainer: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    marginRight: 8,
-    flexWrap: 'wrap', // Allow buttons to wrap on smaller screens
-  },
-  ttsButton: {
-    width: 32,
-    height: 32,
-    borderRadius: 16,
-    justifyContent: 'center',
-    alignItems: 'center',
-    marginRight: 4,
-    marginBottom: 4, // Add bottom margin for wrapping
-  },
-  ttsButtonActive: {
-    backgroundColor: 'black', // 米黄色加深
-  },
-  ttsButtonEnhanced: {
-    backgroundColor: 'black', // 米黄色加深
-  },
-  ttsButtonWithLabel: {
-    flexDirection: 'row',
-    alignItems: 'center',
-  },
-  ttsLoadingText: {
-    color: '#ddd',
-    fontSize: 12,
-    marginLeft: 4,
-  },
-  ttsRetryButton: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    paddingHorizontal: 8,
-    paddingVertical: 4,
-    backgroundColor: 'rgba(255, 102, 102, 0.1)',
-    borderRadius: 12,
-    marginLeft: 4,
-  },
-  ttsErrorText: {
-    color: '#ff6666',
-    fontSize: 12,
-    marginLeft: 4,
-  },
-  ttsEnhancerIndicator: {
-    position: 'absolute',
-    top: -5,
-    right: -5,
-    backgroundColor: 'rgba(255, 193, 7, 0.9)', // More golden color for enhanced mode
-    borderRadius: 8,
-    width: 16,
-    height: 16,
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
   backgroundFocusContainer: {
     position: 'absolute',
-    top: '50%', // Position the scroll view halfway down the screen
+    top: '50%',
     left: 0,
     right: 0,
-    bottom: 0,  // Extend to bottom of screen
-    maxHeight: '50%', // Take up bottom 50% of screen
+    bottom: 0,
+    maxHeight: '50%',
   },
   backgroundFocusPadding: {
-    paddingTop: 20, // Add some padding to the top for better appearance
+    paddingTop: 20,
   },
   visualNovelContainer: {
     position: 'absolute',
@@ -1589,7 +1646,7 @@ const styles = StyleSheet.create({
     maxHeight: 220,
   },
   visualNovelTextWrapper: {
-    marginBottom: 8, // Add space for buttons
+    marginBottom: 8,
   },
   visualNovelText: {
     fontSize: 16,
@@ -1632,7 +1689,7 @@ const styles = StyleSheet.create({
   visualNovelTTSContainer: {
     flexDirection: 'row',
     alignItems: 'center',
-    marginRight: 'auto', // Push to the start/left
+    marginRight: 'auto',
   },
   visualNovelTTSButton: {
     width: 44,
@@ -1647,16 +1704,16 @@ const styles = StyleSheet.create({
     alignItems: 'center',
   },
   visualNovelTTSButtonActive: {
-    backgroundColor: '#FFD580', // 米黄色加深
+    backgroundColor: '#FFD580',
   },
   visualNovelTTSButtonEnhanced: {
-    backgroundColor: '#FFD580', // 米黄色加深
+    backgroundColor: '#FFD580',
   },
   visualNovelTTSEnhancerIndicator: {
     position: 'absolute',
     top: -5,
     right: -5,
-    backgroundColor: 'rgba(255, 193, 7, 0.9)', // More golden color for enhanced mode
+    backgroundColor: 'rgba(255, 193, 7, 0.9)',
     borderRadius: 8,
     width: 18,
     height: 18,
@@ -1711,21 +1768,17 @@ const styles = StyleSheet.create({
     paddingVertical: 6,
     borderRadius: 20,
   },
-
   imageContainer: {
     width: '100%',
   },
-  // Add new styles for regeneration state
   regeneratingButton: {
     backgroundColor: 'rgba(52, 152, 219, 0.6)',
-    width: 36, // Make a bit wider to accommodate the spinner
-    height: 36, // Make a bit taller to accommodate the spinner
+    width: 36,
+    height: 36,
   },
   visualNovelRegeneratingButton: {
     backgroundColor: 'rgba(52, 152, 219, 0.6)',
   },
-  
-  // AI avatar at top-left of bubble
   messageAvatar: {
     position: 'absolute',
     left: 10,
@@ -1735,8 +1788,6 @@ const styles = StyleSheet.create({
     borderWidth: 2,
     borderColor: 'rgba(255,255,255,0.2)',
   },
-  
-  // User avatar at top-right of bubble
   userMessageAvatar: {
     position: 'absolute',
     right: -15,
@@ -1746,7 +1797,6 @@ const styles = StyleSheet.create({
     borderWidth: 2,
     borderColor: 'rgba(255,255,255,0.2)',
   },
-
 });
 
 export default ChatDialog;

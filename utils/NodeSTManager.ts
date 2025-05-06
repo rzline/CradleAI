@@ -883,6 +883,74 @@ console.log(`[NodeSTManager] Setting search enabled to: ${enabled}`); // Add log
       return { success: false, error: error instanceof Error ? error.message : '未知错误' };
     }
   }
+
+  /**
+   * 删除指定 aiIndex 的 AI 消息及其对应的用户消息
+   */
+  async deleteAiMessageByIndex(params: {
+    conversationId: string;
+    messageIndex: number;
+  }): Promise<{ success: boolean; error?: string }> {
+    try {
+      const { conversationId, messageIndex } = params;
+      const core = new NodeSTCore(this.apiKey, this.apiSettings);
+      const ok = await core.deleteAiMessageByIndex(conversationId, messageIndex);
+      return ok ? { success: true } : { success: false, error: '删除失败' };
+    } catch (error) {
+      return { success: false, error: error instanceof Error ? error.message : '未知错误' };
+    }
+  }
+
+  /**
+   * 编辑指定 aiIndex 的 AI 消息内容
+   */
+  async editAiMessageByIndex(params: {
+    conversationId: string;
+    messageIndex: number;
+    newContent: string;
+  }): Promise<{ success: boolean; error?: string }> {
+    try {
+      const { conversationId, messageIndex, newContent } = params;
+      const core = new NodeSTCore(this.apiKey, this.apiSettings);
+      const ok = await core.editAiMessageByIndex(conversationId, messageIndex, newContent);
+      return ok ? { success: true } : { success: false, error: '编辑失败' };
+    } catch (error) {
+      return { success: false, error: error instanceof Error ? error.message : '未知错误' };
+    }
+  }
+
+  /**
+   * 构建rframework（prompt消息数组），并插入自定义chatHistory内容
+   * @param inputText 聊天历史内容（字符串）
+   * @param presetJsonStr 预设JSON字符串（标准格式）
+   * @param adapterType 适配器类型："gemini" | "openrouter" | "openai-compatible"
+   * @returns 格式化后的消息数组
+   */
+  static async buildRFrameworkWithChatHistory(
+    inputText: string,
+    presetJsonStr: string,
+    adapterType: 'gemini' | 'openrouter' | 'openai-compatible'
+  ): Promise<any[]> {
+    return NodeSTCore.buildRFrameworkWithChatHistory(inputText, presetJsonStr, adapterType);
+  }
+
+  // 静态方法
+  static async deleteAiMessageByIndex(params: {
+    conversationId: string;
+    messageIndex: number;
+  }): Promise<{ success: boolean; error?: string }> {
+    const instance = new NodeSTManagerClass();
+    return await instance.deleteAiMessageByIndex(params);
+  }
+
+  static async editAiMessageByIndex(params: {
+    conversationId: string;
+    messageIndex: number;
+    newContent: string;
+  }): Promise<{ success: boolean; error?: string }> {
+    const instance = new NodeSTManagerClass();
+    return await instance.editAiMessageByIndex(params);
+  }
 }
 
 // Create and export a singleton instance
@@ -938,5 +1006,22 @@ NodeSTManager.summarizeMemoryNow = async function(params: {
 }): Promise<{ success: boolean; error?: string }> {
   const instance = new NodeSTManagerClass();
   return await instance.summarizeMemoryNow(params);
+};
+
+NodeSTManager.deleteAiMessageByIndex = async function(params: {
+  conversationId: string;
+  messageIndex: number;
+}): Promise<{ success: boolean; error?: string }> {
+  const instance = new NodeSTManagerClass();
+  return await instance.deleteAiMessageByIndex(params);
+};
+
+NodeSTManager.editAiMessageByIndex = async function(params: {
+  conversationId: string;
+  messageIndex: number;
+  newContent: string;
+}): Promise<{ success: boolean; error?: string }> {
+  const instance = new NodeSTManagerClass();
+  return await instance.editAiMessageByIndex(params);
 };
 

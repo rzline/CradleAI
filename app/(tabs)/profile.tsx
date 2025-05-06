@@ -105,6 +105,14 @@ const Profile: React.FC = () => {
           chevron={true}
           onPress={() => router.push('../pages/custom-settings-manager')}
         />
+
+        {/* 全局设置按钮 */}
+        <ListItem
+          title="全局设置"
+          leftIcon="settings-outline"
+          chevron={true}
+          onPress={() => router.push('/pages/global-settings')}
+        />
         
         {/* <ListItem
           title="存储管理器"
@@ -114,14 +122,14 @@ const Profile: React.FC = () => {
           subtitle="查看和清理应用存储"
         /> */}
 
-        <ListItem
+        {/* <ListItem
           title="加入社区"
           leftIcon="people-outline"
           onPress={() => {
             // Add community links handling
           }}
           subtitle="Discord | QQ群"
-        />
+        /> */}
         
 
         {/* <ListItem
@@ -136,7 +144,7 @@ const Profile: React.FC = () => {
           title="关于"
           leftIcon="information-circle-outline"
           chevron={false}
-          subtitle="版本 1.0.0"
+          subtitle="GitHub | CradleAI | 1.0.2"
         />
       </ScrollView>
 

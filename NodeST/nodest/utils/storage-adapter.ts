@@ -1,7 +1,9 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import * as FileSystem from 'expo-file-system';
-import { ChatHistoryEntity, ChatMessage,} from '../../../shared/types';
-import{ CircleMemory  } from '../../../shared/types/circle-types';
+import { ChatHistoryEntity, ChatMessage, } from '../../../shared/types';
+import { CircleMemory } from '../../../shared/types/circle-types';
+import { GlobalPresetConfig, GlobalWorldbookConfig, WorldBookJson, PresetJson } from '../../../shared/types';
+
 /**
  * StorageAdapter provides a clean interface for managing chat-related storage operations,
  * focusing on actual user-AI conversation without exposing framework details.
@@ -33,7 +35,7 @@ export class StorageAdapter {
   static async saveJson<T>(key: string, data: T): Promise<void> {
     try {
       if (key.startsWith('nodest_')) {
-        await FileSystem.makeDirectoryAsync(StorageAdapter.characterDataDir, { intermediates: true }).catch(() => {});
+        await FileSystem.makeDirectoryAsync(StorageAdapter.characterDataDir, { intermediates: true }).catch(() => { });
         const filePath = StorageAdapter.getCharacterDataFilePath(key);
         await FileSystem.writeAsStringAsync(filePath, JSON.stringify(data));
       } else {
@@ -76,7 +78,7 @@ export class StorageAdapter {
   static async getCleanChatHistory(conversationId: string): Promise<ChatMessage[]> {
     try {
       console.log('[StorageAdapter] Retrieving clean chat history for conversation:', conversationId);
-      
+
       // Load raw chat history
       const chatHistory = await this.loadJson<ChatHistoryEntity>(
         this.getStorageKey(conversationId, '_history')
@@ -85,17 +87,17 @@ export class StorageAdapter {
       if (!chatHistory || !chatHistory.parts) {
         return [];
       }
-      
+
       // Filter to include only real user/AI messages (no D-entries, no framework)
       const cleanedMessages = chatHistory.parts.filter(message => {
         // Only include actual conversation messages (exclude D entries and system messages)
-        return (!message.is_d_entry && 
-                (message.role === "user" || message.role === "model" || message.role === "assistant") &&
-                message.parts?.[0]?.text);
+        return (!message.is_d_entry &&
+          (message.role === "user" || message.role === "model" || message.role === "assistant") &&
+          message.parts?.[0]?.text);
       });
 
       console.log(`[StorageAdapter] Retrieved ${cleanedMessages.length} clean messages`);
-      
+
       return cleanedMessages;
     } catch (error) {
       console.error('[StorageAdapter] Error getting clean chat history:', error);
@@ -134,18 +136,18 @@ export class StorageAdapter {
       const chatHistory = await this.loadJson<ChatHistoryEntity>(
         this.getStorageKey(conversationId, '_history')
       );
-      
+
       if (!chatHistory || !chatHistory.parts || chatHistory.parts.length === 0) {
         return null;
       }
-      
+
       // Find the first_mes or the first model/assistant message
       const firstMessage = chatHistory.parts.find(
-        msg => msg.is_first_mes || 
-              ((msg.role === "model" || msg.role === "assistant") && 
-               !msg.is_d_entry && msg.parts?.[0]?.text)
+        msg => msg.is_first_mes ||
+          ((msg.role === "model" || msg.role === "assistant") &&
+            !msg.is_d_entry && msg.parts?.[0]?.text)
       );
-      
+
       return firstMessage || null;
     } catch (error) {
       console.error('[StorageAdapter] Error getting first message:', error);
@@ -159,7 +161,7 @@ export class StorageAdapter {
    * @param conversationId The conversation identifier
    * @returns Array of {role, content} objects
    */
-  static async exportConversation(conversationId: string): Promise<Array<{role: string, content: string}>> {
+  static async exportConversation(conversationId: string): Promise<Array<{ role: string, content: string }>> {
     const cleanMessages = await this.getCleanChatHistory(conversationId);
     return cleanMessages.map(msg => ({
       role: msg.role === "model" || msg.role === "assistant" ? "assistant" : "user",
@@ -176,7 +178,7 @@ export class StorageAdapter {
    * @returns True if successful, false otherwise
    */
   static async storeMessageExchange(
-    conversationId: string, 
+    conversationId: string,
     userMessage: string,
     aiResponse: string
   ): Promise<boolean> {
@@ -185,18 +187,18 @@ export class StorageAdapter {
       const chatHistory = await this.loadJson<ChatHistoryEntity>(
         this.getStorageKey(conversationId, '_history')
       );
-      
+
       if (!chatHistory) {
         console.error('[StorageAdapter] Cannot store message - no chat history found');
         return false;
       }
-      
+
       // Add messages only if they don't exist already
       let updated = false;
       const userMessageExists = chatHistory.parts.some(
         msg => msg.role === "user" && msg.parts?.[0]?.text === userMessage
       );
-      
+
       if (!userMessageExists) {
         chatHistory.parts.push({
           role: "user",
@@ -204,12 +206,12 @@ export class StorageAdapter {
         });
         updated = true;
       }
-      
+
       const aiResponseExists = chatHistory.parts.some(
-        msg => (msg.role === "model" || msg.role === "assistant") && 
-              msg.parts?.[0]?.text === aiResponse
+        msg => (msg.role === "model" || msg.role === "assistant") &&
+          msg.parts?.[0]?.text === aiResponse
       );
-      
+
       if (!aiResponseExists && aiResponse) {
         chatHistory.parts.push({
           role: "model",
@@ -217,7 +219,7 @@ export class StorageAdapter {
         });
         updated = true;
       }
-      
+
       if (updated) {
         // Save updated history
         await this.saveJson(
@@ -228,14 +230,14 @@ export class StorageAdapter {
       } else {
         console.log('[StorageAdapter] No new messages to store (existing messages)');
       }
-      
+
       return true;
     } catch (error) {
       console.error('[StorageAdapter] Error storing message exchange:', error);
       return false;
     }
   }
-  
+
   /**
    * Delete all data for a conversation
    * @param conversationId The conversation identifier
@@ -244,7 +246,7 @@ export class StorageAdapter {
   static async deleteConversationData(conversationId: string): Promise<boolean> {
     try {
       console.log('[StorageAdapter] Deleting all data for conversation:', conversationId);
-      
+
       // Define all the keys we need to delete
       const keys = [
         this.getStorageKey(conversationId, '_role'),
@@ -254,7 +256,7 @@ export class StorageAdapter {
         this.getStorageKey(conversationId, '_history'),
         this.getStorageKey(conversationId, '_contents')
       ];
-      
+
       // Delete all keys in parallel
       await Promise.all(keys.map(async (key) => {
         try {
@@ -263,7 +265,7 @@ export class StorageAdapter {
           console.error(`[StorageAdapter] Error deleting key ${key}:`, error);
         }
       }));
-      
+
       return true;
     } catch (error) {
       console.error('[StorageAdapter] Error deleting conversation data:', error);
@@ -277,20 +279,32 @@ export class StorageAdapter {
    */
   static async getAllConversationIds(): Promise<string[]> {
     try {
-      // Get all keys in AsyncStorage
+      // 1. 从 AsyncStorage 获取
       const keys = await AsyncStorage.getAllKeys();
-      
-      // Filter for nodest conversation keys
-      const conversationKeys = keys.filter(key => 
+      const conversationKeys = keys.filter(key =>
         key.startsWith('nodest_') && key.endsWith('_history')
       );
-      
-      // Extract conversation IDs from keys
-      const conversationIds = conversationKeys.map(key => 
+      const conversationIdsFromAsync = conversationKeys.map(key =>
         key.replace('nodest_', '').replace('_history', '')
       );
-      
-      return conversationIds;
+
+      // 2. 从文件系统 nodest_characters/ 目录获取
+      let conversationIdsFromFS: string[] = [];
+      try {
+        const dir = FileSystem.documentDirectory + 'nodest_characters/';
+        const files = await FileSystem.readDirectoryAsync(dir);
+        conversationIdsFromFS = files
+          .filter(f => f.endsWith('_history.json') && f.startsWith('nodest_'))
+          .map(f =>
+            f.replace(/^nodest_/, '').replace(/_history\.json$/, '')
+          );
+      } catch (e) {
+        // ignore if dir not exists
+      }
+
+      // 合并去重
+      const allIds = Array.from(new Set([...conversationIdsFromAsync, ...conversationIdsFromFS]));
+      return allIds;
     } catch (error) {
       console.error('[StorageAdapter] Error getting all conversation IDs:', error);
       return [];
@@ -306,15 +320,15 @@ export class StorageAdapter {
   static async getMessagesFromDate(conversationId: string, date: Date = new Date()): Promise<ChatMessage[]> {
     try {
       console.log('[StorageAdapter] Retrieving messages from date for conversation:', conversationId);
-      
+
       // Set time to start of day
       const startOfDay = new Date(date);
       startOfDay.setHours(0, 0, 0, 0);
-      
+
       // Set time to end of day
       const endOfDay = new Date(date);
       endOfDay.setHours(23, 59, 59, 999);
-      
+
       // Load raw chat history
       const chatHistory = await this.loadJson<ChatHistoryEntity>(
         this.getStorageKey(conversationId, '_history')
@@ -323,20 +337,20 @@ export class StorageAdapter {
       if (!chatHistory || !chatHistory.parts) {
         return [];
       }
-      
+
       // Filter to include only real user/AI messages from the specified day
       const messagesFromDay = chatHistory.parts.filter(message => {
         // Only include actual conversation messages with timestamp within the day
-        return (!message.is_d_entry && 
-                (message.role === "user" || message.role === "model" || message.role === "assistant") &&
-                message.parts?.[0]?.text &&
-                message.timestamp && 
-                message.timestamp >= startOfDay.getTime() &&
-                message.timestamp <= endOfDay.getTime());
+        return (!message.is_d_entry &&
+          (message.role === "user" || message.role === "model" || message.role === "assistant") &&
+          message.parts?.[0]?.text &&
+          message.timestamp &&
+          message.timestamp >= startOfDay.getTime() &&
+          message.timestamp <= endOfDay.getTime());
       });
 
       console.log(`[StorageAdapter] Retrieved ${messagesFromDay.length} messages from ${date.toDateString()}`);
-      
+
       return messagesFromDay;
     } catch (error) {
       console.error('[StorageAdapter] Error getting messages from date:', error);
@@ -403,10 +417,10 @@ export class StorageAdapter {
   static async saveCircleMemories(characterId: string, memories: CircleMemory[]): Promise<void> {
     try {
       console.log(`[StorageAdapter] Saving ${memories.length} circle memories for character: ${characterId}`);
-      
+
       const storageKey = `nodest_${characterId}_circle_memory`;
       await AsyncStorage.setItem(storageKey, JSON.stringify(memories));
-      
+
       console.log(`[StorageAdapter] Successfully saved circle memories for character: ${characterId}`);
     } catch (error) {
       console.error(`[StorageAdapter] Error saving circle memories for character: ${characterId}`, error);
@@ -449,5 +463,247 @@ export class StorageAdapter {
       console.error('[StorageAdapter] exportCharacterData error:', error);
       throw error;
     }
+  }
+
+  // ========== 全局预设功能 ==========
+
+  /**
+   * 保存全局预设配置
+   */
+  static async saveGlobalPresetConfig(config: GlobalPresetConfig): Promise<void> {
+    await AsyncStorage.setItem('nodest_global_preset_config', JSON.stringify(config));
+  }
+
+  /**
+   * 读取全局预设配置
+   */
+  static async loadGlobalPresetConfig(): Promise<GlobalPresetConfig | null> {
+    const data = await AsyncStorage.getItem('nodest_global_preset_config');
+    return data ? JSON.parse(data) : null;
+  }
+
+  /**
+   * 保存全局预设模板列表
+   */
+  static async saveGlobalPresetList(list: Array<{id: string; name: string; presetJson: PresetJson}>): Promise<void> {
+    await AsyncStorage.setItem('nodest_global_preset_list', JSON.stringify(list));
+  }
+
+  /**
+   * 读取全局预设模板列表
+   */
+  static async loadGlobalPresetList(): Promise<Array<{id: string; name: string; presetJson: PresetJson}>> {
+    const data = await AsyncStorage.getItem('nodest_global_preset_list');
+    return data ? JSON.parse(data) : [];
+  }
+
+  /**
+   * 保存当前选中的全局预设模板ID
+   */
+  static async saveSelectedGlobalPresetId(id: string): Promise<void> {
+    await AsyncStorage.setItem('nodest_selected_global_preset_id', id);
+  }
+
+  /**
+   * 读取当前选中的全局预设模板ID
+   */
+  static async loadSelectedGlobalPresetId(): Promise<string | null> {
+    return await AsyncStorage.getItem('nodest_selected_global_preset_id');
+  }
+
+  /**
+   * 批量替换所有角色的 presetjson
+   * @param presetJson 新的全局 presetjson
+   * @returns 替换的角色ID数组
+   */
+  static async replaceAllPresets(presetJson: PresetJson): Promise<string[]> {
+    const ids = await this.getAllConversationIds();
+    await Promise.all(ids.map(async (id) => {
+      await this.saveJson(this.getStorageKey(id, '_preset'), presetJson);
+    }));
+    return ids;
+  }
+
+  /**
+   * 恢复所有角色的原始 presetjson（需预先备份）
+   * @param backupMap 角色ID到presetjson的映射
+   */
+  static async restoreAllPresets(backupMap: Record<string, PresetJson>): Promise<void> {
+    await Promise.all(Object.entries(backupMap).map(async ([id, preset]) => {
+      await this.saveJson(this.getStorageKey(id, '_preset'), preset);
+    }));
+  }
+
+  /**
+   * 备份所有角色的 presetjson
+   */
+  static async backupAllPresets(): Promise<Record<string, PresetJson>> {
+    const ids = await this.getAllConversationIds();
+    const result: Record<string, PresetJson> = {};
+    for (const id of ids) {
+      const preset = await this.loadJson<PresetJson>(this.getStorageKey(id, '_preset'));
+      if (preset) result[id] = preset;
+    }
+    return result;
+  }
+
+  // ========== 全局世界书功能 ==========
+
+  /**
+   * 保存全局世界书配置
+   */
+  static async saveGlobalWorldbookConfig(config: GlobalWorldbookConfig): Promise<void> {
+    await AsyncStorage.setItem('nodest_global_worldbook_config', JSON.stringify(config));
+  }
+
+  /**
+   * 读取全局世界书配置
+   */
+  static async loadGlobalWorldbookConfig(): Promise<GlobalWorldbookConfig | null> {
+    const data = await AsyncStorage.getItem('nodest_global_worldbook_config');
+    return data ? JSON.parse(data) : null;
+  }
+
+  /**
+   * 保存全局世界书模板列表
+   */
+  static async saveGlobalWorldbookList(list: Array<{id: string; name: string; worldbookJson: WorldBookJson}>): Promise<void> {
+    await AsyncStorage.setItem('nodest_global_worldbook_list', JSON.stringify(list));
+  }
+
+  /**
+   * 读取全局世界书模板列表
+   */
+  static async loadGlobalWorldbookList(): Promise<Array<{id: string; name: string; worldbookJson: WorldBookJson}>> {
+    const data = await AsyncStorage.getItem('nodest_global_worldbook_list');
+    return data ? JSON.parse(data) : [];
+  }
+
+  /**
+   * 保存当前选中的全局世界书模板ID
+   */
+  static async saveSelectedGlobalWorldbookId(id: string): Promise<void> {
+    await AsyncStorage.setItem('nodest_selected_global_worldbook_id', id);
+  }
+
+  /**
+   * 读取当前选中的全局世界书模板ID
+   */
+  static async loadSelectedGlobalWorldbookId(): Promise<string | null> {
+    return await AsyncStorage.getItem('nodest_selected_global_worldbook_id');
+  }
+
+  /**
+   * 备份所有角色的 worldbookjson
+   */
+  static async backupAllWorldbooks(): Promise<Record<string, WorldBookJson>> {
+    const ids = await this.getAllConversationIds();
+    const result: Record<string, WorldBookJson> = {};
+    for (const id of ids) {
+      const worldbook = await this.loadJson<WorldBookJson>(this.getStorageKey(id, '_world'));
+      if (worldbook) result[id] = worldbook;
+    }
+    return result;
+  }
+
+  /**
+   * 恢复所有角色的原始 worldbookjson（需预先备份）
+   * @param backupMap 角色ID到worldbookjson的映射
+   */
+  static async restoreAllWorldbooks(backupMap: Record<string, WorldBookJson>): Promise<void> {
+    await Promise.all(Object.entries(backupMap).map(async ([id, worldbook]) => {
+      await this.saveJson(this.getStorageKey(id, '_world'), worldbook);
+    }));
+  }
+
+  /**
+   * 批量追加全局 D 类条目到所有角色 worldbook
+   * @param globalDEntries 全局 D 类条目数组
+   * @param priority 优先级
+   * @returns 角色ID数组
+   */
+  static async appendGlobalDEntriesToAllWorldbooks(
+    globalDEntries: Record<string, any>, // key: entryKey, value: WorldBookEntry
+    priority: '全局优先' | '角色优先'
+  ): Promise<string[]> {
+    const ids = await this.getAllConversationIds();
+    await Promise.all(ids.map(async (id) => {
+      const worldbook = await this.loadJson<WorldBookJson>(this.getStorageKey(id, '_world')) || { entries: {} };
+      // 只处理 D 类条目（position=4）
+      const originalEntries = worldbook.entries || {};
+      // 过滤已有的全局D类条目（通过特殊标记 _global: true）
+      const filteredEntries: Record<string, any> = {};
+      Object.entries(originalEntries).forEach(([k, v]) => {
+        if (!v || !(v as any)._global) filteredEntries[k] = v;
+      });
+      // 插入全局D类条目，带 _global 标记
+      const globalEntriesWithFlag: Record<string, any> = {};
+      Object.entries(globalDEntries).forEach(([k, v]) => {
+        globalEntriesWithFlag[k] = { ...v, _global: true };
+      });
+      // 合并顺序
+      let merged: Record<string, any> = {};
+      if (priority === '全局优先') {
+        // 全局D类条目插入在后（靠近ChatHistory）
+        merged = { ...filteredEntries, ...globalEntriesWithFlag };
+      } else {
+        // 全局D类条目插入在前
+        merged = { ...globalEntriesWithFlag, ...filteredEntries };
+      }
+      worldbook.entries = merged;
+      await this.saveJson(this.getStorageKey(id, '_world'), worldbook);
+    }));
+    return ids;
+  }
+
+  /**
+   * 删除所有角色 worldbook 中的全局 D 类条目（带 _global 标记）
+   */
+  static async removeGlobalDEntriesFromAllWorldbooks(): Promise<void> {
+    const ids = await this.getAllConversationIds();
+    await Promise.all(ids.map(async (id) => {
+      const worldbook = await this.loadJson<WorldBookJson>(this.getStorageKey(id, '_world'));
+      if (!worldbook || !worldbook.entries) return;
+      // 移除 _global 标记的条目
+      const filtered: Record<string, any> = {};
+      Object.entries(worldbook.entries).forEach(([k, v]) => {
+        if (!v || !(v as any)._global) filtered[k] = v;
+      });
+      worldbook.entries = filtered;
+      await this.saveJson(this.getStorageKey(id, '_world'), worldbook);
+    }));
+  }
+
+  // ========== 全局正则脚本功能 ==========
+
+  /**
+   * 保存全局正则脚本列表
+   */
+  static async saveGlobalRegexScriptList(list: Array<any>): Promise<void> {
+    // 调试日志，确认 findRegex 是否被保存
+    // console.log('[StorageAdapter] saveGlobalRegexScriptList:', list.map(s => s.findRegex));
+    await AsyncStorage.setItem('nodest_global_regex_script_list', JSON.stringify(list));
+  }
+
+  /**
+   * 读取全局正则脚本列表
+   */
+  static async loadGlobalRegexScriptList(): Promise<Array<any>> {
+    const data = await AsyncStorage.getItem('nodest_global_regex_script_list');
+    return data ? JSON.parse(data) : [];
+  }
+
+  /**
+   * 保存当前选中的全局正则脚本ID
+   */
+  static async saveSelectedGlobalRegexScriptId(id: string): Promise<void> {
+    await AsyncStorage.setItem('nodest_selected_global_regex_script_id', id);
+  }
+
+  /**
+   * 读取当前选中的全局正则脚本ID
+   */
+  static async loadSelectedGlobalRegexScriptId(): Promise<string | null> {
+    return await AsyncStorage.getItem('nodest_selected_global_regex_script_id');
   }
 }

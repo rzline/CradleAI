@@ -165,6 +165,10 @@ export const UserProvider: React.FC<{ children: React.ReactNode }> = ({ children
             ...user.settings.chat,
             ...settings.chat,
             apiProvider,
+            // 确保模型字段被覆盖
+            geminiPrimaryModel: settings.chat?.geminiPrimaryModel ?? user.settings.chat.geminiPrimaryModel,
+            geminiBackupModel: settings.chat?.geminiBackupModel ?? user.settings.chat.geminiBackupModel,
+            retryDelay: settings.chat?.retryDelay ?? user.settings.chat.retryDelay,
             openrouter: {
               ...(user.settings.chat.openrouter || {}),
               ...(settings.chat?.openrouter || {}),

@@ -132,6 +132,9 @@ export function getApiSettings(): {
   useGeminiModelLoadBalancing?: boolean;
   additionalGeminiKeys?: string[];
   cloudModel?: string;
+  geminiPrimaryModel?: string; // 新增
+  geminiBackupModel?: string;  // 新增
+  retryDelay?: number;         // 新增
 } {
   const settings = getUserSettingsGlobally();
   if (!settings || !settings.chat) {
@@ -150,7 +153,7 @@ export function getApiSettings(): {
   }
 
   // 互斥逻辑：只返回当前 provider 的参数
-  const { apiProvider, characterApiKey, openrouter, OpenAIcompatible, useCloudService = false, additionalGeminiKeys, useGeminiKeyRotation, useGeminiModelLoadBalancing, cloudModel } = settings.chat;
+  const { apiProvider, characterApiKey, openrouter, OpenAIcompatible, useCloudService = false, additionalGeminiKeys, useGeminiKeyRotation, useGeminiModelLoadBalancing, cloudModel, geminiPrimaryModel, geminiBackupModel, retryDelay } = settings.chat;
 
   return {
     apiKey: characterApiKey,
@@ -162,7 +165,6 @@ export function getApiSettings(): {
           model: openrouter?.model || 'openai/gpt-3.5-turbo'
         }
       : { enabled: false },
-    // 修正 OpenAIcompatible 结构，确保 apiKey 正确返回
     OpenAIcompatible: apiProvider === 'openai-compatible'
       ? {
           enabled: true,
@@ -175,6 +177,9 @@ export function getApiSettings(): {
     additionalGeminiKeys,
     useGeminiKeyRotation,
     useGeminiModelLoadBalancing,
-    cloudModel
+    cloudModel,
+    geminiPrimaryModel, // 新增
+    geminiBackupModel,  // 新增
+    retryDelay          // 新增
   };
 }

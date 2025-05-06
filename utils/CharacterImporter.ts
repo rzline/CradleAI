@@ -23,6 +23,7 @@ export class CharacterImporter {
     worldBook: WorldBookJson;
     extractedName: string;
     backgroundImage?: string; // Add backgroundImage field to return PNG data
+    alternateGreetings?: string[]; // 新增
   }> {
     const data = await PNGParser.readPNGChunks(filePath);
     
@@ -86,11 +87,52 @@ export class CharacterImporter {
       // Continue without background image if extraction fails
     }
 
+    // 修复：处理alternate_greetings - 检查多个可能的路径
+    let alternateGreetings: string[] | undefined;
+    
+    // 首先检查data.chara.data.alternate_greetings
+    if (Array.isArray(data.chara.data?.alternate_greetings)) {
+      console.log('[Character Import] Found alternate_greetings in data.chara.data:', 
+        data.chara.data.alternate_greetings.length);
+      alternateGreetings = data.chara.data.alternate_greetings;
+    } 
+    // 也检查data.data.alternate_greetings
+    else if (Array.isArray(data.data?.alternate_greetings)) {
+      console.log('[Character Import] Found alternate_greetings in data.data:', 
+        data.data.alternate_greetings.length);
+      alternateGreetings = data.data.alternate_greetings;
+    }
+    // 直接检查最顶层
+    else if (Array.isArray(data.alternate_greetings)) {
+      console.log('[Character Import] Found alternate_greetings in top level:', 
+        data.alternate_greetings.length);
+      alternateGreetings = data.alternate_greetings;
+    }
+    
+    // 如果找到了alternateGreetings，确保包含first_mes
+    if (alternateGreetings && alternateGreetings.length > 0 && roleCard.first_mes) {
+      // 检查first_mes是否已经在alternateGreetings中
+      if (!alternateGreetings.includes(roleCard.first_mes)) {
+        // 将first_mes添加到alternateGreetings的开头
+        alternateGreetings = [roleCard.first_mes, ...alternateGreetings];
+        console.log('[Character Import] Added first_mes to alternateGreetings');
+      }
+    } 
+    // 如果没有找到alternateGreetings但有first_mes，创建只包含first_mes的数组
+    else if (roleCard.first_mes) {
+      alternateGreetings = [roleCard.first_mes];
+      console.log('[Character Import] Created alternateGreetings from first_mes');
+    }
+
+    console.log('[Character Import] Final alternateGreetings:', 
+      alternateGreetings ? `(${alternateGreetings.length} items)` : 'undefined');
+
     return { 
       roleCard, 
       worldBook, 
       extractedName,
-      backgroundImage  // Return the background image data
+      backgroundImage,  // Return the background image data
+      alternateGreetings // 新增
     };
   }
 
@@ -104,6 +146,7 @@ export class CharacterImporter {
     preset?: PresetJson;
     extractedName: string;
     backgroundImage?: string;
+    alternateGreetings?: string[]; // 新增
   }> {
     try {
       let content = await FileSystem.readAsStringAsync(filePath);
@@ -126,7 +169,13 @@ export class CharacterImporter {
           backgroundImage = `data:image/png;base64,${base64Image}`;
         } catch {}
       }
-      return { roleCard, worldBook, preset, extractedName, backgroundImage };
+
+      let alternateGreetings: string[] | undefined;
+      if (Array.isArray(data.data?.alternate_greetings)) {
+        alternateGreetings = data.data.alternate_greetings;
+      }
+
+      return { roleCard, worldBook, preset, extractedName, backgroundImage, alternateGreetings };
     } catch (e) {
       throw new Error('导入JSON角色卡失败: ' + (e instanceof Error ? e.message : '未知错误'));
     }

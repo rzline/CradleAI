@@ -30,18 +30,8 @@ export class MobileLLM implements LLM {
    * @param config LLM配置
    */
   public updateConfig(config: LLMConfig): void {
-    // 新增：自动读取settings-helper中的全局配置
-    const globalApiSettings = getApiSettings();
-    // 合并全局配置和传入配置，优先使用传入的config字段
-    const mergedConfig: LLMConfig = {
-      ...globalApiSettings,
-      ...config,
-      openrouter: { ...globalApiSettings.openrouter, ...config.openrouter },
-      OpenAIcompatible: { ...globalApiSettings.OpenAIcompatible, ...config.OpenAIcompatible }
-    };
-
     // 验证输入配置
-    if (!mergedConfig) {
+    if (!config) {
       console.error('[MobileLLM] 更新配置失败: 配置对象为空');
       return;
     }
@@ -51,7 +41,7 @@ export class MobileLLM implements LLM {
     const originalProvider = this.apiProvider;
     
     // 确保新的API密钥有效
-    const newApiKey = mergedConfig.apiKey || this.apiKey || '';
+    const newApiKey = config.apiKey || this.apiKey || '';
     if (!newApiKey) {
       console.warn('[MobileLLM] 检测到尝试将API密钥设置为空，当前状态:', {
         原密钥长度: originalApiKey.length,
@@ -62,33 +52,33 @@ export class MobileLLM implements LLM {
       // 如果有上一个有效密钥，使用它
       if (this.lastConfig?.apiKey) {
         console.warn('[MobileLLM] 恢复使用上一个有效密钥');
-        mergedConfig.apiKey = this.lastConfig.apiKey;
+        config.apiKey = this.lastConfig.apiKey;
       }
     }
     
     // 更新配置，确保apiKey有值
-    this.apiKey = mergedConfig.apiKey || '';
-    this.apiProvider = mergedConfig.apiProvider || 'gemini';
+    this.apiKey = config.apiKey || '';
+    this.apiProvider = config.apiProvider || 'gemini';
     this.provider = this.apiProvider === 'openrouter' ? 'openrouter' : this.apiProvider === 'openai-compatible' ? 'openai-compatible' : 'gemini';
     
     // 检查 openai-compatible 渠道
-    if (mergedConfig.apiProvider === 'openai-compatible') {
+    if (config.apiProvider === 'openai-compatible') {
       this.provider = 'openai-compatible';
       this.apiProvider = 'openai-compatible';
-      this.model = mergedConfig.OpenAIcompatible?.model || 'gpt-3.5-turbo';
-      this.apiKey = mergedConfig.OpenAIcompatible?.apiKey || '';
-      this.openaiCompatibleEndpoint = mergedConfig.OpenAIcompatible?.endpoint || '';
-      this.openaiCompatibleConfig = mergedConfig.OpenAIcompatible || {};
+      this.model = config.OpenAIcompatible?.model || 'gpt-3.5-turbo';
+      this.apiKey = config.OpenAIcompatible?.apiKey || '';
+      this.openaiCompatibleEndpoint = config.OpenAIcompatible?.endpoint || '';
+      this.openaiCompatibleConfig = config.OpenAIcompatible || {};
     } else if (this.apiProvider === 'openrouter') {
-      this.model = mergedConfig.openrouter?.model || 'openai/gpt-3.5-turbo';
-      this.openrouterConfig = mergedConfig.openrouter || {};
+      this.model = config.openrouter?.model || 'openai/gpt-3.5-turbo';
+      this.openrouterConfig = config.openrouter || {};
     } else {
       this.model = 'gemini-2.0-flash-exp'; // Gemini默认模型
     }
     
     // 如果有有效的API密钥，保存配置引用
     if (this.apiKey) {
-      this.lastConfig = {...mergedConfig};
+      this.lastConfig = {...config};
     }
     
     // 打印详细的配置变更信息

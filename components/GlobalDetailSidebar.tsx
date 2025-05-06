@@ -6,32 +6,27 @@ import {
   TextInput,
   TouchableOpacity,
   Modal,
-  ScrollView,
   Dimensions,
   Keyboard,
   Switch,
   Platform,
-  KeyboardAvoidingView,
-  TouchableWithoutFeedback,
-  BackHandler,
-  ViewStyle,
-  FlatList,
   Animated,
   Alert,
+  ScrollView,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { BlurView } from 'expo-blur';
 import Slider from '@react-native-community/slider';
-import TextEditorModal from '../common/TextEditorModal';
+import TextEditorModal from './common/TextEditorModal';
 
-interface DetailSidebarProps {
+interface GlobalDetailSidebarProps {
   isVisible: boolean;
   onClose: () => void;
   title: string;
   content: string;
   onContentChange?: (text: string) => void;
   editable?: boolean;
-  entryType?: 'worldbook' | 'preset' | 'author_note';
+  entryType?: 'worldbook' | 'preset' | 'regex';
   entryOptions?: any;
   onOptionsChange?: (options: any) => void;
   name?: string;
@@ -43,7 +38,7 @@ const { width } = Dimensions.get('window');
 const COLOR_BEIGE = 'rgb(255, 224, 195)';
 const COLOR_DANGER = '#FF5252';
 
-const DetailSidebar: React.FC<DetailSidebarProps> = ({
+const GlobalDetailSidebar: React.FC<GlobalDetailSidebarProps> = ({
   isVisible,
   onClose,
   title,
@@ -63,16 +58,19 @@ const DetailSidebar: React.FC<DetailSidebarProps> = ({
   const [keyboardShown, setKeyboardShown] = useState(false);
   const [localOptions, setLocalOptions] = useState(entryOptions || {});
   const [showTextEditor, setShowTextEditor] = useState(false);
-  
+  const [localRegex, setLocalRegex] = useState<any>(entryOptions || {});
+  const [testInput, setTestInput] = useState('');
+  const [testOutput, setTestOutput] = useState('');
+
   const translateYValue = useRef(new Animated.Value(0)).current;
-  const textInputRef = useRef<TextInput>(null);
   const userCloseRef = useRef(false); // 标记是否用户主动关闭
 
   useEffect(() => {
     setLocalContent(content);
     setLocalName(name || '');
     setLocalOptions(entryOptions || {});
-  }, [content, name, entryOptions]);
+    if (entryType === 'regex') setLocalRegex(entryOptions || {});
+  }, [content, name, entryOptions, entryType]);
 
   useEffect(() => {
     const keyboardWillShowListener = Keyboard.addListener(
@@ -130,29 +128,13 @@ const DetailSidebar: React.FC<DetailSidebarProps> = ({
   }, [translateYValue]);
 
   useEffect(() => {
-    if (isVisible) {
-      const backHandler = BackHandler.addEventListener('hardwareBackPress', () => {
-        if (isVisible) {
-          onClose();
-          return true;
-        }
-        return false;
-      });
-      
-      return () => {
-        backHandler.remove();
-      };
-    }
-  }, [isVisible, onClose]);
-
-  useEffect(() => {
     if (!isVisible) {
       if (userCloseRef.current) {
         // 用户主动关闭
         userCloseRef.current = false;
       } else {
         // 其他原因导致关闭（如props变化）
-        console.log('[DetailSidebar] Sidebar被动关闭（如props变化或父组件控制）');
+        console.log('[GlobalDetailSidebar] Sidebar被动关闭（如props变化或父组件控制）');
       }
     }
   }, [isVisible]);
@@ -171,9 +153,6 @@ const DetailSidebar: React.FC<DetailSidebarProps> = ({
     } 
     else if (entryType === 'preset' && localOptions.insertType === 'chat') {
       handleOptionsChange({ depth: value });
-    } 
-    else if (entryType === 'author_note') {
-      handleOptionsChange({ injection_depth: value });
     }
   }, [entryType, localOptions, handleOptionsChange]);
 
@@ -192,7 +171,7 @@ const DetailSidebar: React.FC<DetailSidebarProps> = ({
 
   const handleCloseWithKeyboardDismiss = useCallback(() => {
     userCloseRef.current = true;
-    console.log('[DetailSidebar] 用户手动关闭Sidebar');
+    console.log('[GlobalDetailSidebar] 用户手动关闭Sidebar');
     Keyboard.dismiss();
     setTimeout(() => {
       onClose();
@@ -209,6 +188,79 @@ const DetailSidebar: React.FC<DetailSidebarProps> = ({
       onContentChange(newText);
     }
   }, [onContentChange]);
+
+  const handleRegexFieldChange = (key: string, value: any) => {
+    const updated = { ...localRegex, [key]: value };
+    setLocalRegex(updated);
+    if (onOptionsChange) onOptionsChange(updated);
+  };
+
+  const handleAddTrimString = () => {
+    const arr = Array.isArray(localRegex.trimStrings) ? [...localRegex.trimStrings] : [];
+    arr.push('');
+    handleRegexFieldChange('trimStrings', arr);
+  };
+  const handleTrimStringChange = (idx: number, val: string) => {
+    const arr = Array.isArray(localRegex.trimStrings) ? [...localRegex.trimStrings] : [];
+    arr[idx] = val;
+    handleRegexFieldChange('trimStrings', arr);
+  };
+  const handleRemoveTrimString = (idx: number) => {
+    const arr = Array.isArray(localRegex.trimStrings) ? [...localRegex.trimStrings] : [];
+    arr.splice(idx, 1);
+    handleRegexFieldChange('trimStrings', arr);
+  };
+
+  const handlePlacementToggle = (val: number) => {
+    let arr = Array.isArray(localRegex.placement) ? [...localRegex.placement] : [];
+    if (arr.includes(val)) arr = arr.filter(x => x !== val);
+    else arr.push(val);
+    handleRegexFieldChange('placement', arr);
+  };
+
+  const handleTestRegex = useCallback(() => {
+    try {
+      if (!localRegex.findRegex) {
+        setTestOutput('请填写查找正则');
+        return;
+      }
+      let pattern = localRegex.findRegex;
+      let flags = 'g';
+      // 支持 /pattern/flags 格式
+      const regexMatch = /^\/(.+)\/([a-z]*)$/i.exec(localRegex.findRegex);
+      if (regexMatch) {
+        pattern = regexMatch[1];
+        flags = regexMatch[2] || 'g';
+        if (!flags.includes('g')) flags += 'g';
+      }
+      let regex: RegExp;
+      try {
+        regex = new RegExp(pattern, flags);
+      } catch (e) {
+        setTestOutput('正则表达式无效');
+        return;
+      }
+      let result = testInput;
+      let replaceStr = typeof localRegex.replaceString === 'string' ? localRegex.replaceString : '';
+      // 修复：正确处理 {{match}}
+      if (replaceStr.includes('{{match}}')) {
+        result = result.replace(regex, (...args) => {
+          // args[0] 是当前匹配内容
+          return replaceStr.replace(/\{\{match\}\}/g, args[0]);
+        });
+      } else {
+        result = result.replace(regex, replaceStr);
+      }
+      if (Array.isArray(localRegex.trimStrings)) {
+        for (const s of localRegex.trimStrings) {
+          if (s) result = result.split(s).join('');
+        }
+      }
+      setTestOutput(result);
+    } catch (e: any) {
+      setTestOutput('测试出错: ' + e?.message);
+    }
+  }, [testInput, localRegex]);
 
   const renderEntryOptions = () => {
     if (!entryType || !localOptions) return null;
@@ -390,21 +442,127 @@ const DetailSidebar: React.FC<DetailSidebarProps> = ({
           </View>
         );
 
-      case 'author_note':
+      case 'regex':
         return (
           <View style={styles.optionsContainer}>
             <View style={styles.optionRow}>
-              <Text style={styles.optionLabel}>深度: {localOptions.injection_depth}</Text>
-              <Slider
-                style={styles.slider}
-                minimumValue={0}
-                maximumValue={5}
-                step={1}
-                value={localOptions.injection_depth || 0}
-                onValueChange={handleUpdateSlider}
-                minimumTrackTintColor={COLOR_BEIGE}
-                maximumTrackTintColor="#444"
+              <Text style={styles.optionLabel}>启用:</Text>
+              <Switch
+                trackColor={{ false: "#767577", true: "#ffe0c3" }}
+                thumbColor={!localRegex.disabled ? "#ffe0c3" : "#f4f3f4"}
+                ios_backgroundColor="#3e3e3e"
+                onValueChange={v => handleRegexFieldChange('disabled', !v)}
+                value={!localRegex.disabled}
               />
+            </View>
+            <View style={styles.optionRow}>
+              <Text style={styles.optionLabel}>应用于:</Text>
+              <TouchableOpacity
+                style={[
+                  styles.radioButton,
+                  Array.isArray(localRegex.placement) && localRegex.placement.includes(1) && styles.radioButtonSelected,
+                ]}
+                onPress={() => handlePlacementToggle(1)}
+              >
+                <Text style={[
+                  styles.radioText,
+                  Array.isArray(localRegex.placement) && localRegex.placement.includes(1) && styles.radioTextSelected,
+                ]}>用户</Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={[
+                  styles.radioButton,
+                  Array.isArray(localRegex.placement) && localRegex.placement.includes(2) && styles.radioButtonSelected,
+                ]}
+                onPress={() => handlePlacementToggle(2)}
+              >
+                <Text style={[
+                  styles.radioText,
+                  Array.isArray(localRegex.placement) && localRegex.placement.includes(2) && styles.radioTextSelected,
+                ]}>AI</Text>
+              </TouchableOpacity>
+            </View>
+            <View style={styles.optionRow}>
+              <Text style={styles.optionLabel}>查找正则:</Text>
+              <TextInput
+                style={[styles.nameInput, { flex: 1 }]}
+                value={localRegex.findRegex || ''}
+                onChangeText={text => handleRegexFieldChange('findRegex', text)}
+                placeholder="输入正则表达式"
+                placeholderTextColor="#999"
+                autoCapitalize="none"
+                autoCorrect={false}
+              />
+            </View>
+            <View style={styles.optionRow}>
+              <Text style={styles.optionLabel}>替换为:</Text>
+              <TextInput
+                style={[styles.nameInput, { flex: 1 }]}
+                value={localRegex.replaceString || ''}
+                onChangeText={text => handleRegexFieldChange('replaceString', text)}
+                placeholder="替换字符串，可用{{match}}，或$1等捕获组"
+                placeholderTextColor="#999"
+                autoCapitalize="none"
+                autoCorrect={false}
+              />
+            </View>
+            <View style={styles.optionRow}>
+              <Text style={styles.optionLabel}>Trim:</Text>
+              <View style={{ flex: 1 }}>
+                {Array.isArray(localRegex.trimStrings) && localRegex.trimStrings.map((s: string, idx: number) => (
+                  <View key={idx} style={{ flexDirection: 'row', alignItems: 'center', marginBottom: 4 }}>
+                    <TextInput
+                      style={[styles.nameInput, { flex: 1 }]}
+                      value={s}
+                      onChangeText={text => handleTrimStringChange(idx, text)}
+                      placeholder="要移除的字符串"
+                      placeholderTextColor="#999"
+                    />
+                    <TouchableOpacity onPress={() => handleRemoveTrimString(idx)} style={{ marginLeft: 6 }}>
+                      <Ionicons name="close-circle" size={18} color="#ff5252" />
+                    </TouchableOpacity>
+                  </View>
+                ))}
+                <TouchableOpacity onPress={handleAddTrimString} style={{ marginTop: 4 }}>
+                  <Ionicons name="add-circle-outline" size={18} color="#ffe0c3" />
+                </TouchableOpacity>
+              </View>
+            </View>
+            <View style={{ marginTop: 16 }}>
+              <Text style={{ color: '#fff', fontSize: 15, marginBottom: 6 }}>测试</Text>
+              <View style={{ flexDirection: 'row', alignItems: 'center', marginBottom: 8 }}>
+                <TextInput
+                  style={[styles.nameInput, { flex: 1, backgroundColor: '#222', color: '#fff' }]}
+                  value={testInput}
+                  onChangeText={setTestInput}
+                  placeholder="输入要测试的文本"
+                  placeholderTextColor="#888"
+                  autoCapitalize="none"
+                  autoCorrect={false}
+                />
+                <TouchableOpacity
+                  onPress={handleTestRegex}
+                  style={{
+                    marginLeft: 8,
+                    backgroundColor: '#ffe0c3',
+                    borderRadius: 4,
+                    paddingHorizontal: 14,
+                    paddingVertical: 8,
+                  }}
+                >
+                  <Text style={{ color: '#333', fontWeight: 'bold' }}>测试</Text>
+                </TouchableOpacity>
+              </View>
+              <View style={{
+                minHeight: 40,
+                backgroundColor: '#222',
+                borderRadius: 4,
+                padding: 8,
+              }}>
+                <Text style={{ color: '#ffe0c3', fontSize: 15 }}>
+                  {testOutput}
+                </Text>
+              </View>
             </View>
           </View>
         );
@@ -413,6 +571,22 @@ const DetailSidebar: React.FC<DetailSidebarProps> = ({
         return null;
     }
   };
+
+  const handleDelete = useCallback(() => {
+    if (onDelete) {
+      Alert.alert(
+        "删除确认",
+        "确定要删除此条目吗？",
+        [
+          { text: "取消", style: "cancel" },
+          { text: "删除", style: "destructive", onPress: () => {
+            onDelete();
+            onClose();
+          }}
+        ]
+      );
+    }
+  }, [onDelete, onClose]);
 
   return (
     <Modal
@@ -433,8 +607,15 @@ const DetailSidebar: React.FC<DetailSidebarProps> = ({
             <View style={styles.header}>
               <Text style={styles.title}>{title}</Text>
               <View style={styles.headerButtons}>
-
-
+                {onDelete && (
+                  <TouchableOpacity 
+                    style={styles.headerButton} 
+                    onPress={handleDelete}
+                    accessibilityLabel="Delete"
+                  >
+                    <Ionicons name="trash-outline" size={22} color={COLOR_DANGER} />
+                  </TouchableOpacity>
+                )}
                 <TouchableOpacity 
                   style={styles.headerButton} 
                   onPress={handleCloseWithKeyboardDismiss}
@@ -444,34 +625,38 @@ const DetailSidebar: React.FC<DetailSidebarProps> = ({
                 </TouchableOpacity>
               </View>
             </View>
+            
+            <ScrollView style={styles.scrollViewContainer}>
+              {name !== undefined && (
+                <View style={styles.nameContainer}>
+                  <Text style={styles.nameLabel}>名称:</Text>
+                  <TextInput
+                    style={styles.nameInput}
+                    value={localName}
+                    onChangeText={setLocalName}
+                    editable={editable}
+                    placeholder="输入名称..."
+                    placeholderTextColor="#999"
+                  />
+                </View>
+              )}
 
-            {name !== undefined && (
-              <View style={styles.nameContainer}>
-                <Text style={styles.nameLabel}>名称:</Text>
-                <TextInput
-                  style={styles.nameInput}
-                  value={localName}
-                  onChangeText={setLocalName}
-                  editable={editable}
-                  placeholder="输入名称..."
-                  placeholderTextColor="#999"
-                />
+              {renderEntryOptions()}
+
+              <View style={styles.textContentContainer}>
+                <TouchableOpacity 
+                  style={styles.textPreview} 
+                  onPress={handleTextPress}
+                  disabled={!editable}
+                >
+                  <Text style={styles.textPreviewContent} numberOfLines={0}>
+                    {localContent || '点击编辑文本...'}
+                  </Text>
+                </TouchableOpacity>
               </View>
-            )}
-
-            {renderEntryOptions()}
-
-            <View style={styles.scrollContainer}>
-              <TouchableOpacity 
-                style={styles.textPreview} 
-                onPress={handleTextPress}
-                disabled={!editable}
-              >
-                <Text style={styles.textPreviewContent} numberOfLines={0}>
-                  {localContent || '点击编辑文本...'}
-                </Text>
-              </TouchableOpacity>
-            </View>
+              
+              <View style={{ height: 20 }} />
+            </ScrollView>
 
             <View style={styles.buttonContainer}>
               <TouchableOpacity
@@ -507,9 +692,6 @@ const styles = StyleSheet.create({
   container: {
     flex: 1,
   },
-  keyboardAvoidingView: {
-    flex: 1,
-  },
   modalWrapper: {
     flex: 1,
     justifyContent: 'center',
@@ -526,16 +708,19 @@ const styles = StyleSheet.create({
     overflow: 'hidden',
     flexDirection: 'column',
   },
-  scrollContainer: {
+  scrollViewContainer: {
     flex: 1,
+  },
+  textContentContainer: {
     minHeight: 200,
+    paddingBottom: 10,
   },
   textPreview: {
-    flex: 1,
     padding: 16,
     backgroundColor: '#444',
     borderRadius: 8,
     margin: 16,
+    minHeight: 150,
   },
   textPreviewContent: {
     color: '#fff',
@@ -561,9 +746,6 @@ const styles = StyleSheet.create({
   headerButton: {
     padding: 4,
     marginLeft: 8,
-  },
-  closeButton: {
-    padding: 4,
   },
   nameContainer: {
     flexDirection: 'row',
@@ -592,11 +774,7 @@ const styles = StyleSheet.create({
     borderTopWidth: 1,
     borderTopColor: '#444',
     backgroundColor: '#333',
-  },
-  buttonContainerWithKeyboard: {
-    borderTopWidth: 1,
-    borderTopColor: '#444',
-    backgroundColor: '#333',
+    position: 'relative',
   },
   button: {
     paddingVertical: 8,
@@ -657,4 +835,4 @@ const styles = StyleSheet.create({
   },
 });
 
-export default DetailSidebar;
+export default GlobalDetailSidebar;

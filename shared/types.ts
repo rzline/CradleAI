@@ -131,6 +131,21 @@ export interface AuthorNoteJson {
     injection_depth: number;
 }
 
+// ============= 全局预设/世界书类型 =============
+
+export interface GlobalPresetConfig {
+  enabled: boolean; // 是否启用全局预设
+  presetJson: PresetJson | null; // 全局预设内容
+}
+
+export type GlobalWorldbookPriority = '全局优先' | '角色优先';
+
+export interface GlobalWorldbookConfig {
+  enabled: boolean; // 是否启用全局世界书
+  priority: GlobalWorldbookPriority; // 插入优先级
+  worldbookJson: WorldBookJson | null; // 全局世界书内容
+}
+
 // ============= 聊天消息类型 =============
 
 export interface MessagePart {
@@ -149,6 +164,7 @@ export interface MessagePart {
 export interface ChatMessage {
     role: string;
     parts: MessagePart[]  ;
+    content?: string; // 直接内容
     is_first_mes?: boolean;
     is_author_note?: boolean;
     is_d_entry?: boolean;
@@ -210,6 +226,7 @@ export interface Character {
   id: string;
   name: string;
   avatar: string | null;
+  extraGreetings?: string[]; // 新增：额外问候语
   // 修改：backgroundImage 可为 string 或 CharacterImage
   backgroundImage: string | CharacterImage | null;
   // 新增：背景图片配置（用于后处理）
@@ -226,6 +243,7 @@ export interface Character {
   age?: string;
   gender?: string;
   imageHistory?: CharacterImage[];
+  
   // Add unified cradle fields directly to Character
   inCradleSystem?: boolean; // Whether this character is in the cradle system
   cradleStatus?: 'growing' | 'mature' | 'ready'; // The status of the character in the cradle
@@ -679,7 +697,9 @@ export interface ChatSettings {
     apiKey?: string;
     model?: string;
     endpoint?: string;
-    // 其他配置项
+    // 新增：多渠道支持
+    providers?: OpenAICompatibleProviderConfig[];
+    selectedProviderId?: string;
   };
 }
 
@@ -715,4 +735,12 @@ export interface DiarySettings {
   lastTriggered?: number; // Timestamp of last trigger
   circleMemoryWeight?: number; // Weight for Circle memory
   circleMemoryCount?: number; // Number of Circle posts to consider
+}
+
+export interface OpenAICompatibleProviderConfig {
+  id: string; // unique id for the provider
+  name: string; // user-friendly name
+  apiKey: string;
+  model: string;
+  endpoint: string;
 }

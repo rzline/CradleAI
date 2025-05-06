@@ -15,6 +15,7 @@ export interface ScenePromptParams {
   userIdentification?: string;
   conversationHistory?: string;
   characterJsonData?: string;
+  allCommentsText?: string; // 新增：全部评论内容
 }
 
 export const CirclePrompts = {
@@ -103,11 +104,12 @@ ${params.conversationHistory ? `【你与${params.userIdentification || '对方'
 【原帖内容】${params.context || '无'}
 ${params.hasImages ? "该动态包含图片内容，请首先关注【图片描述】部分，这是对图片内容的详细描述。" : ''}
 
-【历史对话记录】
-${params.conversationHistory || '这是对话的开始'}
+${params.allCommentsText ? `【评论区全部内容】\n${params.allCommentsText}\n` : ''}
+
+${params.conversationHistory ? `【历史对话记录】\n${params.conversationHistory}` : ''}
 
 【最新回复】${params.contentText}
-【回复作者】${params.authorName || '某人'}
+【评论回复者】${params.userIdentification || '某人'}
 
 ${params.characterJsonData ? `【角色设定】${params.characterJsonData}` : ''}
 
@@ -168,11 +170,11 @@ ${params.conversationHistory ? '5. 如何让你的回应与之前的对话保持
   /**
    * Prompt for replying to a regular post (no images)
    */
-  replyToPost: (params: ScenePromptParams) => `你${params.charName ? '（' + params.charName + '）' : ''}正在浏览以下朋友圈动态：
+  replyToPost: (params: ScenePromptParams) => `你${params.charName ? '（' + params.charName + '）' : ''}正在浏览以下朋友圈下面的内容：
 
-【作者】${params.authorName || '某人'}
+【写这条内容的人】${params.authorName || '某人'}
 【内容】${params.contentText}
-【上下文】${params.context || '无'}
+【原帖的内容】${params.context || '无'}
 ${params.characterJsonData ? `【角色设定】${params.characterJsonData}` : ''}
 ${params.conversationHistory ? `【你与${params.authorName === '用户' || params.userIdentification ? '用户' : '对方'}的历史对话】\n${params.conversationHistory}` : ''}
 ${params.hasImages ? "该动态包含图片内容，请首先关注【图片描述】部分，这是对图片内容的详细描述。你的回应应该主要基于图片内容，而不仅仅是动态的文字。" : ''}

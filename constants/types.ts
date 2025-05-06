@@ -181,7 +181,7 @@ export interface PresetEntryUI {
   content: string;
   isEditable: boolean;
   insertType: 'relative' | 'chat';
-  role: 'user' | 'model';
+  role: 'user' | 'model' | `assistant`;
   order: number;
   isDefault: boolean;
   enable: boolean;
