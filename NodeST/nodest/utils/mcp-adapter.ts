@@ -392,6 +392,9 @@ export class MCPAdapter {
    * @returns 搜索结果
    */
   async search(searchParams: SearchParams): Promise<BraveSearchResponse> {
+    // 新增：每次搜索前都从存储中加载API Key，确保使用最新的Key
+    await this.loadApiKey();
+
     if (!this.isConnected) {
       await this.connect();
     }

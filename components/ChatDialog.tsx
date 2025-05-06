@@ -1208,27 +1208,34 @@ const ChatDialog: React.FC<ExtendedChatDialogProps> = ({
             borderRadius: 12,
             padding: 20,
             width: '85%',
-            maxWidth: 400
+            maxWidth: 400,
+            maxHeight: 480, // 限制弹窗最大高度
           }}>
             <Text style={{ fontWeight: 'bold', fontSize: 16, marginBottom: 10 }}>编辑AI消息内容</Text>
-            <TextInput
-              style={{
-                color: '#333',
-                fontSize: 15,
-                minHeight: 80,
-                borderColor: '#ccc',
-                borderWidth: 1,
-                borderRadius: 8,
-                marginBottom: 16,
-                padding: 8,
-                textAlignVertical: 'top',
-              }}
-              multiline
-              value={editModalText}
-              onChangeText={setEditModalText}
-              autoFocus
-              placeholder="请输入新的AI消息内容"
-            />
+            <ScrollView
+              style={{ maxHeight: 240, marginBottom: 16 }}
+              keyboardShouldPersistTaps="handled"
+              contentContainerStyle={{ flexGrow: 1 }}
+            >
+              <TextInput
+                style={{
+                  color: '#333',
+                  fontSize: 15,
+                  minHeight: 80,
+                  borderColor: '#ccc',
+                  borderWidth: 1,
+                  borderRadius: 8,
+                  marginBottom: 0,
+                  padding: 8,
+                  textAlignVertical: 'top',
+                }}
+                multiline
+                value={editModalText}
+                onChangeText={setEditModalText}
+                autoFocus
+                placeholder="请输入新的AI消息内容"
+              />
+            </ScrollView>
             <TouchableOpacity
               style={{
                 backgroundColor: '#3498db',

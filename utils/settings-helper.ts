@@ -59,6 +59,18 @@ export function storeUserSettingsGlobally(settings: GlobalSettings): void {
         localStorage.setItem('openai_compatible_endpoint', settings.chat.OpenAIcompatible.endpoint);
       }
     }
+
+    // 新增：同步Brave Search API Key到AsyncStorage（React Native环境）
+    if (settings.search?.braveSearchApiKey) {
+      // 动态导入AsyncStorage，避免web端报错
+      try {
+        // @ts-ignore
+        const AsyncStorage = require('@react-native-async-storage/async-storage').default;
+        AsyncStorage.setItem('brave_search_api_key', settings.search.braveSearchApiKey);
+      } catch (e) {
+        // 忽略web端或require失败
+      }
+    }
     
     console.log('[SettingsHelper] User settings stored globally');
     
