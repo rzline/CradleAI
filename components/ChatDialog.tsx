@@ -34,6 +34,7 @@ import { ttsService, AudioState } from '@/services/ttsService';
 import { useDialogMode } from '@/constants/DialogModeContext';
 import { GestureResponderEvent } from 'react-native';
 import Markdown from 'react-native-markdown-display';
+import TextEditorModal from './common/TextEditorModal';
 
 interface ExtendedChatDialogProps extends ChatDialogProps {
   messageMemoryState?: Record<string, string>;
@@ -1191,86 +1192,23 @@ const ChatDialog: React.FC<ExtendedChatDialogProps> = ({
         </View>
       </Modal>
 
-      <Modal
-        visible={editModalVisible}
-        transparent
-        animationType="fade"
-        onRequestClose={() => setEditModalVisible(false)}
-      >
-        <View style={{
-          flex: 1,
-          backgroundColor: 'rgba(0,0,0,0.5)',
-          justifyContent: 'center',
-          alignItems: 'center'
-        }}>
-          <View style={{
-            backgroundColor: '#fff',
-            borderRadius: 12,
-            padding: 20,
-            width: '85%',
-            maxWidth: 400,
-            maxHeight: 480, // 限制弹窗最大高度
-          }}>
-            <Text style={{ fontWeight: 'bold', fontSize: 16, marginBottom: 10 }}>编辑AI消息内容</Text>
-            <ScrollView
-              style={{ maxHeight: 240, marginBottom: 16 }}
-              keyboardShouldPersistTaps="handled"
-              contentContainerStyle={{ flexGrow: 1 }}
-            >
-              <TextInput
-                style={{
-                  color: '#333',
-                  fontSize: 15,
-                  minHeight: 80,
-                  borderColor: '#ccc',
-                  borderWidth: 1,
-                  borderRadius: 8,
-                  marginBottom: 0,
-                  padding: 8,
-                  textAlignVertical: 'top',
-                }}
-                multiline
-                value={editModalText}
-                onChangeText={setEditModalText}
-                autoFocus
-                placeholder="请输入新的AI消息内容"
-              />
-            </ScrollView>
-            <TouchableOpacity
-              style={{
-                backgroundColor: '#3498db',
-                borderRadius: 8,
-                paddingVertical: 10,
-                alignItems: 'center',
-                marginBottom: 8
-              }}
-              onPress={async () => {
-                if (!editModalText.trim()) {
-                  Alert.alert('内容不能为空');
-                  return;
-                }
-                if (onEditMessage && editTargetMsgId && editTargetAiIndex >= 0) {
-                  onEditMessage(editTargetMsgId, editTargetAiIndex, editModalText);
-                  setEditModalVisible(false);
-                }
-              }}
-            >
-              <Text style={{ color: '#fff', fontWeight: 'bold' }}>确定修改</Text>
-            </TouchableOpacity>
-            <TouchableOpacity
-              style={{
-                backgroundColor: '#aaa',
-                borderRadius: 8,
-                paddingVertical: 10,
-                alignItems: 'center'
-              }}
-              onPress={() => setEditModalVisible(false)}
-            >
-              <Text style={{ color: '#fff' }}>取消</Text>
-            </TouchableOpacity>
-          </View>
-        </View>
-      </Modal>
+      <TextEditorModal
+        isVisible={editModalVisible}
+        initialText={editModalText}
+        title="编辑AI消息内容"
+        placeholder="请输入新的AI消息内容"
+        onClose={() => setEditModalVisible(false)}
+        onSave={(newText) => {
+          if (!newText.trim()) {
+            Alert.alert('内容不能为空');
+            return;
+          }
+          if (onEditMessage && editTargetMsgId && editTargetAiIndex >= 0) {
+            onEditMessage(editTargetMsgId, editTargetAiIndex, newText);
+            setEditModalVisible(false);
+          }
+        }}
+      />
     </>
   );
 };

@@ -631,6 +631,8 @@ const ApiSettings = () => {
         body
       });
 
+
+
       if (!resp.ok) {
         let errMsg = '';
         try {
@@ -1022,7 +1024,50 @@ const ApiSettings = () => {
     }
     setIsModelSelectorVisible(false);
   };
-
+        // 统一测试入口
+        const handleUnifiedTestConnection = async () => {
+          if (providerType === 'openrouter') {
+            // 简单调用 OpenRouter 的文本生成方法
+            try {
+              setIsTesting(true);
+              if (!openRouterKey) {
+                Alert.alert('错误', '请输入OpenRouter API Key');
+                return;
+              }
+              const { OpenRouterAdapter } = require('@/utils/openrouter-adapter');
+              const adapter = new OpenRouterAdapter(openRouterKey, selectedModel || 'openai/gpt-3.5-turbo');
+              const result = await adapter.generateContent([
+                { role: 'user', parts: [{ text: '你好' }] }
+              ]);
+              Alert.alert('连接成功', `收到回复: ${result}`);
+            } catch (err: any) {
+              Alert.alert('连接失败', err?.message || String(err));
+            } finally {
+              setIsTesting(false);
+            }
+          } else if (providerType === 'openai-compatible') {
+            await testOpenAIcompatibleConnection();
+          } else if (providerType === 'gemini') {
+            // 简单调用 Gemini 的文本生成方法
+            try {
+              setIsTesting(true);
+              if (!geminiKey) {
+                Alert.alert('错误', '请输入Gemini API Key');
+                return;
+              }
+              const { GeminiAdapter } = require('@/NodeST/nodest/utils/gemini-adapter');
+              const adapter = new GeminiAdapter(geminiKey);
+              const result = await adapter.generateContent([
+                { role: 'user', parts: [{ text: '你好' }] }
+              ]);
+              Alert.alert('连接成功', `收到回复: ${result}`);
+            } catch (err: any) {
+              Alert.alert('连接失败', err?.message || String(err));
+            } finally {
+              setIsTesting(false);
+            }
+          }
+        };
   return (
     <SafeAreaView style={styles.safeArea}>
       <StatusBar barStyle="light-content" backgroundColor={theme.colors.background} />
@@ -1042,6 +1087,27 @@ const ApiSettings = () => {
         <View style={styles.section}>
             <View style={styles.sectionHeader}>
               <Text style={styles.sectionTitle}>API 渠道</Text>
+                            {/* 缩小为icon按钮 */}
+                            <TouchableOpacity
+                style={{
+                  marginLeft: 8,
+                  padding: 6,
+                  backgroundColor: theme.colors.primary,
+                  borderRadius: 20,
+                  width: 32,
+                  height: 32,
+                  alignItems: 'center',
+                  justifyContent: 'center'
+                }}
+                onPress={handleUnifiedTestConnection}
+                disabled={isTesting}
+              >
+                {isTesting ? (
+                  <ActivityIndicator size={18} color="black" />
+                ) : (
+                  <Ionicons name="flash-outline" size={18} color="black" />
+                )}
+              </TouchableOpacity>
             </View>
             <View style={styles.contentSection}>
               <Text style={styles.inputLabel}>选择 API 提供商</Text>

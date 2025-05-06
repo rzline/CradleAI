@@ -215,39 +215,26 @@ const UnknownTagRenderer = ({
   tnode, 
   ...props 
 }: CustomRendererProps<TBlock>) => {
-  // 获取原始标签名
-  const tagName = tnode.tagName;
-  
-  // 获取原始子内容
-  let innerContent = '';
-  if (tnode.children && tnode.children.length > 0) {
-    // 需要递归处理子内容，确保完整显示
-    const processChildren = (children: readonly any[]): string => {
-      return children.map(child => {
-        if (child.type === 'text') {
-          return child.data;
-        } else if (child.type === 'element') {
-          const attrs = child.attributes ? 
-            Object.entries(child.attributes)
-              .map(([k, v]) => ` ${k}="${v}"`)
-              .join('') : '';
-          
-          return `<${child.tagName}${attrs}>${processChildren(child.children)}</${child.tagName}>`;
-        }
-        return '';
-      }).join('');
-    };
-    
-    innerContent = processChildren(tnode.children);
-  }
-  
-  // 构建原始标签文本
-  const originalTag = `<${tagName}>${innerContent}</${tagName}>`;
-  
-  // 以斜体红色显示未知标签
+  // 递归提取所有子节点的纯文本内容
+  const extractText = (children: readonly any[]): string => {
+    return children.map(child => {
+      if (child.type === 'text') {
+        return child.data;
+      } else if (child.type === 'element' && child.children) {
+        return extractText(child.children);
+      }
+      return '';
+    }).join('');
+  };
+
+  const textContent = tnode.children && tnode.children.length > 0
+    ? extractText(tnode.children)
+    : '';
+
+  // 加粗显示内容
   return (
-    <Text style={{ color: '#e57373', fontStyle: 'italic' }}>
-      {originalTag}
+    <Text style={{ fontWeight: 'bold', color: '#fff' }}>
+      {textContent}
     </Text>
   );
 };
