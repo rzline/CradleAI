@@ -95,12 +95,12 @@ qq群：1017292082
 
 3.优化角色详情编辑页面的交互
 
-4.支持以下自定义标签渲染：
+4.支持以下自定义标签的折叠/渲染，如果有不支持的标签，请根据实际适当调整角色卡，以免包裹的文本消失：
 
 ```
 <thinking> / <think> / <char-think>：思考过程折叠块
 <mem>：回忆折叠块
-<status> / <StatusBlock> / <statusblock>：状态栏块
+<status> / <StatusBlock> / <statusblock>/<detail>/ <summery>：状态栏块
 <websearch>：搜索结果折叠块
 <font>：支持 color/face/size 属性的字体标签
 <img>：图片标签（支持 image:id 及普通 url）
