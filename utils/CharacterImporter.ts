@@ -379,17 +379,35 @@ export class CharacterImporter {
         const orderMap = new Map<string, number>();
         const enabledMap = new Map<string, boolean>();
 
-        // 检查 prompt_order 结构
-        if (!data.prompt_order || !Array.isArray(data.prompt_order) || !data.prompt_order[0]?.order) {
+        // 优化：选取prompt_order数组中order条目最多的对象
+        let bestPromptOrderObj = null;
+        if (Array.isArray(data.prompt_order)) {
+          bestPromptOrderObj = data.prompt_order.reduce(
+            (prev: any, curr: any) => {
+              if (!curr || !Array.isArray(curr.order)) return prev;
+              if (!prev || (curr.order.length > prev.order.length)) return curr;
+              return prev;
+            },
+            null
+          );
+        }
+        // 新增日志：打印选中的prompt_order对象的character_id
+        if (bestPromptOrderObj) {
+          console.log('[预设导入] 选中order条目最多的prompt_order对象:', {
+            character_id: bestPromptOrderObj.character_id,
+            orderLength: Array.isArray(bestPromptOrderObj.order) ? bestPromptOrderObj.order.length : 0
+          });
+        }
+        if (!bestPromptOrderObj || !Array.isArray(bestPromptOrderObj.order)) {
           const msg = '预设文件缺少有效的 prompt_order 字段或 order 数组。';
           const fix = '请确保 prompt_order 字段为数组，且包含 order 数组，每个元素有 identifier 和 enabled 字段。';
           console.error('[预设导入] prompt_order结构错误:', data.prompt_order, '\n修复建议:', fix);
           throw new Error(msg + '\n修复建议: ' + fix);
         }
 
-        data.prompt_order[0].order.forEach((item: any, index: number) => {
+        bestPromptOrderObj.order.forEach((item: any, index: number) => {
           if (!item.identifier) {
-            const msg = `prompt_order[0].order[${index}] 缺少 identifier 字段。`;
+            const msg = `prompt_order[*].order[${index}] 缺少 identifier 字段。`;
             const fix = '请为每个 order 项补全 identifier 字段。';
             console.error('[预设导入] prompt_order项缺失identifier:', item, '\n修复建议:', fix);
             throw new Error(msg + '\n修复建议: ' + fix);

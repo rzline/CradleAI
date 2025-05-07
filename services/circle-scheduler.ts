@@ -2,7 +2,7 @@ import { CircleService } from './circle-service';
 import { Character, GlobalSettings } from '../shared/types';
 import { CirclePost, CircleResponse } from '../shared/types/circle-types';
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import { scheduleCirclePostNotification } from '@/utils/notification-utils';
+// import { scheduleCirclePostNotification } from '@/utils/notification-utils';
 import * as FileSystem from 'expo-file-system'; // Add FileSystem import
 
 // Single instance for queue management
@@ -575,13 +575,13 @@ export class CircleScheduler {
         // If this is a scheduled post, send notification
         if (isScheduled && postContent) {
           try {
-            await scheduleCirclePostNotification(
-              item.character.name,
-              item.character.id,
-              postContent
-            );
+            // await scheduleCirclePostNotification(
+            //   item.character.name,
+            //   item.character.id,
+            //   postContent
+            // );
           } catch (notificationError) {
-            console.error(`【CircleScheduler】发送通知失败:`, notificationError);
+            // console.error(`【CircleScheduler】发送通知失败:`, notificationError);
           }
           
           // Check if the post was already created by CircleService

@@ -90,6 +90,31 @@ const getImageDisplayStyle = (imageInfo?: any) => {
   };
 };
 
+// 已知标签白名单
+const KNOWN_TAGS = [
+  'img', 'thinking', 'think', 'mem', 'status', 'StatusBlock', 'statusblock', 'websearch', 'char-think', 'font',
+  'summary', 'details',
+  'p', 'a', 'h1', 'h2', 'h3', 'h4', 'h5', 'h6', 'div', 'span',
+  'b', 'strong', 'i', 'em', 'u', 'br', 'hr', 'ul', 'ol', 'li',
+  'table', 'tr', 'td', 'th', 'thead', 'tbody', 'blockquote',
+  'pre', 'code', 'mark', 'figure', 'figcaption', 'video', 'audio',
+  'source', 'section', 'article', 'aside', 'nav', 'header', 'footer'
+];
+
+// 移除未知标签，仅保留内容
+function stripUnknownTags(html: string): string {
+  if (!html) return '';
+  // 匹配所有标签
+  return html.replace(/<([a-zA-Z0-9\-]+)(\s[^>]*)?>([\s\S]*?)<\/\1>/g, (match, tag, attrs, content) => {
+    if (KNOWN_TAGS.includes(tag)) {
+      // 已知标签，保留
+      return match;
+    }
+    // 未知标签，递归处理内容
+    return stripUnknownTags(content);
+  });
+}
+
 const ChatDialog: React.FC<ExtendedChatDialogProps> = ({
   messages,
   style,
@@ -349,9 +374,11 @@ const ChatDialog: React.FC<ExtendedChatDialogProps> = ({
     }
 
     if (containsCustomTags(text) || /<\/?[a-z][^>]*>/i.test(text)) {
+      // 渲染前先移除未知标签
+      const cleanedText = stripUnknownTags(text);
       return (
         <RichTextRenderer
-          html={optimizeHtmlForRendering(text)}
+          html={optimizeHtmlForRendering(cleanedText)}
           baseStyle={isUser ? styles.userMessageText : styles.botMessageText}
           onImagePress={(url) => setFullscreenImage(url)}
           maxImageHeight={MAX_IMAGE_HEIGHT}

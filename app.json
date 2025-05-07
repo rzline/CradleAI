@@ -61,7 +61,7 @@
         "expo-splash-screen",
         {
           "image": "./assets/images/adaptive-icon.png",
-          "resizeMode": "contain", 
+          "resizeMode": "contain",
           "backgroundColor": "#ffffff"
         }
       ],
@@ -69,14 +69,6 @@
         "react-native-video",
         {
           "packageInstance": "new ReactNativeVideoPackage()"
-        }
-      ],
-      [
-        "expo-notifications",
-        {
-          "icon": "./assets/images/notification-icon.png",
-          "color": "#ffffff",
-          "sound": false
         }
       ],
       "expo-video"
@@ -101,6 +93,7 @@
       "eas": {
         "projectId": "af0fdb7a-431d-4f1a-8c55-baa9c9cc0fdb"
       }
-    }
+    },
+    "owner": "dmc2014"
   }
 }

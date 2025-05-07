@@ -543,7 +543,7 @@ const App = () => {
 
   // Add auto-message feature variables
   const [autoMessageEnabled, setAutoMessageEnabled] = useState(true);
-  const autoMessageTimerRef = useRef<NodeJS.Timeout | null>(null);
+  const autoMessageTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const autoMessageIntervalRef = useRef<number>(5); // Default 5 minutes
   const lastMessageTimeRef = useRef<number>(Date.now());
   const waitingForUserReplyRef = useRef<boolean>(false); // Track if bot is waiting for user reply

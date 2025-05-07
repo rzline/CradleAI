@@ -31,7 +31,6 @@ import {
 import { Picker } from '@react-native-picker/picker';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import DateTimePicker from '@react-native-community/datetimepicker';
-import { registerForPushNotificationsAsync } from '@/services/notification-service';
 import Animated, { FadeInDown, FadeOut } from 'react-native-reanimated';
 import * as FileSystem from 'expo-file-system'; // 新增
 
@@ -202,14 +201,9 @@ const CharacterInteractionSettings: React.FC<CharacterInteractionSettingsProps> 
     try {
       const newStatus = !notificationsEnabled;
       if (newStatus) {
-        const token = await registerForPushNotificationsAsync();
-        if (token) {
-          setNotificationsEnabled(true);
-          await AsyncStorage.setItem('circle_notifications_enabled', 'true');
-          Alert.alert('通知已启用', '你将收到角色发布朋友圈的通知');
-        } else {
-          Alert.alert('通知权限', '请在设备设置中允许接收通知');
-        }
+        setNotificationsEnabled(true);
+        await AsyncStorage.setItem('circle_notifications_enabled', 'true');
+        Alert.alert('通知已启用', '你将收到角色发布朋友圈的通知（通知功能已被临时禁用）');
       } else {
         setNotificationsEnabled(false);
         await AsyncStorage.setItem('circle_notifications_enabled', 'false');

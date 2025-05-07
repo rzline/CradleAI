@@ -6,8 +6,8 @@ import { CircleService } from '@/services/circle-service';
 import { CirclePost } from '@/shared/types/circle-types';
 import { Character } from '@/shared/types';
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import * as Notifications from 'expo-notifications';
-import { registerForPushNotificationsAsync, listenForNotificationInteractions } from '@/services/notification-service';
+
+// import { registerForPushNotificationsAsync, listenForNotificationInteractions } from '@/services/notification-service';
 
 // Component for managing automatic circle post generation
 export const CircleManager = () => {
@@ -42,26 +42,25 @@ export const CircleManager = () => {
     loadSettings();
     
     // Setup notification handlers
-    const setupNotifications = async () => {
-      if (notificationsEnabled) {
-        await registerForPushNotificationsAsync();
-      }
-    };
-    
-    setupNotifications();
+    // const setupNotifications = async () => {
+    //   if (notificationsEnabled) {
+    //     await registerForPushNotificationsAsync();
+    //   }
+    // };
+    // setupNotifications();
     
     // Listen for notification interactions
-    const unsubscribe = listenForNotificationInteractions((notification) => {
-      const data = notification.request.content.data;
-      if (data?.type === 'circle_post') {
-        console.log('【朋友圈管理器】收到朋友圈通知点击:', data);
-        // Here we could navigate to the post or explore page if needed
-      }
-    });
-    
-    return () => {
-      unsubscribe();
-    };
+    // const unsubscribe = listenForNotificationInteractions((notification) => {
+    //   const data = notification.request.content.data;
+    //   if (data?.type === 'circle_post') {
+    //     console.log('【朋友圈管理器】收到朋友圈通知点击:', data);
+    //     // Here we could navigate to the post or explore page if needed
+    //   }
+    // });
+    // return () => {
+    //   unsubscribe();
+    // };
+    return () => {};
   }, [notificationsEnabled]);
   
   // Get API settings from user context
