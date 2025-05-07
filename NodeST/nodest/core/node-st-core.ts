@@ -1773,7 +1773,11 @@ export class NodeSTCore {
 
             // 发送到API
             let responseText: string | null = null;
-            if (activeAdapter instanceof OpenAIAdapter) {
+            // === 修正：只在没有记忆搜索结果时才直接请求chatCompletion ===
+            const shouldUseMemoryResults = memorySearchResults && 
+                memorySearchResults.results && 
+                memorySearchResults.results.length > 0;
+            if (activeAdapter instanceof OpenAIAdapter && !shouldUseMemoryResults) {
                 // 转换为 OpenAI chat completion 格式
                 const openaiMessages = cleanedContents.map(msg => ({
                     role: msg.role === 'model' ? 'assistant' : msg.role,
@@ -1783,7 +1787,6 @@ export class NodeSTCore {
                     const resp = await activeAdapter.chatCompletion(openaiMessages, {
                         temperature: this.apiSettings?.temperature ?? 0.7,
                         max_tokens: this.apiSettings?.maxTokens ?? 800,
-                        // 修正：传递 memoryResults 和 characterId
                         memoryResults: memorySearchResults,
                         characterId: characterId
                     });
@@ -1796,11 +1799,7 @@ export class NodeSTCore {
             }
 
             // 判断是否应该使用记忆增强
-            const shouldUseMemoryResults = memorySearchResults && 
-                                        memorySearchResults.results && 
-                                        memorySearchResults.results.length > 0;
-                                        
-                                        if (shouldUseMemoryResults && activeAdapter) {
+            if (shouldUseMemoryResults && activeAdapter) {
                 console.log('[NodeSTCore] 调用generateContentWithTools，传递characterId:', characterId); // <--- 记录
                 const response = await activeAdapter.generateContentWithTools(cleanedContents, characterId, memorySearchResults, userMessage);
                 console.log('[NodeSTCore] API response received:', {
@@ -2135,27 +2134,32 @@ export class NodeSTCore {
 
             // 发送到API，传递记忆搜索结果
             let responseText: string | null = null;
+            // 修正：只根据memoryResults是否存在决定调用哪个方法，避免重复请求
+            const shouldUseMemoryResults = memoryResults && memoryResults.results && memoryResults.results.length > 0;
             if (activeAdapter instanceof OpenAIAdapter) {
                 const openaiMessages = cleanedContents.map(msg => ({
                     role: msg.role === 'model' ? 'assistant' : msg.role,
                     content: msg.parts[0]?.text || ''
                 }));
                 try {
-                    console.log('[NodeSTCore][OpenAIAdapter] 调用 generateContent 参数:', {
-                        characterId,
-                        hasMemoryResults: !!memoryResults,
-                        memoryResultsType: typeof memoryResults,
-                        memoryResultsLength: memoryResults?.results?.length
-                    });
-                    const resp = await activeAdapter.chatCompletion(openaiMessages, {
-                        temperature: this.apiSettings?.temperature ?? 0.7,
-                        max_tokens: this.apiSettings?.maxTokens ?? 800,
-                        // 修正：传递 memoryResults 和 characterId
-                        memoryResults: memoryResults,
-                        characterId: characterId
-                    });
-                    if (resp && resp.choices && resp.choices[0]?.message?.content) {
-                        responseText = resp.choices[0].message.content;
+                    if (shouldUseMemoryResults) {
+                        // 有记忆搜索结果时，调用generateContentWithTools
+                        console.log('[NodeSTCore] OpenAIAdapter: 调用 generateContentWithTools');
+                        responseText = await activeAdapter.generateContentWithTools(
+                            cleanedContents, characterId, memoryResults, toolUserMessage
+                        );
+                    } else {
+                        // 没有记忆搜索结果时，直接调用chatCompletion
+                        console.log('[NodeSTCore] OpenAIAdapter: 调用 chatCompletion');
+                        const resp = await activeAdapter.chatCompletion(openaiMessages, {
+                            temperature: this.apiSettings?.temperature ?? 0.7,
+                            max_tokens: this.apiSettings?.maxTokens ?? 800,
+                            memoryResults: memoryResults,
+                            characterId: characterId
+                        });
+                        if (resp && resp.choices && resp.choices[0]?.message?.content) {
+                            responseText = resp.choices[0].message.content;
+                        }
                     }
                 } catch (err) {
                     console.error('[NodeSTCore] OpenAIAdapter chatCompletion error:', err);
