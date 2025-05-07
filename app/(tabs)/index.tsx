@@ -223,10 +223,10 @@ const App = () => {
           }
           Alert.alert('编辑成功', 'AI消息内容已更新');
         } else {
-          Alert.alert('编辑失败', result.error || '未知错误');
+          setTransientError("处理消息时出现了错误");
         }
       } catch (e) {
-        Alert.alert('编辑失败', e instanceof Error ? e.message : '未知错误');
+        setTransientError("处理消息时出现了错误");
       }
     };
 
@@ -315,10 +315,10 @@ const App = () => {
       }
       Alert.alert('删除成功', 'AI消息及其对应用户消息已删除');
     } else {
-      Alert.alert('删除失败', result.error || '未知错误');
+      setTransientError("处理消息时出现了错误");
     }
   } catch (e) {
-    Alert.alert('删除失败', e instanceof Error ? e.message : '未知错误');
+    setTransientError("处理消息时出现了错误");
   }
 };
   const [isTestMarkdownVisible, setIsTestMarkdownVisible] = useState(false);
@@ -1020,7 +1020,7 @@ useEffect(() => {
       newMessage.includes("抱歉，未收到有效回复。");
 
     if (isTransientError) {
-      setTransientError(newMessage);
+      setTransientError("处理消息时出现了错误");
       setTimeout(() => setTransientError(null), 2500); // 2.5秒后自动消失
       return;
     }
@@ -1084,6 +1084,21 @@ useEffect(() => {
   const sendMessageInternal = async (newMessage: string, sender: 'user' | 'bot', isLoading = false) => {
     if (!selectedConversationId) {
       console.warn('No conversation selected.');
+      return null;
+    }
+
+    // 错误消息不再插入消息流
+    const isErrorMessage = newMessage.includes("抱歉，处理消息时出现了错误") || 
+                           newMessage.includes("抱歉，无法重新生成回复") ||
+                           newMessage.includes("发生错误，无法重新生成") ||
+                           newMessage.includes("处理图片时出现了错误") ||
+                           newMessage.includes("生成图片时出现了错误") ||
+                           newMessage.includes("编辑图片时出现了错误") ||
+                           newMessage.includes("发送消息时出现了错误");
+
+    if (isErrorMessage) {
+      setTransientError("处理消息时出现了错误");
+      setTimeout(() => setTransientError(null), 2500);
       return null;
     }
 
@@ -1263,19 +1278,10 @@ useEffect(() => {
           }
         });
       } else {
-        // 生成失败，添加错误消息
-        finalMessages.push({
-          id: `error-${Date.now()}`,
-          text: '抱歉，无法重新生成回复。请稍后再试。',
-          sender: 'bot',
-          isLoading: false,
-          timestamp: Date.now(),
-          metadata: {
-            error: result.error || 'Unknown error during regeneration',
-            regenerationAttempt: true,
-            isErrorMessage: true
-          }
-        });
+        // 生成失败，仅弹出 notification
+        setTransientError("处理消息时出现了错误");
+        setRegeneratingMessageId(null);
+        return;
       }
   
       // 将消息保存到数据库
@@ -1291,13 +1297,8 @@ useEffect(() => {
       console.error('Error regenerating message:', error);
       
       setRegeneratingMessageId(null);
-      
-      // 在错误情况下，恢复原消息列表，并添加错误提示
-      handleSendMessage('发生错误，无法重新生成消息。', 'bot', false, {
-        error: error instanceof Error ? error.message : 'Unknown error',
-        regenerationAttempt: true,
-        isErrorMessage: true
-      });
+      setTransientError("处理消息时出现了错误");
+      return;
     }
   };
 
