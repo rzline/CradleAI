@@ -1919,7 +1919,7 @@ const styles = StyleSheet.create({
     padding: theme.spacing.xs,
   },
   actionText: {
-    color: theme.colors.text,
+    color: theme.colors.black,
     marginLeft: 4,
   },
   

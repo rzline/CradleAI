@@ -1337,6 +1337,15 @@ const ApiSettings = () => {
                   >
                     <Ionicons name="settings-outline" size={22} color={openAIManageMode ? '#f44336' : '#fff'} />
                   </TouchableOpacity>
+                  {/* 收起按钮，仅在有展开项时显示 */}
+                  {openAIExpandedId && (
+                    <TouchableOpacity
+                      style={{ marginLeft: 8 }}
+                      onPress={collapseOpenAIProvider}
+                    >
+                      <Ionicons name="chevron-up-circle-outline" size={22} color={theme.colors.primary} />
+                    </TouchableOpacity>
+                  )}
                 </View>
               </View>
               <View style={styles.contentSection}>
@@ -1391,90 +1400,70 @@ const ApiSettings = () => {
                 ))}
 
                 {/* 展开编辑区域 */}
-                {openAIExpandedId && (
-                  (() => {
-                    const editingProvider = openAIProviders.find(p => p.id === openAIExpandedId);
-                    if (!editingProvider) return null;
-                    return (
-                      <View style={{
-                        marginTop: 12,
-                        padding: 12,
-                        backgroundColor: 'rgba(40,40,40,0.7)',
-                        borderRadius: 8,
-                        borderWidth: 1,
-                        borderColor: 'rgba(255,255,255,0.08)'
-                      }}>
-                        <Text style={styles.inputLabel}>渠道名称</Text>
-                        <TextInput
-                          style={styles.input}
-                          value={editingProvider.name}
-                          onChangeText={v => setOpenAIProviders(providers =>
-                            providers.map(p => p.id === editingProvider.id ? { ...p, name: v } : p)
-                          )}
-                          placeholder="自定义名称"
-                          placeholderTextColor="#999"
-                        />
-                        <Text style={styles.inputLabel}>OpenAI兼容端点</Text>
-                        <TextInput
-                          style={styles.input}
-                          value={editingProvider.endpoint}
-                          onChangeText={v => setOpenAIProviders(providers =>
-                            providers.map(p => p.id === editingProvider.id ? { ...p, endpoint: v } : p)
-                          )}
-                          placeholder="如 https://api.openai.com"
-                          placeholderTextColor="#999"
-                          autoCapitalize="none"
-                        />
-                        <Text style={styles.inputLabel}>API Key</Text>
-                        <TextInput
-                          style={styles.input}
-                          value={editingProvider.apiKey}
-                          onChangeText={v => setOpenAIProviders(providers =>
-                            providers.map(p => p.id === editingProvider.id ? { ...p, apiKey: v } : p)
-                          )}
-                          placeholder="输入 API Key"
-                          placeholderTextColor="#999"
-                          secureTextEntry={true}
-                        />
-                        <Text style={styles.inputLabel}>模型</Text>
-                        <TextInput
-                          style={styles.input}
-                          value={editingProvider.model}
-                          onChangeText={v => setOpenAIProviders(providers =>
-                            providers.map(p => p.id === editingProvider.id ? { ...p, model: v } : p)
-                          )}
-                          placeholder="输入模型名"
-                          placeholderTextColor="#999"
-                        />
-                        <View style={{ flexDirection: 'row', marginTop: 12 }}>
-                          <TouchableOpacity
-                            style={[styles.testButton, { flex: 1 }]}
-                            onPress={testOpenAIcompatibleConnection}
-                            disabled={isTesting}
-                          >
-                            {isTesting ? (
-                              <ActivityIndicator size="small" color="#fff" />
-                            ) : (
-                              <Text style={styles.buttonText}>测试连接</Text>
-                            )}
-                          </TouchableOpacity>
-                          <TouchableOpacity
-                            style={[styles.saveButton, { flex: 1, marginLeft: 8 }]}
-                            onPress={collapseOpenAIProvider}
-                          >
-                            <Text style={styles.savebuttonText}>收起</Text>
-                          </TouchableOpacity>
-                        </View>
-                      </View>
-                    );
-                  })()
-                )}
+                {openAIExpandedId && (() => {
+                  const editingProvider = openAIProviders.find(p => p.id === openAIExpandedId);
+                  if (!editingProvider) return null;
+                  return (
+                    <View style={{
+                      marginTop: 12,
+                      padding: 12,
+                      backgroundColor: 'rgba(40,40,40,0.7)',
+                      borderRadius: 8,
+                      borderWidth: 1,
+                      borderColor: 'rgba(255,255,255,0.08)'
+                    }}>
+                      <Text style={styles.inputLabel}>渠道名称</Text>
+                      <TextInput
+                        style={styles.input}
+                        value={editingProvider.name}
+                        onChangeText={v => setOpenAIProviders(providers =>
+                          providers.map(p => p.id === editingProvider.id ? { ...p, name: v } : p)
+                        )}
+                        placeholder="自定义名称"
+                        placeholderTextColor="#999"
+                      />
+                      <Text style={styles.inputLabel}>OpenAI兼容端点</Text>
+                      <TextInput
+                        style={styles.input}
+                        value={editingProvider.endpoint}
+                        onChangeText={v => setOpenAIProviders(providers =>
+                          providers.map(p => p.id === editingProvider.id ? { ...p, endpoint: v } : p)
+                        )}
+                        placeholder="如 https://api.openai.com"
+                        placeholderTextColor="#999"
+                        autoCapitalize="none"
+                      />
+                      <Text style={styles.inputLabel}>API Key</Text>
+                      <TextInput
+                        style={styles.input}
+                        value={editingProvider.apiKey}
+                        onChangeText={v => setOpenAIProviders(providers =>
+                          providers.map(p => p.id === editingProvider.id ? { ...p, apiKey: v } : p)
+                        )}
+                        placeholder="输入 API Key"
+                        placeholderTextColor="#999"
+                        secureTextEntry={true}
+                      />
+                      <Text style={styles.inputLabel}>模型</Text>
+                      <TextInput
+                        style={styles.input}
+                        value={editingProvider.model}
+                        onChangeText={v => setOpenAIProviders(providers =>
+                          providers.map(p => p.id === editingProvider.id ? { ...p, model: v } : p)
+                        )}
+                        placeholder="输入模型名"
+                        placeholderTextColor="#999"
+                      />
+                      {/* 收起按钮已移至标题栏 */}
+                    </View>
+                  );
+                })()}
               </View>
             </View>
           )}
 
           <View style={styles.section}>
-            <View style={styles.sectionHeader}>
+            {/* <View style={styles.sectionHeader}>
               <Text style={styles.sectionTitle}>测试入口</Text>
               <Switch
                 value={useActivationCode}
@@ -1482,7 +1471,7 @@ const ApiSettings = () => {
                 trackColor={{ false: '#767577', true: 'rgba(255, 158, 205, 0.4)' }}
                 thumbColor={useActivationCode ? theme.colors.primary : '#f4f3f4'}
               />
-            </View>
+            </View> */}
 
             {useActivationCode && (
               <View style={styles.contentSection}>
@@ -1558,14 +1547,28 @@ const ApiSettings = () => {
           <View style={styles.section}>
             <View style={styles.sectionHeader}>
               <Text style={styles.sectionTitle}>NovelAI</Text>
-              <Switch
-                value={novelAIEnabled}
-                onValueChange={setNovelAIEnabled}
-                trackColor={{ false: '#767577', true: 'rgba(138, 43, 226, 0.4)' }}
-                thumbColor={novelAIEnabled ? '#8a2be2' : '#f4f3f4'}
-              />
+              <View style={{ flexDirection: 'row', alignItems: 'center' }}>
+                <Switch
+                  value={novelAIEnabled}
+                  onValueChange={setNovelAIEnabled}
+                  trackColor={{ false: '#767577', true: 'rgba(138, 43, 226, 0.4)' }}
+                  thumbColor={novelAIEnabled ? '#8a2be2' : '#f4f3f4'}
+                />
+                {novelAIEnabled && (
+                  <TouchableOpacity
+                    style={{ marginLeft: 8 }}
+                    onPress={testNovelAIToken}
+                    disabled={isTestingNovelAI || !novelAIToken}
+                  >
+                    {isTestingNovelAI ? (
+                      <ActivityIndicator size={18} color="#fff" />
+                    ) : (
+                      <Ionicons name="flash-outline" size={18} color="#fff" />
+                    )}
+                  </TouchableOpacity>
+                )}
+              </View>
             </View>
-
             {novelAIEnabled && (
               <View style={styles.contentSection}>
                 <Text style={styles.inputLabel}>NovelAI Token</Text>
@@ -1580,21 +1583,8 @@ const ApiSettings = () => {
                 <Text style={styles.helperText}>
                   需要登录 <Text style={styles.link}>novelai.net</Text> 获取 Token，用于生成高质量动漫图片
                 </Text>
-
                 {renderNovelAITokenStatus()}
-
-                <TouchableOpacity
-                  style={[styles.testButton, styles.novelAITestButton, { marginTop: 16 }]}
-                  onPress={testNovelAIToken}
-                  disabled={isTestingNovelAI || !novelAIToken}
-                >
-                  {isTestingNovelAI ? (
-                    <ActivityIndicator size="small" color="#fff" />
-                  ) : (
-                    <Text style={styles.buttonText}>验证 NovelAI Token</Text>
-                  )}
-                </TouchableOpacity>
-                
+                {/* 按钮已移至标题栏 */}
               </View>
             )}
           </View>
@@ -1602,6 +1592,17 @@ const ApiSettings = () => {
           <View style={styles.section}>
             <View style={styles.sectionHeader}>
               <Text style={styles.sectionTitle}>Brave Search API</Text>
+              <TouchableOpacity
+                style={{ marginLeft: 8 }}
+                onPress={testBraveSearch}
+                disabled={isTestingBraveSearch || !braveSearchApiKey}
+              >
+                {isTestingBraveSearch ? (
+                  <ActivityIndicator size={18} color="#fff" />
+                ) : (
+                  <Ionicons name="flash-outline" size={18} color="#fff" />
+                )}
+              </TouchableOpacity>
             </View>
             <View style={styles.contentSection}>
               <Text style={styles.inputLabel}>Brave Search API Key</Text>
@@ -1616,34 +1617,35 @@ const ApiSettings = () => {
               <Text style={styles.helperText}>
                 可从 <Text style={styles.link}>https://brave.com/search/api/</Text> 获取免费 API Key
               </Text>
-              
-
-
-              <TouchableOpacity
-                style={[styles.testButton, styles.braveTestButton, { marginTop: 16 }]}
-                onPress={testBraveSearch}
-                disabled={isTestingBraveSearch || !braveSearchApiKey}
-              >
-                {isTestingBraveSearch ? (
-                  <ActivityIndicator size="small" color="#fff" />
-                ) : (
-                  <Text style={styles.buttonText}>测试 Brave Search</Text>
-                )}
-              </TouchableOpacity>
+              {/* 按钮已移至标题栏 */}
             </View>
           </View>
 
           <View style={styles.section}>
             <View style={styles.sectionHeader}>
               <Text style={styles.sectionTitle}>智谱清言嵌入</Text>
-              <Switch
-                value={useZhipuEmbedding}
-                onValueChange={setUseZhipuEmbedding}
-                trackColor={{ false: '#767577', true: 'rgba(255, 158, 205, 0.4)' }}
-                thumbColor={useZhipuEmbedding ? theme.colors.primary : '#f4f3f4'}
-              />
+              <View style={{ flexDirection: 'row', alignItems: 'center' }}>
+                <Switch
+                  value={useZhipuEmbedding}
+                  onValueChange={setUseZhipuEmbedding}
+                  trackColor={{ false: '#767577', true: 'rgba(255, 158, 205, 0.4)' }}
+                  thumbColor={useZhipuEmbedding ? theme.colors.primary : '#f4f3f4'}
+                />
+                {useZhipuEmbedding && (
+                  <TouchableOpacity
+                    style={{ marginLeft: 8 }}
+                    onPress={testZhipuEmbedding}
+                    disabled={isTesting || !zhipuApiKey}
+                  >
+                    {isTesting ? (
+                      <ActivityIndicator size={18} color="#fff" />
+                    ) : (
+                      <Ionicons name="flash-outline" size={18} color="#fff" />
+                    )}
+                  </TouchableOpacity>
+                )}
+              </View>
             </View>
-
             {useZhipuEmbedding && (
               <View style={styles.contentSection}>
                 <Text style={styles.inputLabel}>智谱清言 API Key</Text>
@@ -1658,24 +1660,13 @@ const ApiSettings = () => {
                 <Text style={styles.helperText}>
                   可从 <Text style={styles.link}>智谱清言开放平台</Text> 获取 API Key
                 </Text>
-
-                <TouchableOpacity
-                  style={[styles.testButton, styles.zhipuTestButton, { marginTop: 16 }]}
-                  onPress={testZhipuEmbedding}
-                  disabled={isTesting || !zhipuApiKey}
-                >
-                  {isTesting ? (
-                    <ActivityIndicator size="small" color="#fff" />
-                  ) : (
-                    <Text style={styles.buttonText}>测试智谱嵌入</Text>
-                  )}
-                </TouchableOpacity>
+                {/* 按钮已移至标题栏 */}
               </View>
             )}
           </View>
 
           <View style={styles.buttonGroup}>
-            <TouchableOpacity
+            {/* <TouchableOpacity
               style={styles.testButton}
               onPress={testConnection}
               disabled={isTesting}
@@ -1688,7 +1679,7 @@ const ApiSettings = () => {
                   <Text style={styles.buttonText}>测试连接</Text>
                 </>
               )}
-            </TouchableOpacity>
+            </TouchableOpacity> */}
 
             <TouchableOpacity
               style={styles.saveButton}
