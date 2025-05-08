@@ -1777,29 +1777,20 @@ export class NodeSTCore {
             const shouldUseMemoryResults = memorySearchResults && 
                 memorySearchResults.results && 
                 memorySearchResults.results.length > 0;
-            if (activeAdapter instanceof OpenAIAdapter && !shouldUseMemoryResults) {
-                // 转换为 OpenAI chat completion 格式
-                const openaiMessages = cleanedContents.map(msg => ({
-                    role: msg.role === 'model' ? 'assistant' : msg.role,
-                    content: msg.parts[0]?.text || ''
-                }));
-                try {
-                    const resp = await activeAdapter.chatCompletion(openaiMessages, {
-                        temperature: this.apiSettings?.temperature ?? 0.7,
-                        max_tokens: this.apiSettings?.maxTokens ?? 800,
-                        memoryResults: memorySearchResults,
-                        characterId: characterId
-                    });
-                    if (resp && resp.choices && resp.choices[0]?.message?.content) {
-                        responseText = resp.choices[0].message.content;
-                    }
-                } catch (err) {
-                    console.error('[NodeSTCore] OpenAIAdapter chatCompletion error:', err);
+            // === 修正：只调用一次 generateContent 或 generateContentWithTools，不再直接调用 chatCompletion ===
+            if (activeAdapter instanceof OpenAIAdapter) {
+                if (shouldUseMemoryResults && activeAdapter.generateContentWithTools) {
+                    // 有记忆搜索结果时，优先用 generateContentWithTools
+                    responseText = await activeAdapter.generateContentWithTools(
+                        cleanedContents, characterId, memorySearchResults, userMessage
+                    );
+                } else {
+                    // 否则只调用 generateContent
+                    responseText = await activeAdapter.generateContent(
+                        cleanedContents, characterId, memorySearchResults
+                    );
                 }
-            }
-
-            // 判断是否应该使用记忆增强
-            if (shouldUseMemoryResults && activeAdapter) {
+            } else if (shouldUseMemoryResults && activeAdapter) {
                 console.log('[NodeSTCore] 调用generateContentWithTools，传递characterId:', characterId); // <--- 记录
                 const response = await activeAdapter.generateContentWithTools(cleanedContents, characterId, memorySearchResults, userMessage);
                 console.log('[NodeSTCore] API response received:', {
@@ -2406,19 +2397,35 @@ export class NodeSTCore {
         messageIndex: number,
         apiKey: string,
         characterId?: string,
-        customUserName?: string // Add parameter for customUserName
+        customUserName?: string, // Add parameter for customUserName
+        apiSettings?: Partial<GlobalSettings['chat']> // <--- 新增参数
     ): Promise<string | null> {
         try {
             console.log('[NodeSTCore] Starting regenerateFromMessage:', {
                 conversationId,
                 messageIndex,
                 hasCharacterId: !!characterId,
-                hasCustomUserName: !!customUserName
+                hasCustomUserName: !!customUserName,
+                apiSettings: !!apiSettings,
             });
 
+             // === 修正点：始终用最新apiSettings初始化适配器 ===
+            this.updateApiSettings(apiKey, apiSettings);
+
+            // === 修正：根据apiProvider初始化对应适配器 ===
+            if (apiKey) {
+                const provider = (apiSettings?.apiProvider ?? this.apiSettings?.apiProvider);
+                if (provider === 'openai-compatible' && !this.openAICompatibleAdapter) {
+                    this.initAdapters(apiKey, apiSettings ?? this.apiSettings);
+                } else if (provider === 'openrouter' && !this.openRouterAdapter) {
+                    this.initAdapters(apiKey, apiSettings ?? this.apiSettings);
+                } else if ((!provider || provider === 'gemini') && !this.geminiAdapter) {
+                    this.initAdapters(apiKey, apiSettings ?? this.apiSettings);
+                }
+            }
             // 确保Adapter已初始化
             if ((!this.geminiAdapter || !this.openRouterAdapter || !this.openAICompatibleAdapter) && apiKey) {
-                this.initAdapters(apiKey, this.apiSettings);
+                this.initAdapters(apiKey, apiSettings ?? this.apiSettings);
             }
 
             // 获取正确的 adapter

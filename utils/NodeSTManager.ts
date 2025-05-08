@@ -588,13 +588,14 @@ console.log(`[NodeSTManager] Setting search enabled to: ${enabled}`); // Add log
             throw new Error('NodeST实例未初始化');
         }
 
-        // 调用NodeST的regenerateFromMessage方法
+        // 调用NodeST的regenerateFromMessage方法，补充apiSettings参数
         const response = await this.nodeST.regenerateFromMessage(
             params.conversationId,
             params.messageIndex,
             params.apiKey,
             params.character?.id, // 传递角色ID用于记忆服务
-            params.character?.customUserName // 传递自定义用户名
+            params.character?.customUserName, // 传递自定义用户名
+            params.apiSettings // <--- 新增，传递apiSettings
         );
 
         console.log('[NodeSTManager] 重新生成成功');

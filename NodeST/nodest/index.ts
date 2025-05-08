@@ -15,6 +15,7 @@ import { GeminiAdapter } from './utils/gemini-adapter';
 import { OpenRouterAdapter } from './utils/openrouter-adapter';
 import { OpenAIAdapter } from './utils/openai-adapter';
 import { CharacterUtils } from './utils/character-utils';
+import ApiSettings from '@/app/pages/api-settings';
 
 export interface ProcessChatResponse {
     success: boolean;
@@ -735,6 +736,7 @@ export class NodeST {
      * @param apiKey API密钥
      * @param characterId 可选的角色ID，用于记忆服务
      * @param customUserName 可选的自定义用户名
+     * @param apiSettings 可选的API设置
      * @returns 新生成的回复或null
      */
     async regenerateFromMessage(
@@ -742,7 +744,8 @@ export class NodeST {
         messageIndex: number,
         apiKey: string,
         characterId?: string,
-        customUserName?: string // Add parameter for customUserName
+        customUserName?: string, // Add parameter for customUserName
+        apiSettings?: Partial<GlobalSettings['chat']> // <-- 新增参数
     ): Promise<string | null> {
         try {
             // 确保实例已初始化
@@ -754,15 +757,19 @@ export class NodeST {
                 throw new Error('NodeSTCore未初始化');
             }
 
+            // === 修复点：确保apiSettings已更新，adapter已切换 ===
+            this.updateApiSettings(apiKey, apiSettings);
+
             console.log(`[NodeST] Regenerating message at index ${messageIndex} for conversation ${conversationId}`);
             
-            // 调用NodeSTCore的regenerateFromMessage方法
+            // 调用NodeSTCore的regenerateFromMessage方法，传递apiSettings
             return await this.nodeSTCore.regenerateFromMessage(
                 conversationId,
                 messageIndex,
                 apiKey,
                 characterId,
-                customUserName // Pass customUserName to core.regenerateFromMessage
+                customUserName, // Pass customUserName to core.regenerateFromMessage
+                apiSettings // <-- 新增
             );
         } catch (error) {
             console.error('[NodeST] regenerateFromMessage失败:', error);

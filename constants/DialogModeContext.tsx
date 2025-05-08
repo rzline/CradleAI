@@ -39,7 +39,7 @@ export const DialogModeProvider: React.FC<{children: React.ReactNode}> = ({ chil
   const [visualNovelSettings, setVisualNovelSettings] = useState({
     fontFamily: 'System',
     textColor: '#FFFFFF',
-    backgroundColor: 'rgba(0, 0, 0, 0.7)',
+    backgroundColor: 'rgba(0, 0, 0, 0.7)', // 默认带alpha
   });
 
   // Load saved mode on mount
@@ -81,7 +81,6 @@ export const DialogModeProvider: React.FC<{children: React.ReactNode}> = ({ chil
   }>) => {
     const newSettings = { ...visualNovelSettings, ...settings };
     setVisualNovelSettings(newSettings);
-    
     try {
       await AsyncStorage.setItem('visualNovelSettings', JSON.stringify(newSettings));
     } catch (error) {

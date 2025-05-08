@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import {
   View,
   Text,
@@ -149,6 +149,29 @@ const ApiSettings = () => {
     user?.settings?.search?.braveSearchApiKey || ''
   );
   const [isTestingBraveSearch, setIsTestingBraveSearch] = useState(false);
+
+  // 新增：判断是否已保存过Brave API Key
+  const hasBraveApiKey = !!(user?.settings?.search?.braveSearchApiKey && user.settings.search.braveSearchApiKey.trim() !== '');
+
+  // --- 新增：Brave Search API Key 自动持久化 ---
+  const braveSaveTimeout = useRef<ReturnType<typeof setTimeout> | null>(null);
+  useEffect(() => {
+    // 防抖保存
+    if (braveSaveTimeout.current) clearTimeout(braveSaveTimeout.current);
+    braveSaveTimeout.current = setTimeout(() => {
+      updateSettings({
+        search: {
+          ...user?.settings?.search,
+          braveSearchApiKey: braveSearchApiKey
+        }
+      });
+    }, 600); // 600ms 防抖
+    return () => {
+      if (braveSaveTimeout.current) clearTimeout(braveSaveTimeout.current);
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [braveSearchApiKey]);
+  // --- end ---
 
   // NovelAI settings
   const [novelAIEnabled, setNovelAIEnabled] = useState(
@@ -1586,7 +1609,7 @@ const ApiSettings = () => {
                 style={styles.input}
                 value={braveSearchApiKey}
                 onChangeText={setBraveSearchApiKey}
-                placeholder="输入 Brave Search API Key"
+                placeholder={hasBraveApiKey ? '************' : '输入 Brave Search API Key'}
                 placeholderTextColor="#999"
                 secureTextEntry={true}
               />

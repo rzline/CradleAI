@@ -35,6 +35,7 @@ import { useDialogMode } from '@/constants/DialogModeContext';
 import { GestureResponderEvent } from 'react-native';
 import Markdown from 'react-native-markdown-display';
 import TextEditorModal from './common/TextEditorModal';
+import Slider from '@react-native-community/slider';
 
 interface ExtendedChatDialogProps extends ChatDialogProps {
   messageMemoryState?: Record<string, string>;
@@ -146,8 +147,66 @@ const ChatDialog: React.FC<ExtendedChatDialogProps> = ({
   const [currentConversationId, setCurrentConversationId] = useState<string | null>(null);
   const [audioStates, setAudioStates] = useState<Record<string, AudioState>>({});
   const [ttsEnhancerEnabled, setTtsEnhancerEnabled] = useState(false);
-  const { mode, visualNovelSettings, isHistoryModalVisible: contextHistoryModalVisible, setHistoryModalVisible: contextSetHistoryModalVisible } = useDialogMode();
+  const { mode, visualNovelSettings, updateVisualNovelSettings, isHistoryModalVisible: contextHistoryModalVisible, setHistoryModalVisible: contextSetHistoryModalVisible } = useDialogMode();
   const isAutoScrollingRef = useRef(false);
+
+  // 新增：视觉小说展开/收起状态和背景透明度
+  const [vnExpanded, setVnExpanded] = useState(false);
+  const [vnBgAlpha, setVnBgAlpha] = useState(() => {
+    // 从 visualNovelSettings.backgroundColor 解析 alpha
+    const match = visualNovelSettings.backgroundColor.match(/rgba?\((\d+),\s*(\d+),\s*(\d+),?\s*([0-9\.]+)?\)/);
+    if (match && match[4]) return parseFloat(match[4]);
+    return 0.7;
+  });
+  const [showAlphaSlider, setShowAlphaSlider] = useState(false);
+
+  // 修复类型错误：不要用 TouchableOpacity 作为类型
+  const alphaBtnRef = useRef<any>(null);
+  const [alphaBtnLayout, setAlphaBtnLayout] = useState<{x: number, y: number, width: number, height: number}>({x: 0, y: 0, width: 0, height: 0});
+
+  // 视觉小说对话框头部高度和底部actions高度
+  const VN_HEADER_HEIGHT = vnExpanded ? 0 : 58; // 展开时无header
+  const VN_ACTIONS_HEIGHT = 62; // actions区高度
+  const VN_VERTICAL_PADDING = 30; // 上下padding和margin
+
+  // 计算文本区最大高度
+  const getVNTextMaxHeight = () => {
+    if (vnExpanded) {
+      // 展开时，顶部紧贴topbar，底部10，减去header和actions高度
+      return height - (VN_HEADER_HEIGHT + VN_ACTIONS_HEIGHT + VN_VERTICAL_PADDING + 10);
+    }
+    // 收起时，固定高度
+    return 220;
+  };
+
+  // 同步 visualNovelSettings.backgroundColor 和 vnBgAlpha
+  useEffect(() => {
+    const match = visualNovelSettings.backgroundColor.match(/rgba?\((\d+),\s*(\d+),\s*(\d+),?/);
+    if (match && match[4]) setVnBgAlpha(parseFloat(match[4]));
+  }, [visualNovelSettings.backgroundColor]);
+
+  // 调整背景色
+  const getVnBgColor = () => {
+    // 取原色的rgb部分，替换alpha
+    const match = visualNovelSettings.backgroundColor.match(/rgba?\((\d+),\s*(\d+),\s*(\d+),?/);
+    if (match) {
+      const [_, r, g, b] = match;
+      return `rgba(${r},${g},${b},${vnBgAlpha})`;
+    }
+    return `rgba(0,0,0,${vnBgAlpha})`;
+  };
+
+  const handleAlphaChange = (alpha: number) => {
+    setVnBgAlpha(alpha);
+    // 更新 visualNovelSettings
+    const match = visualNovelSettings.backgroundColor.match(/rgba?\((\d+),\s*(\d+),\s*(\d+),?/);
+    let newColor = `rgba(0,0,0,${alpha})`;
+    if (match) {
+      const [_, r, g, b] = match;
+      newColor = `rgba(${r},${g},${b},${alpha})`;
+    }
+    updateVisualNovelSettings({ backgroundColor: newColor });
+  };
 
   const handleLongPressOutside = () => {
     if (flatListRef.current) {
@@ -972,64 +1031,245 @@ const ChatDialog: React.FC<ExtendedChatDialogProps> = ({
     const isRegenerating = regeneratingMessageId === lastMessage.id;
     const messageRating = getMessageRating(lastMessage.id);
 
+    // 判断是否first_mes
+    let isFirstMes = false;
+    if (lastMessage.metadata?.isFirstMes) {
+      isFirstMes = true;
+    } else if (
+      selectedCharacter &&
+      selectedCharacter.jsonData
+    ) {
+      try {
+        const characterData = JSON.parse(selectedCharacter.jsonData);
+        if (
+          characterData.roleCard?.first_mes &&
+          lastMessage.text === characterData.roleCard.first_mes
+        ) {
+          isFirstMes = true;
+        }
+      } catch (e) {
+        // ignore
+      }
+    }
+
     return (
-      <View style={[
-        styles.visualNovelContainer,
-        { backgroundColor: visualNovelSettings.backgroundColor }
-      ]}>
-        <View style={styles.visualNovelHeader}>
-          <Image
-            source={displayAvatar}
-            style={styles.visualNovelAvatar}
-          />
-          <Text style={[
-            styles.visualNovelCharacterName,
-            { color: visualNovelSettings.textColor }
-          ]}>
-            {displayName}
-          </Text>
-          <TouchableOpacity
-            style={styles.historyButton}
-            onPress={() => setHistoryModalVisible && setHistoryModalVisible(true)}
-          >
-            <Ionicons name="time-outline" size={20} color="#fff" />
-          </TouchableOpacity>
-        </View>
-        <ScrollView style={styles.visualNovelTextContainer}>
-          <View style={styles.visualNovelTextWrapper}>
-            {containsComplexHtml(displayText) || /<\/?[a-z][^>]*>/i.test(displayText) ? (
-              <RichTextRenderer 
-                html={optimizeHtmlForRendering(displayText)}
-                baseStyle={{ 
-                  color: visualNovelSettings.textColor,
-                  fontFamily: visualNovelSettings.fontFamily,
-                  fontSize: 16,
-                  lineHeight: 22
-                }}
-                onImagePress={(url) => setFullscreenImage(url)}
-                maxImageHeight={MAX_IMAGE_HEIGHT}
-              />
-            ) : (
-              <Text style={[
-                styles.visualNovelText,
-                { 
-                  fontFamily: visualNovelSettings.fontFamily, 
-                  color: visualNovelSettings.textColor 
+      <>
+        <View style={[
+          styles.visualNovelContainer,
+          {
+            backgroundColor: getVnBgColor(),
+            top: vnExpanded ? 0 : undefined, // 展开时紧贴topbar
+            bottom: 10,
+            left: 10,
+            right: 10,
+            maxHeight: vnExpanded ? height - 10 : 320,
+            minHeight: 200,
+          }
+        ]}>
+          <View style={styles.visualNovelHeaderRow}>
+            {/* 右侧：历史按钮 */}
+            <TouchableOpacity
+              style={[
+                styles.visualNovelHeaderButton,
+                { width: BUTTON_SIZE, height: BUTTON_SIZE, backgroundColor: 'transparent' }
+              ]}
+              onPress={() => setHistoryModalVisible && setHistoryModalVisible(true)}
+            >
+              <Ionicons name="time-outline" size={BUTTON_ICON_SIZE} color="#fff" />
+            </TouchableOpacity>
+            {/* 左侧：展开/收起、透明度按钮 */}
+            <View style={styles.visualNovelHeaderLeftButtons}>
+              <TouchableOpacity
+                style={[
+                  styles.visualNovelHeaderButton,
+                  { width: BUTTON_SIZE, height: BUTTON_SIZE, backgroundColor: 'transparent', marginRight: 8 }
+                ]}
+                onPress={() => setVnExpanded(v => !v)}
+              >
+                <Ionicons name={vnExpanded ? "chevron-down" : "chevron-up"} size={BUTTON_ICON_SIZE} color="#fff" />
+              </TouchableOpacity>
+              <TouchableOpacity
+                ref={ref => { alphaBtnRef.current = ref }}
+                style={[
+                  styles.visualNovelHeaderButton,
+                  { width: BUTTON_SIZE, height: BUTTON_SIZE, backgroundColor: 'transparent' }
+                ]}
+                onLayout={e => setAlphaBtnLayout(e.nativeEvent.layout)}
+                onPress={() => setShowAlphaSlider(v => !v)}
+                activeOpacity={0.8}
+              >
+                <Ionicons name="color-filter-outline" size={BUTTON_ICON_SIZE} color="#fff" />
+              </TouchableOpacity>
+            </View>
+          </View>
+          {/* 透明度调节pad，绝对定位到透明度按钮右侧 */}
+          {showAlphaSlider && (
+            <View
+              style={[
+                styles.visualNovelAlphaSliderContainer,
+                {
+                  top: alphaBtnLayout.y,
+                  left: alphaBtnLayout.x + alphaBtnLayout.width + 8,
+                  // 若超出屏幕右侧则自动向左偏移
+                  right: undefined,
+                  maxWidth: width - (alphaBtnLayout.x + alphaBtnLayout.width + 24),
                 }
+              ]}
+            >
+              <Text style={styles.visualNovelAlphaLabel}>背景透明度: {(vnBgAlpha * 100).toFixed(0)}%</Text>
+              <Slider
+                style={{ width: 140, height: 32 }}
+                minimumValue={0.2}
+                maximumValue={1}
+                step={0.01}
+                value={vnBgAlpha}
+                minimumTrackTintColor="#FFD580"
+                maximumTrackTintColor="#888"
+                thumbTintColor="#FFD580"
+                onValueChange={handleAlphaChange}
+              />
+            </View>
+          )}
+          {/* 展开时不显示头像和名称 */}
+          {!vnExpanded && (
+            <View style={styles.visualNovelHeader}>
+              <Image
+                source={displayAvatar}
+                style={styles.visualNovelAvatar}
+              />
+              <Text style={[
+                styles.visualNovelCharacterName,
+                { color: visualNovelSettings.textColor }
               ]}>
-                {displayText}
+                {displayName}
               </Text>
+            </View>
+          )}
+          <ScrollView
+            style={[
+              styles.visualNovelTextContainer,
+              {
+                maxHeight: getVNTextMaxHeight(),
+                marginBottom: 0,
+                marginTop: vnExpanded ? 8 : 0,
+              }
+            ]}
+            contentContainerStyle={{ flexGrow: 1 }}
+          >
+            <View style={styles.visualNovelTextWrapper}>
+              {containsComplexHtml(displayText) || /<\/?[a-z][^>]*>/i.test(displayText) ? (
+                <RichTextRenderer 
+                  html={optimizeHtmlForRendering(stripUnknownTags(displayText))}
+                  baseStyle={{ 
+                    color: visualNovelSettings.textColor,
+                    fontFamily: visualNovelSettings.fontFamily,
+                    fontSize: 16,
+                    lineHeight: 22
+                  }}
+                  onImagePress={(url) => setFullscreenImage(url)}
+                  maxImageHeight={MAX_IMAGE_HEIGHT}
+                />
+              ) : (
+                <Text style={[
+                  styles.visualNovelText,
+                  { 
+                    fontFamily: visualNovelSettings.fontFamily, 
+                    color: visualNovelSettings.textColor 
+                  }
+                ]}>
+                  {displayText}
+                </Text>
+              )}
+            </View>
+          </ScrollView>
+          <View style={styles.visualNovelActions}>
+            {/* 音量按钮 */}
+            {!isUser && !lastMessage.isLoading && (
+              <>
+                <TouchableOpacity
+                  style={[
+                    styles.actionCircleButton,
+                    { width: BUTTON_SIZE, height: BUTTON_SIZE, backgroundColor: 'transparent', marginRight: BUTTON_MARGIN }
+                  ]}
+                  onPress={() => renderTTSButtons(lastMessage)?.props?.onPress?.()}
+                  disabled={renderTTSButtons(lastMessage)?.props?.disabled}
+                >
+                  <Ionicons
+                    name="volume-high"
+                    size={BUTTON_ICON_SIZE}
+                    color="#fff"
+                  />
+                </TouchableOpacity>
+              </>
+            )}
+            {/* 音量按钮左侧：再生、编辑、删除按钮（仅AI消息，非first_mes），无论展开或收起都显示 */}
+            {!isUser && !lastMessage.isLoading && !isFirstMes && (
+              <View style={styles.visualNovelActionRow}>
+                <TouchableOpacity
+                  style={[
+                    styles.actionCircleButton,
+                    { width: BUTTON_SIZE, height: BUTTON_SIZE, backgroundColor: 'transparent', marginLeft: 8 }
+                  ]}
+                  onPress={() => {
+                    // 修复：弹出编辑框而不是直接调用onEditMessage
+                    setEditModalText(lastMessage.text);
+                    setEditTargetMsgId(lastMessage.id);
+                    setEditTargetAiIndex(aiIndex);
+                    setEditModalVisible(true);
+                  }}
+                  disabled={!!regeneratingMessageId}
+                >
+                  <Ionicons name="create-outline" size={BUTTON_ICON_SIZE} color={regeneratingMessageId ? "#999999" : "#f1c40f"} />
+                </TouchableOpacity>
+                <TouchableOpacity
+                  style={[
+                    styles.actionCircleButton,
+                    { width: BUTTON_SIZE, height: BUTTON_SIZE, backgroundColor: 'transparent', marginLeft: 8 }
+                  ]}
+                  onPress={() => {
+                    Alert.alert(
+                      '删除AI消息',
+                      '确定要删除该AI消息及其对应的用户消息吗？',
+                      [
+                        { text: '取消', style: 'cancel' },
+                        {
+                          text: '删除',
+                          style: 'destructive',
+                          onPress: () => {
+                            if (onDeleteMessage) onDeleteMessage(lastMessage.id, aiIndex);
+                          }
+                        }
+                      ]
+                    );
+                  }}
+                  disabled={!!regeneratingMessageId}
+                >
+                  <Ionicons name="trash-outline" size={BUTTON_ICON_SIZE} color={regeneratingMessageId ? "#999999" : "#e74c3c"} />
+                </TouchableOpacity>
+                <TouchableOpacity
+                  style={[
+                    styles.actionCircleButton,
+                    isRegenerating && styles.actionCircleButtonActive,
+                    { width: BUTTON_SIZE, height: BUTTON_SIZE, backgroundColor: 'transparent', marginLeft: 8 }
+                  ]}
+                  disabled={isRegenerating || !!regeneratingMessageId}
+                  onPress={() => onRegenerateMessage && onRegenerateMessage(lastMessage.id, aiIndex)}
+                >
+                  {isRegenerating ? (
+                    <ActivityIndicator size="small" color="#fff" />
+                  ) : (
+                    <Ionicons
+                      name="refresh"
+                      size={BUTTON_ICON_SIZE}
+                      color={regeneratingMessageId ? "#999999" : "#3498db"}
+                    />
+                  )}
+                </TouchableOpacity>
+              </View>
             )}
           </View>
-        </ScrollView>
-        <View style={styles.visualNovelActions}>
-          {!isUser && !lastMessage.isLoading && (
-            <>
-              {renderTTSButtons(lastMessage)}
-            </>
-          )}
         </View>
-      </View>
+      </>
     );
   };
 
@@ -1585,11 +1825,6 @@ const styles = StyleSheet.create({
   },
   visualNovelContainer: {
     position: 'absolute',
-    bottom: 10,
-    left: 10,
-    right: 10,
-    minHeight: 200,
-    maxHeight: 320,
     borderRadius: 16,
     padding: 15,
     shadowColor: '#000',
@@ -1597,6 +1832,63 @@ const styles = StyleSheet.create({
     shadowOpacity: 0.3,
     shadowRadius: 5,
     elevation: 8,
+  },
+  visualNovelHeaderRow: {
+    flexDirection: 'row-reverse',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    marginBottom: 4,
+    zIndex: 20,
+  },
+  visualNovelHeaderLeftButtons: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    marginRight: 8,
+  },
+  visualNovelHeaderButton: {
+    justifyContent: 'center',
+    alignItems: 'center',
+    backgroundColor: 'transparent',
+    borderRadius: BUTTON_SIZE / 2,
+    padding: 0,
+    margin: 0,
+  },
+  visualNovelExpandButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: 'rgba(0,0,0,0.35)',
+    borderRadius: 16,
+    paddingHorizontal: 10,
+    paddingVertical: 4,
+    marginRight: 8,
+  },
+  visualNovelExpandText: {
+    color: '#fff',
+    fontSize: 14,
+    marginLeft: 4,
+  },
+  visualNovelAlphaButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: 'rgba(0,0,0,0.35)',
+    borderRadius: 16,
+    paddingHorizontal: 10,
+    paddingVertical: 4,
+  },
+  visualNovelAlphaSliderContainer: {
+    position: 'absolute',
+    zIndex: 99,
+    backgroundColor: 'rgba(0,0,0,0.85)',
+    borderRadius: 12,
+    padding: 12,
+    alignItems: 'center',
+    width: 180,
+  },
+  visualNovelAlphaLabel: {
+    color: '#fff',
+    fontSize: 13,
+    marginBottom: 6,
   },
   visualNovelHeader: {
     flexDirection: 'row',
@@ -1615,7 +1907,8 @@ const styles = StyleSheet.create({
     flex: 1,
   },
   visualNovelTextContainer: {
-    maxHeight: 220,
+    minHeight: 60,
+    marginBottom: 8,
   },
   visualNovelTextWrapper: {
     marginBottom: 8,
@@ -1632,6 +1925,11 @@ const styles = StyleSheet.create({
     paddingTop: 8,
     borderTopWidth: 1,
     borderTopColor: 'rgba(255, 255, 255, 0.2)',
+  },
+  visualNovelActionRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginLeft: 8,
   },
   visualNovelActionButton: {
     width: 44,
@@ -1768,6 +2066,16 @@ const styles = StyleSheet.create({
     backgroundColor: '#444',
     borderWidth: 2,
     borderColor: 'rgba(255,255,255,0.2)',
+  },
+  visualNovelTopBar: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'flex-end',
+    position: 'absolute',
+    top: 10,
+    right: 20,
+    zIndex: 20,
+    gap: 12,
   },
 });
 
