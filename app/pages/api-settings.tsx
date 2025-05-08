@@ -1326,6 +1326,7 @@ const ApiSettings = () => {
               <View style={styles.sectionHeader}>
                 <Text style={styles.sectionTitle}>OpenAI兼容API</Text>
                 <View style={{ flexDirection: 'row', alignItems: 'center' }}>
+                <Text style={{ color: '#aaa', fontSize: 12, marginRight: 12 }}>无需填写v1后缀</Text>
                   <TouchableOpacity
                     style={{ marginRight: 8 }}
                     onPress={addOpenAIProvider}
