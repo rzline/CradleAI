@@ -289,7 +289,7 @@ const ForwardSheet: React.FC<ForwardSheetProps> = ({
                   />
                   <Text style={styles.postAuthor}>{post.characterName}</Text>
                 </View>
-                <Text style={styles.postContent}>{post.content}</Text>
+                <Text style={styles.postContent} numberOfLines={2} ellipsizeMode="tail">{post.content}</Text>
                 <View style={styles.postMeta}>
                   <Text style={styles.postTime}>
                     {new Date(post.createdAt).toLocaleDateString()}
@@ -379,7 +379,7 @@ const ForwardSheet: React.FC<ForwardSheetProps> = ({
                   <ActivityIndicator size="small" color="#fff" />
                 ) : (
                   <>
-                    <Ionicons name="send" size={18} color="#fff" />
+                    <Ionicons name="send" size={18} color="black" />
                     <Text style={styles.forwardButtonText}>
                       {selectedCharacter ? '转发' : '请选择角色'}
                     </Text>
@@ -589,7 +589,7 @@ const styles = StyleSheet.create({
     backgroundColor: 'rgba(255, 158, 205, 0.4)',
   },
   forwardButtonText: {
-    color: '#fff',
+    color: 'black',
     fontWeight: 'bold',
     fontSize: 16,
     marginLeft: 8,
