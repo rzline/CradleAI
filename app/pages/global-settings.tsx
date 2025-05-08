@@ -239,6 +239,10 @@ export default function GlobalSettingsPage() {
   const [presetViewMode, setPresetViewMode] = useState<'compact' | 'regular'>('compact');
   const [worldbookViewMode, setWorldbookViewMode] = useState<'compact' | 'regular'>('compact');
 
+  // 新增：控制是否显示被禁用的条目
+  const [showDisabledPreset, setShowDisabledPreset] = useState(true);
+  const [showDisabledWorldbook, setShowDisabledWorldbook] = useState(true);
+
   // 加载初始配置和模板列表
   useEffect(() => {
     (async () => {
@@ -1455,6 +1459,17 @@ const handleRegexScriptClick = (script: GlobalRegexScript, idx: number) => {
             <View style={styles.sectionHeader}>
               <Text style={styles.sectionHeaderText}>预设条目</Text>
               <View style={{ flexDirection: 'row', alignItems: 'center' }}>
+                {/* 新增：显示/隐藏被禁用条目按钮 */}
+                <TouchableOpacity
+                  onPress={() => setShowDisabledPreset(v => !v)}
+                  style={{ marginRight: 8 }}
+                >
+                  <Ionicons
+                    name={showDisabledPreset ? 'eye-outline' : 'eye-off-outline'}
+                    size={22}
+                    color={theme.colors.primary}
+                  />
+                </TouchableOpacity>
                 {/* 视图切换按钮 */}
                 <TouchableOpacity
                   onPress={() => setPresetViewMode(v => v === 'compact' ? 'regular' : 'compact')}
@@ -1495,82 +1510,86 @@ const handleRegexScriptClick = (script: GlobalRegexScript, idx: number) => {
             </View>
             {/* 条目列表 */}
             {presetViewMode === 'compact'
-              ? presetEntries.map((entry, idx) => renderCompactPresetEntry(entry, idx))
-              : presetEntries.map((entry, idx) => (
-                  <TouchableOpacity 
-                    key={entry.id} 
-                    style={styles.promptCard}
-                    onPress={() => handlePresetEntryClick(entry, idx)}
-                    activeOpacity={0.7}
-                  >
-                    <View style={{ flexDirection: 'row', alignItems: 'center' }}>
-                      {/* 管理模式下显示多选框 */}
-                      {presetManaging && (
-                        <TouchableOpacity
-                          onPress={() => togglePresetSelect(idx)}
-                          style={{
-                            marginRight: 10,
-                            width: 22,
-                            height: 22,
-                            borderRadius: 11,
-                            borderWidth: 2,
-                            borderColor: theme.colors.primary,
-                            backgroundColor: presetSelectedIndexes.includes(idx) ? theme.colors.primary : '#fff',
-                            alignItems: 'center',
-                            justifyContent: 'center',
-                          }}
-                        >
-                          {presetSelectedIndexes.includes(idx) && (
-                            <Ionicons name="checkmark" size={14} color="#fff" />
-                          )}
-                        </TouchableOpacity>
-                      )}
-                      <View style={{ flex: 1 }}>
-                        <View style={styles.promptRow}>
-                          <Text style={styles.promptLabel}>名称</Text>
-                          <Text style={styles.promptValue}>{entry.name}</Text>
-                        </View>
-                        <View style={styles.promptRow}>
-                          <Text style={styles.promptLabel}>启用</Text>
-                          <Ionicons name={entry.enable !== false ? 'checkmark-circle' : 'close-circle'} size={18} color={entry.enable !== false ? theme.colors.primary : '#ccc'} />
-                        </View>
-                        <View style={styles.promptRow}>
-                          <Text style={styles.promptLabel}>角色</Text>
-                          <Text style={styles.promptValue}>{entry.role}</Text>
-                        </View>
-                        <View style={styles.promptRow}>
-                          <Text style={styles.promptLabel}>插入类型</Text>
-                          <Text style={styles.promptValue}>{entry.insertType === 'chat' ? '对话式' : '相对位置'}</Text>
-                        </View>
-                        {entry.insertType === 'chat' && (
+              ? presetEntries
+                  .filter(entry => showDisabledPreset || entry.enable)
+                  .map((entry, idx) => renderCompactPresetEntry(entry, idx))
+              : presetEntries
+                  .filter(entry => showDisabledPreset || entry.enable)
+                  .map((entry, idx) => (
+                    <TouchableOpacity 
+                      key={entry.id} 
+                      style={styles.promptCard}
+                      onPress={() => handlePresetEntryClick(entry, idx)}
+                      activeOpacity={0.7}
+                    >
+                      <View style={{ flexDirection: 'row', alignItems: 'center' }}>
+                        {/* 管理模式下显示多选框 */}
+                        {presetManaging && (
+                          <TouchableOpacity
+                            onPress={() => togglePresetSelect(idx)}
+                            style={{
+                              marginRight: 10,
+                              width: 22,
+                              height: 22,
+                              borderRadius: 11,
+                              borderWidth: 2,
+                              borderColor: theme.colors.primary,
+                              backgroundColor: presetSelectedIndexes.includes(idx) ? theme.colors.primary : '#fff',
+                              alignItems: 'center',
+                              justifyContent: 'center',
+                            }}
+                          >
+                            {presetSelectedIndexes.includes(idx) && (
+                              <Ionicons name="checkmark" size={14} color="#fff" />
+                            )}
+                          </TouchableOpacity>
+                        )}
+                        <View style={{ flex: 1 }}>
                           <View style={styles.promptRow}>
-                            <Text style={styles.promptLabel}>深度</Text>
-                            <Text style={styles.promptValue}>{entry.depth}</Text>
+                            <Text style={styles.promptLabel}>名称</Text>
+                            <Text style={styles.promptValue}>{entry.name}</Text>
+                          </View>
+                          <View style={styles.promptRow}>
+                            <Text style={styles.promptLabel}>启用</Text>
+                            <Ionicons name={entry.enable !== false ? 'checkmark-circle' : 'close-circle'} size={18} color={entry.enable !== false ? theme.colors.primary : '#ccc'} />
+                          </View>
+                          <View style={styles.promptRow}>
+                            <Text style={styles.promptLabel}>角色</Text>
+                            <Text style={styles.promptValue}>{entry.role}</Text>
+                          </View>
+                          <View style={styles.promptRow}>
+                            <Text style={styles.promptLabel}>插入类型</Text>
+                            <Text style={styles.promptValue}>{entry.insertType === 'chat' ? '对话式' : '相对位置'}</Text>
+                          </View>
+                          {entry.insertType === 'chat' && (
+                            <View style={styles.promptRow}>
+                              <Text style={styles.promptLabel}>深度</Text>
+                              <Text style={styles.promptValue}>{entry.depth}</Text>
+                            </View>
+                          )}
+                        </View>
+                        {/* 排序按钮 */}
+                        {!presetManaging && (
+                          <View style={{ flexDirection: 'column', marginLeft: 8 }}>
+                            <TouchableOpacity
+                              onPress={() => movePresetEntry(idx, idx - 1)}
+                              disabled={idx === 0}
+                              style={{ opacity: idx === 0 ? 0.3 : 1, padding: 2 }}
+                            >
+                              <Ionicons name="arrow-up" size={18} color={theme.colors.primary} />
+                            </TouchableOpacity>
+                            <TouchableOpacity
+                              onPress={() => movePresetEntry(idx, idx + 1)}
+                              disabled={idx === presetEntries.length - 1}
+                              style={{ opacity: idx === presetEntries.length - 1 ? 0.3 : 1, padding: 2 }}
+                            >
+                              <Ionicons name="arrow-down" size={18} color={theme.colors.primary} />
+                            </TouchableOpacity>
                           </View>
                         )}
                       </View>
-                      {/* 排序按钮 */}
-                      {!presetManaging && (
-                        <View style={{ flexDirection: 'column', marginLeft: 8 }}>
-                          <TouchableOpacity
-                            onPress={() => movePresetEntry(idx, idx - 1)}
-                            disabled={idx === 0}
-                            style={{ opacity: idx === 0 ? 0.3 : 1, padding: 2 }}
-                          >
-                            <Ionicons name="arrow-up" size={18} color={theme.colors.primary} />
-                          </TouchableOpacity>
-                          <TouchableOpacity
-                            onPress={() => movePresetEntry(idx, idx + 1)}
-                            disabled={idx === presetEntries.length - 1}
-                            style={{ opacity: idx === presetEntries.length - 1 ? 0.3 : 1, padding: 2 }}
-                          >
-                            <Ionicons name="arrow-down" size={18} color={theme.colors.primary} />
-                          </TouchableOpacity>
-                        </View>
-                      )}
-                    </View>
-                  </TouchableOpacity>
-                ))
+                    </TouchableOpacity>
+                  ))
             }
             {/* 管理模式下显示删除按钮 */}
             {presetManaging && (
@@ -1639,6 +1658,17 @@ const handleRegexScriptClick = (script: GlobalRegexScript, idx: number) => {
             <View style={styles.sectionHeader}>
               <Text style={styles.sectionHeaderText}>世界书条目</Text>
               <View style={{ flexDirection: 'row', alignItems: 'center' }}>
+                {/* 新增：显示/隐藏被禁用条目按钮 */}
+                <TouchableOpacity
+                  onPress={() => setShowDisabledWorldbook(v => !v)}
+                  style={{ marginRight: 8 }}
+                >
+                  <Ionicons
+                    name={showDisabledWorldbook ? 'eye-outline' : 'eye-off-outline'}
+                    size={22}
+                    color={theme.colors.primary}
+                  />
+                </TouchableOpacity>
                 {/* 视图切换按钮 */}
                 <TouchableOpacity
                   onPress={() => setWorldbookViewMode(v => v === 'compact' ? 'regular' : 'compact')}
@@ -1676,86 +1706,96 @@ const handleRegexScriptClick = (script: GlobalRegexScript, idx: number) => {
             </View>
             {/* 条目列表 */}
             {worldbookViewMode === 'compact'
-              ? worldbookEntryOrder.map((key, idx) => {
-                  const entry = worldbookConfig.worldbookJson?.entries?.[key];
-                  if (!entry) return null;
-                  return renderCompactWorldbookEntry(key, entry, idx);
-                })
-              : worldbookEntryOrder.map((key, idx) => {
-                  const entry = worldbookConfig.worldbookJson?.entries?.[key];
-                  if (!entry) return null;
-                  return (
-                    <TouchableOpacity 
-                      key={key} 
-                      style={styles.promptCard}
-                      onPress={() => handleWorldbookEntryClick(key, entry)}
-                      activeOpacity={0.7}
-                    >
-                      <View style={{ flexDirection: 'row', alignItems: 'center' }}>
-                        {worldbookManaging && (
-                          <TouchableOpacity
-                            onPress={() => toggleWorldbookSelect(idx)}
-                            style={{
-                              marginRight: 10,
-                              width: 22,
-                              height: 22,
-                              borderRadius: 11,
-                              borderWidth: 2,
-                              borderColor: theme.colors.primary,
-                              backgroundColor: worldbookSelectedIndexes.includes(idx) ? theme.colors.primary : '#fff',
-                              alignItems: 'center',
-                              justifyContent: 'center',
-                            }}
-                          >
-                            {worldbookSelectedIndexes.includes(idx) && (
-                              <Ionicons name="checkmark" size={14} color="#fff" />
-                            )}
-                          </TouchableOpacity>
-                        )}
-                        <View style={{ flex: 1 }}>
-                          <View style={styles.promptRow}>
-                            <Text style={styles.promptLabel}>名称</Text>
-                            <Text style={styles.promptValue}>{entry.comment}</Text>
+              ? worldbookEntryOrder
+                  .filter(key => {
+                    const entry = worldbookConfig.worldbookJson?.entries?.[key];
+                    return showDisabledWorldbook || !entry?.disable;
+                  })
+                  .map((key, idx) => {
+                    const entry = worldbookConfig.worldbookJson?.entries?.[key];
+                    if (!entry) return null;
+                    return renderCompactWorldbookEntry(key, entry, idx);
+                  })
+              : worldbookEntryOrder
+                  .filter(key => {
+                    const entry = worldbookConfig.worldbookJson?.entries?.[key];
+                    return showDisabledWorldbook || !entry?.disable;
+                  })
+                  .map((key, idx) => {
+                    const entry = worldbookConfig.worldbookJson?.entries?.[key];
+                    if (!entry) return null;
+                    return (
+                      <TouchableOpacity 
+                        key={key} 
+                        style={styles.promptCard}
+                        onPress={() => handleWorldbookEntryClick(key, entry)}
+                        activeOpacity={0.7}
+                      >
+                        <View style={{ flexDirection: 'row', alignItems: 'center' }}>
+                          {worldbookManaging && (
+                            <TouchableOpacity
+                              onPress={() => toggleWorldbookSelect(idx)}
+                              style={{
+                                marginRight: 10,
+                                width: 22,
+                                height: 22,
+                                borderRadius: 11,
+                                borderWidth: 2,
+                                borderColor: theme.colors.primary,
+                                backgroundColor: worldbookSelectedIndexes.includes(idx) ? theme.colors.primary : '#fff',
+                                alignItems: 'center',
+                                justifyContent: 'center',
+                              }}
+                            >
+                              {worldbookSelectedIndexes.includes(idx) && (
+                                <Ionicons name="checkmark" size={14} color="#fff" />
+                              )}
+                            </TouchableOpacity>
+                          )}
+                          <View style={{ flex: 1 }}>
+                            <View style={styles.promptRow}>
+                              <Text style={styles.promptLabel}>名称</Text>
+                              <Text style={styles.promptValue}>{entry.comment}</Text>
+                            </View>
+                            <View style={styles.promptRow}>
+                              <Text style={styles.promptLabel}>禁用</Text>
+                              <Ionicons name={entry.disable ? 'close-circle' : 'checkmark-circle'} size={18} color={entry.disable ? '#ccc' : theme.colors.primary} />
+                            </View>
+                            <View style={styles.promptRow}>
+                              <Text style={styles.promptLabel}>常量</Text>
+                              <Ionicons name={entry.constant ? 'checkmark-circle' : 'close-circle'} size={18} color={entry.constant ? theme.colors.primary : '#ccc'} />
+                            </View>
+                            <View style={styles.promptRow}>
+                              <Text style={styles.promptLabel}>位置</Text>
+                              <Text style={styles.promptValue}>{entry.position}</Text>
+                            </View>
+                            <View style={styles.promptRow}>
+                              <Text style={styles.promptLabel}>深度</Text>
+                              <Text style={styles.promptValue}>{entry.depth}</Text>
+                            </View>
                           </View>
-                          <View style={styles.promptRow}>
-                            <Text style={styles.promptLabel}>禁用</Text>
-                            <Ionicons name={entry.disable ? 'close-circle' : 'checkmark-circle'} size={18} color={entry.disable ? '#ccc' : theme.colors.primary} />
-                          </View>
-                          <View style={styles.promptRow}>
-                            <Text style={styles.promptLabel}>常量</Text>
-                            <Ionicons name={entry.constant ? 'checkmark-circle' : 'close-circle'} size={18} color={entry.constant ? theme.colors.primary : '#ccc'} />
-                          </View>
-                          <View style={styles.promptRow}>
-                            <Text style={styles.promptLabel}>位置</Text>
-                            <Text style={styles.promptValue}>{entry.position}</Text>
-                          </View>
-                          <View style={styles.promptRow}>
-                            <Text style={styles.promptLabel}>深度</Text>
-                            <Text style={styles.promptValue}>{entry.depth}</Text>
-                          </View>
+                          {!worldbookManaging && (
+                            <View style={{ flexDirection: 'column', marginLeft: 8 }}>
+                              <TouchableOpacity
+                                onPress={() => moveWorldbookEntry(idx, idx - 1)}
+                                disabled={idx === 0}
+                                style={{ opacity: idx === 0 ? 0.3 : 1, padding: 2 }}
+                              >
+                                <Ionicons name="arrow-up" size={18} color={theme.colors.primary} />
+                              </TouchableOpacity>
+                              <TouchableOpacity
+                                onPress={() => moveWorldbookEntry(idx, idx + 1)}
+                                disabled={idx === worldbookEntryOrder.length - 1}
+                                style={{ opacity: idx === worldbookEntryOrder.length - 1 ? 0.3 : 1, padding: 2 }}
+                              >
+                                <Ionicons name="arrow-down" size={18} color={theme.colors.primary} />
+                              </TouchableOpacity>
+                            </View>
+                          )}
                         </View>
-                        {!worldbookManaging && (
-                          <View style={{ flexDirection: 'column', marginLeft: 8 }}>
-                            <TouchableOpacity
-                              onPress={() => moveWorldbookEntry(idx, idx - 1)}
-                              disabled={idx === 0}
-                              style={{ opacity: idx === 0 ? 0.3 : 1, padding: 2 }}
-                            >
-                              <Ionicons name="arrow-up" size={18} color={theme.colors.primary} />
-                            </TouchableOpacity>
-                            <TouchableOpacity
-                              onPress={() => moveWorldbookEntry(idx, idx + 1)}
-                              disabled={idx === worldbookEntryOrder.length - 1}
-                              style={{ opacity: idx === worldbookEntryOrder.length - 1 ? 0.3 : 1, padding: 2 }}
-                            >
-                              <Ionicons name="arrow-down" size={18} color={theme.colors.primary} />
-                            </TouchableOpacity>
-                          </View>
-                        )}
-                      </View>
-                    </TouchableOpacity>
-                  );
-                })
+                      </TouchableOpacity>
+                    );
+                  })
             }
             {worldbookManaging && (
               <View style={{ marginTop: 12, alignItems: 'flex-end' }}>

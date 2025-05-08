@@ -71,14 +71,14 @@ enum TabType {
 const DB_SIZE_WARNING_THRESHOLD = 50;
 const DB_SIZE_ALERT_THRESHOLD = 100;
 const SETTINGS_STORAGE_KEY = 'MemoryProcessingControl:settings';
-
+const TABLE_MEMORY_ENABLED_KEY = 'MemoOverlay:tableMemoryEnabled';
 // Main component
 const MemoOverlay: React.FC<MemoOverlayProps> = ({ isVisible, onClose, characterId, conversationId, customUserName }) => {
   // State for tabs and loading
   const [activeTab, setActiveTab] = useState<TabType>(TabType.TABLES);
   const [loading, setLoading] = useState<boolean>(false);
   const [initialized, setInitialized] = useState<boolean>(false);
-
+  
   // State for templates - update to have allTemplates separate from selectedTemplates
   
   const [allTemplates, setAllTemplates] = useState<TableMemory.SheetTemplate[]>([]);
@@ -120,7 +120,26 @@ const MemoOverlay: React.FC<MemoOverlayProps> = ({ isVisible, onClose, character
 
   // Reference to track if component is mounted
   const isMountedRef = useRef<boolean>(false);
-
+    // 新增：读取表格记忆插件开关状态
+    useEffect(() => {
+      if (isVisible) {
+        (async () => {
+          try {
+            const enabledStr = await AsyncStorage.getItem(TABLE_MEMORY_ENABLED_KEY);
+            if (enabledStr !== null) {
+              setPluginEnabled(enabledStr === 'true');
+              setTableMemoryEnabled(enabledStr === 'true');
+            } else {
+              // fallback: 读取当前插件状态
+              setPluginEnabled(isTableMemoryEnabled());
+            }
+          } catch (e) {
+            setPluginEnabled(isTableMemoryEnabled());
+          }
+        })();
+      }
+    }, [isVisible]);
+  
   // Initialize the plugin when the component mounts
   useEffect(() => {
     isMountedRef.current = true;

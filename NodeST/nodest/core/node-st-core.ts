@@ -360,8 +360,8 @@ export class NodeSTCore {
             const safeRoleCard: RoleCardJson = roleCard ? {
                 name: roleCard.name || "Unnamed Character",
                 first_mes: roleCard.first_mes || "Hello!",
-                description: roleCard.description || "No description provided.",
-                personality: roleCard.personality || "Friendly",
+                description: roleCard.description || "",
+                personality: roleCard.personality || "",
                 scenario: roleCard.scenario || "",
                 mes_example: roleCard.mes_example || "",
                 background: roleCard.background,

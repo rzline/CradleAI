@@ -15,7 +15,7 @@ import { GeminiAdapter } from './utils/gemini-adapter';
 import { OpenRouterAdapter } from './utils/openrouter-adapter';
 import { OpenAIAdapter } from './utils/openai-adapter';
 import { CharacterUtils } from './utils/character-utils';
-import ApiSettings from '@/app/pages/api-settings';
+
 
 export interface ProcessChatResponse {
     success: boolean;

@@ -105,8 +105,8 @@ const KNOWN_TAGS = [
 // 移除未知标签，仅保留内容
 function stripUnknownTags(html: string): string {
   if (!html) return '';
-  // 匹配所有标签
-  return html.replace(/<([a-zA-Z0-9\-]+)(\s[^>]*)?>([\s\S]*?)<\/\1>/g, (match, tag, attrs, content) => {
+  // 匹配所有成对标签
+  let result = html.replace(/<([a-zA-Z0-9\-]+)(\s[^>]*)?>([\s\S]*?)<\/\1>/g, (match, tag, attrs, content) => {
     if (KNOWN_TAGS.includes(tag)) {
       // 已知标签，保留
       return match;
@@ -114,6 +114,15 @@ function stripUnknownTags(html: string): string {
     // 未知标签，递归处理内容
     return stripUnknownTags(content);
   });
+  // 匹配所有单个未知标签（自闭合或未闭合）
+  result = result.replace(/<([a-zA-Z0-9\-]+)(\s[^>]*)?>/g, (match, tag) => {
+    if (KNOWN_TAGS.includes(tag)) {
+      return match;
+    }
+    // 未知单标签，移除
+    return '';
+  });
+  return result;
 }
 
 const ChatDialog: React.FC<ExtendedChatDialogProps> = ({
@@ -937,19 +946,6 @@ const ChatDialog: React.FC<ExtendedChatDialogProps> = ({
         </View>
       </View>
     );
-  };
-
-  const isMessageLastAIMessage = (message: Message, index: number): boolean => {
-    if (message.sender !== 'bot' || message.isLoading) return false;
-
-    for (let i = index + 1; i < messages.length; i++) {
-      const laterMessage = messages[i];
-      if (laterMessage.sender === 'bot' && !laterMessage.isLoading) {
-        return false;
-      }
-    }
-
-    return true;
   };
 
   const handleOpenFullscreenImage = (imageId: string | null) => {
@@ -1923,8 +1919,6 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     marginTop: 10,
     paddingTop: 8,
-    borderTopWidth: 1,
-    borderTopColor: 'rgba(255, 255, 255, 0.2)',
   },
   visualNovelActionRow: {
     flexDirection: 'row',
@@ -1934,8 +1928,6 @@ const styles = StyleSheet.create({
   visualNovelActionButton: {
     width: 44,
     height: 44,
-    borderRadius: 22,
-    backgroundColor: 'rgba(0, 0, 0, 0.3)',
     justifyContent: 'center',
     alignItems: 'center',
     marginLeft: 12,

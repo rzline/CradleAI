@@ -55,6 +55,7 @@ import { importDefaultCharactersIfNeeded, resetDefaultCharacterImported } from '
 import TestMarkdown from '@/components/testmarkdown';
 import { getApiSettings } from '@/utils/settings-helper'; 
 import { OpenRouterAdapter } from '@/NodeST/nodest/utils/openrouter-adapter';
+import { isTableMemoryEnabled, setTableMemoryEnabled } from '@/src/memory/integration/table-memory-integration';
 // Create a stable memory configuration outside the component
 type MemoryConfig = {
   embedder: {
@@ -136,6 +137,15 @@ const createStableMemoryConfig: CreateConfigFunction = (user: any): MemoryConfig
 export let characterViewModeCache: string | null = null;
 
 const App = () => {
+  useEffect(() => {
+    try {
+      const enabled = isTableMemoryEnabled();
+      setTableMemoryEnabled(enabled);
+      console.log('[index] 同步表格记忆插件开关:', enabled);
+    } catch (e) {
+      console.warn('[index] 同步表格记忆插件开关失败:', e);
+    }
+  }, []);
     // 新增：AI消息编辑
     const handleEditAiMessage = async (messageId: string, aiIndex: number, newContent: string) => {
       if (!selectedConversationId) return;
@@ -1246,16 +1256,27 @@ useEffect(() => {
   
       // 更新UI显示，展示loading状态(无闪烁)
       setMessages(displayMessages);
-  
+
+
+        // === 修正点：获取当前api设置和apiKey ===
+        const apiSettings = getApiSettings(); // 应返回完整的apiSettings对象
+        // 优先用OpenAIcompatible/openrouter的key，否则fallback到characterApiKey
+        let apiKey = '';
+        if (apiSettings.apiProvider === 'openai-compatible' && apiSettings.OpenAIcompatible?.enabled) {
+          apiKey = apiSettings.OpenAIcompatible.apiKey || '';
+        } else if (apiSettings.apiProvider === 'openrouter' && apiSettings.openrouter?.enabled) {
+          apiKey = apiSettings.openrouter.apiKey || '';
+        } else {
+          apiKey = user?.settings?.chat?.characterApiKey || '';
+        }
+
+
       // 调用 NodeSTManager，传递严格的 aiIndex+1
       const result = await NodeSTManager.regenerateFromMessage({
         messageIndex: aiIndex + 1, // 用严格过滤后的aiIndex+1
         conversationId: selectedConversationId,
-        apiKey: user?.settings?.chat?.characterApiKey || '',
-        apiSettings: {
-          apiProvider: user?.settings?.chat?.apiProvider || 'gemini',
-          openrouter: user?.settings?.chat?.openrouter
-        },
+        apiKey,
+        apiSettings,
         character: fallbackCharacter || selectedCharacter || undefined
       });
   
