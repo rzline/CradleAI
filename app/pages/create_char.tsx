@@ -396,6 +396,45 @@ const CreateChar: React.FC<CreateCharProps> = ({
     );
   };
   
+  // 新增：导入世界书
+  const handleImportWorldBook = async () => {
+    try {
+      const result = await DocumentPicker.getDocumentAsync({
+        type: 'application/json',
+        copyToCacheDirectory: true
+      });
+      if (!result.assets || !result.assets[0]) return;
+      const fileUri = result.assets[0].uri;
+      const cacheUri = `${FileSystem.cacheDirectory}${result.assets[0].name}`;
+      await FileSystem.copyAsync({ from: fileUri, to: cacheUri });
+      const worldBookJson = await CharacterImporter.importWorldBookOnlyFromJson(cacheUri);
+      if (worldBookJson && worldBookJson.entries) {
+        const entries = Object.entries(worldBookJson.entries).map(([key, entry]: [string, any], idx) => {
+          const rawPosition = Number(entry.position);
+          const position = (isNaN(rawPosition) || rawPosition < 0 || rawPosition > 4 ? 4 : rawPosition) as 0 | 1 | 2 | 3 | 4;
+          return {
+            id: key,
+            name: entry.comment || key,
+            comment: entry.comment || '',
+            content: entry.content || '',
+            disable: entry.disable,
+            position,
+            constant: !!entry.constant,
+            key: entry.key || [],
+            depth: position === 4 ? (entry.depth || 0) : undefined,
+            order: entry.order || idx,
+            vectorized: entry.vectorized || false
+          };
+        });
+        setWorldBookEntries(entries);
+        Alert.alert('成功', '世界书导入成功');
+        setHasUnsavedChanges(true);
+      }
+    } catch (error) {
+      Alert.alert('导入失败', error instanceof Error ? error.message : '未知错误');
+    }
+  };
+
   // Preset handling functions
   const handleAddPresetEntry = () => {
     const newEntry: PresetEntryUI = {
@@ -1518,16 +1557,24 @@ const CreateChar: React.FC<CreateCharProps> = ({
             onDelete={handleDeleteWorldBookEntry}
           />
           
-          {/* Modify PresetSection to include import functionality */}
+          {/* 新增：世界书导入按钮和原有预设导入按钮 */}
           <View style={styles.presetSectionHeader}>
-            <Text style={styles.sectionTitle}>预设设定</Text>
-            <TouchableOpacity 
-              style={styles.importPresetButton}
-              onPress={handleImportPreset}
-            >
-              <Ionicons name="cloud-download-outline" size={16} color="#FFD700" />
-              <Text style={styles.importPresetText}>导入预设</Text>
-            </TouchableOpacity>
+            <View style={{ flexDirection: 'row', alignItems: 'center' }}>
+              <TouchableOpacity
+                style={[styles.importPresetButton, { marginRight: 8 }]}
+                onPress={handleImportWorldBook}
+              >
+                <Ionicons name="book-outline" size={16} color="#FFD700" />
+                <Text style={styles.importPresetText}>导入世界书</Text>
+              </TouchableOpacity>
+              <TouchableOpacity 
+                style={styles.importPresetButton}
+                onPress={handleImportPreset}
+              >
+                <Ionicons name="cloud-download-outline" size={16} color="#FFD700" />
+                <Text style={styles.importPresetText}>导入预设</Text>
+              </TouchableOpacity>
+            </View>
           </View>
           <PresetSection
             entries={presetEntries}

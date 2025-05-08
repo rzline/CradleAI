@@ -197,7 +197,7 @@ const styles = StyleSheet.create({
     borderWidth: 1,
   },
   greetingOptionNumber: {
-    color: '#aaa',
+    color: 'black',
     fontSize: 12,
     fontWeight: 'bold',
     marginRight: 6,
@@ -214,7 +214,7 @@ const styles = StyleSheet.create({
     flex: 1,
   },
   greetingOptionTextSelected: {
-    color: '#222',
+    color: 'black',
     fontWeight: 'bold',
   },
 });
