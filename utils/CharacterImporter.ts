@@ -18,6 +18,36 @@ interface PresetPrompt {
 }
 
 export class CharacterImporter {
+    /**
+   * 新增：仅导入只包含世界书结构的JSON（如白霖.json）
+   * @param filePath 本地json文件路径
+   */
+    static async importWorldBookOnlyFromJson(filePath: string): Promise<WorldBookJson> {
+      try {
+        let content = await FileSystem.readAsStringAsync(filePath);
+        content = content.replace(/^\uFEFF/, '').trim();
+        const data = JSON.parse(content);
+        // 兼容两种结构：顶层就是entries，或顶层有entries字段
+        let entries = data.entries || data;
+        if (!entries || typeof entries !== 'object') {
+          throw new Error('JSON文件缺少entries字段或结构不正确');
+        }
+        // 如果entries是对象（如白霖.json），直接用
+        // 如果是数组，转为对象
+        if (Array.isArray(entries)) {
+          // 转为对象，key为entry_0, entry_1...
+          const obj: Record<string, any> = {};
+          entries.forEach((item, idx) => {
+            obj[`entry_${idx}`] = item;
+          });
+          entries = obj;
+        }
+        return { entries };
+      } catch (e) {
+        throw new Error('导入世界书JSON失败: ' + (e instanceof Error ? e.message : '未知错误'));
+      }
+    }
+
   static async importFromPNG(filePath: string): Promise<{
     roleCard: RoleCardJson;
     worldBook: WorldBookJson;

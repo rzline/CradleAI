@@ -52,11 +52,19 @@ import { CloudServiceProvider } from '@/services/cloud-service-provider';
 import type  CloudServiceProviderClass  from '@/services/cloud-service-provider';
 import * as FileSystem from 'expo-file-system'; // 新增导入
 import { importDefaultCharactersIfNeeded, resetDefaultCharacterImported } from '@/components/DefaultCharacterImporter';
-import TestMarkdown from '@/components/testmarkdown';
+import { loadGlobalSettingsState } from '@/app/pages/global-settings' ;
 import { getApiSettings } from '@/utils/settings-helper'; 
 import { OpenRouterAdapter } from '@/NodeST/nodest/utils/openrouter-adapter';
 import { isTableMemoryEnabled, setTableMemoryEnabled } from '@/src/memory/integration/table-memory-integration';
 // Create a stable memory configuration outside the component
+// 新增：全局缓存对象
+declare global {
+  interface Window { __globalSettingsCache?: any }
+}
+if (typeof window !== 'undefined' && !window.__globalSettingsCache) {
+  window.__globalSettingsCache = {};
+}
+
 type MemoryConfig = {
   embedder: {
     provider: string;
@@ -137,6 +145,17 @@ const createStableMemoryConfig: CreateConfigFunction = (user: any): MemoryConfig
 export let characterViewModeCache: string | null = null;
 
 const App = () => {
+    // 新增：应用启动时预加载全局设置状态
+    useEffect(() => {
+      (async () => {
+        const globalSettings = await loadGlobalSettingsState();
+        if (globalSettings && typeof window !== 'undefined') {
+          window.__globalSettingsCache = globalSettings;
+        }
+      })();
+    }, []);
+
+
   useEffect(() => {
     try {
       const enabled = isTableMemoryEnabled();

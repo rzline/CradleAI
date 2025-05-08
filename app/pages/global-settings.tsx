@@ -148,6 +148,40 @@ function presetEntryUIToPrompts(entries: PresetEntryUI[]): PresetJson['prompts']
 }
 
 export default function GlobalSettingsPage() {
+    // 新增：全局世界书导入
+    const handleImportWorldbook = async () => {
+      try {
+        const result = await DocumentPicker.getDocumentAsync({
+          type: 'application/json',
+          copyToCacheDirectory: true,
+          multiple: false,
+        });
+        if (result.canceled || !result.assets?.[0]?.uri) return;
+        const fileUri = result.assets[0].uri;
+        const fileName = result.assets[0].name || '';
+        // 用CharacterImporter解析（改为只导入世界书结构）
+        const worldBook = await CharacterImporter.importWorldBookOnlyFromJson(fileUri);
+        // 名称为文件名（去扩展名）
+        const baseName = fileName.replace(/\.[^/.]+$/, '') || `导入世界书_${Date.now()}`;
+        const timestamp = Date.now();
+        const newId = `worldbook_${timestamp}`;
+        const newWorldbook: GlobalWorldbookTemplate = {
+          id: newId,
+          name: baseName,
+          worldbookJson: worldBook,
+        };
+        setGlobalWorldbookList(list => [...list, newWorldbook]);
+        setSelectedWorldbookId(newId);
+        setWorldbookConfig({
+          enabled: false,
+          priority: '全局优先',
+          worldbookJson: newWorldbook.worldbookJson,
+        });
+        Alert.alert('导入成功', '已成功导入世界书JSON');
+      } catch (e) {
+        Alert.alert('导入失败', String(e));
+      }
+    };
   const router = useRouter();
   const [activeTab, setActiveTab] = useState<'preset' | 'worldbook' | 'regex'>('preset');
   const [presetConfig, setPresetConfig] = useState<GlobalPresetConfig>({
@@ -1436,6 +1470,8 @@ const handleRegexScriptClick = (script: GlobalRegexScript, idx: number) => {
               <Switch
                 value={presetConfig.enabled}
                 onValueChange={handlePresetSwitch}
+                trackColor={{ false: '#ccc', true: theme.colors.primary }}
+                thumbColor={worldbookConfig.enabled ? theme.colors.primary : '#eee'}
               />
             </View>
                      {/* 全局预设补充说明 */}
@@ -1617,6 +1653,8 @@ const handleRegexScriptClick = (script: GlobalRegexScript, idx: number) => {
               <Switch
                 value={worldbookConfig.enabled}
                 onValueChange={handleWorldbookSwitch}
+                trackColor={{ false: '#ccc', true: theme.colors.primary }}
+                thumbColor={presetConfig.enabled ? theme.colors.primary : '#eee'}
               />
             </View>
             
@@ -1699,6 +1737,10 @@ const handleRegexScriptClick = (script: GlobalRegexScript, idx: number) => {
                 <TouchableOpacity onPress={handleCreateWorldbookTemplate} style={{ marginRight: 8 }}>
                   <Ionicons name="duplicate-outline" size={22} color={theme.colors.primary} />
                  </TouchableOpacity>
+                               {/* 新增：导入按钮 */}
+              <TouchableOpacity onPress={handleImportWorldbook} style={{ marginRight: 8 }}>
+                <Ionicons name="download-outline" size={22} color={theme.colors.primary} />
+              </TouchableOpacity>
                 <TouchableOpacity onPress={handleAddWorldbookEntry}>
                   <Ionicons name="add-circle-outline" size={22} color={theme.colors.primary} />
                 </TouchableOpacity>
@@ -2381,3 +2423,70 @@ const styles = StyleSheet.create({
     paddingVertical: 4,
   },
 });
+
+
+// 新增：导出全局设置的加载和保存函数
+export async function loadGlobalSettingsState() {
+  try {
+    const { StorageAdapter } = await import('@/NodeST/nodest/utils/storage-adapter');
+    const presetList: GlobalPresetTemplate[] = await StorageAdapter.loadGlobalPresetList?.() || [];
+    const selectedPresetId = await StorageAdapter.loadSelectedGlobalPresetId?.();
+    const selectedPreset = presetList.find(t => t.id === (selectedPresetId || presetList[0]?.id));
+    const worldbookList: GlobalWorldbookTemplate[] = await StorageAdapter.loadGlobalWorldbookList?.() || [];
+    const selectedWorldbookId = await StorageAdapter.loadSelectedGlobalWorldbookId?.();
+    const selectedWorldbook = worldbookList.find(t => t.id === (selectedWorldbookId || worldbookList[0]?.id));
+    const presetEnabled = await AsyncStorage.getItem('nodest_global_preset_enabled');
+    const worldbookEnabled = await AsyncStorage.getItem('nodest_global_worldbook_enabled');
+    const regexList: GlobalRegexScript[] = await StorageAdapter.loadGlobalRegexScriptList?.() || [];
+    const selectedRegexId = await StorageAdapter.loadSelectedGlobalRegexScriptId?.();
+    const regexEnabledVal = await AsyncStorage.getItem('nodest_global_regex_enabled');
+    return {
+      globalPresetList: presetList,
+      selectedPresetId: selectedPresetId || (presetList[0]?.id ?? ''),
+      presetConfig: {
+        enabled: presetEnabled === 'true',
+        presetJson: selectedPreset?.presetJson || defaultPreset,
+      },
+      presetEntries: selectedPreset ? promptsToPresetEntryUI(selectedPreset.presetJson.prompts) : [],
+      globalWorldbookList: worldbookList,
+      selectedWorldbookId: selectedWorldbookId || (worldbookList[0]?.id ?? ''),
+      worldbookConfig: {
+        enabled: worldbookEnabled === 'true',
+        priority: '全局优先',
+        worldbookJson: selectedWorldbook?.worldbookJson || defaultWorldBook,
+      },
+      regexScriptList: regexList,
+      selectedRegexScriptId: selectedRegexId || (regexList[0]?.id ?? ''),
+      regexEnabled: regexEnabledVal === 'true',
+    };
+  } catch (e) {
+    return null;
+  }
+}
+
+export async function saveGlobalSettingsState({
+  globalPresetList,
+  selectedPresetId,
+  globalWorldbookList,
+  selectedWorldbookId,
+  regexScriptList,
+  selectedRegexScriptId,
+  presetConfig,
+  worldbookConfig,
+  regexEnabled,
+}: any) {
+  try {
+    const { StorageAdapter } = await import('@/NodeST/nodest/utils/storage-adapter');
+    await StorageAdapter.saveGlobalPresetList?.(globalPresetList);
+    await StorageAdapter.saveSelectedGlobalPresetId?.(selectedPresetId);
+    await StorageAdapter.saveGlobalWorldbookList?.(globalWorldbookList);
+    await StorageAdapter.saveSelectedGlobalWorldbookId?.(selectedWorldbookId);
+    await StorageAdapter.saveGlobalRegexScriptList?.(regexScriptList);
+    await StorageAdapter.saveSelectedGlobalRegexScriptId?.(selectedRegexScriptId);
+    await AsyncStorage.setItem('nodest_global_preset_enabled', presetConfig.enabled ? 'true' : 'false');
+    await AsyncStorage.setItem('nodest_global_worldbook_enabled', worldbookConfig.enabled ? 'true' : 'false');
+    await AsyncStorage.setItem('nodest_global_regex_enabled', regexEnabled ? 'true' : 'false');
+  } catch (e) {
+    // ignore
+  }
+}
