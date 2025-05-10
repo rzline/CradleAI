@@ -15,6 +15,7 @@ import {
   Platform,
   TextInput,
 } from 'react-native';
+import { WebView } from 'react-native-webview'; // Add WebView import
 import Animated, {
   useSharedValue,
   useAnimatedStyle,
@@ -124,6 +125,146 @@ function stripUnknownTags(html: string): string {
   });
   return result;
 }
+
+// Add check for WebView content - starts with <!DOCTYPE html> or <html>
+const isWebViewContent = (text: string): boolean => {
+  return /^\s*(?:<!DOCTYPE\s+html|<html)/i.test(text);
+};
+
+// 修改 extractMarkdownBlocks，支持完整 HTML 页面代码块识别
+const extractMarkdownBlocks = (html: string): { markdown: string[], processed: string, htmlPage: string | null } => {
+  const markdownBlockRegex = /```([\s\S]*?)```/g;
+  const markdownBlocks: string[] = [];
+  let htmlPage: string | null = null;
+
+  // Replace markdown blocks with placeholders and collect them
+  const processedHtml = html.replace(markdownBlockRegex, (match, content) => {
+    const trimmed = content.trim();
+    // 检查是否为完整 HTML 页面
+    if (/^\s*(<!DOCTYPE\s+html|<html)/i.test(trimmed)) {
+      htmlPage = trimmed;
+      // 用特殊占位符替换，后续直接返回
+      return `<div class="__html-page-block__"></div>`;
+    }
+    markdownBlocks.push(trimmed);
+    return `<div class="markdown-block" data-index="${markdownBlocks.length - 1}"></div>`;
+  });
+
+  return { markdown: markdownBlocks, processed: processedHtml, htmlPage };
+};
+
+const generateMarkdownCss = () => {
+  return `
+    .markdown-content {
+      color: #f8f8f2;
+      line-height: 1.6;
+      margin: 1em 0;
+      padding: 1em;
+      background-color: rgba(40, 42, 54, 0.8);
+      border-radius: 8px;
+      font-family: 'Helvetica', 'Arial', sans-serif;
+    }
+    .markdown-content p {
+      margin-bottom: 1em;
+    }
+    .markdown-content h1, .markdown-content h2, .markdown-content h3,
+    .markdown-content h4, .markdown-content h5, .markdown-content h6 {
+      margin-top: 1.5em;
+      margin-bottom: 0.5em;
+      color: #ff79c6;
+    }
+    .markdown-content code {
+      background: rgba(20, 22, 34, 0.8);
+      padding: 0.2em 0.4em;
+      border-radius: 3px;
+      font-family: monospace;
+      font-size: 0.9em;
+    }
+    .markdown-content pre {
+      background: rgba(20, 22, 34, 0.8);
+      padding: 1em;
+      border-radius: 5px;
+      overflow-x: auto;
+    }
+    .markdown-content blockquote {
+      border-left: 4px solid #ff79c6;
+      padding-left: 1em;
+      margin-left: 0;
+      color: #d0d0d0;
+    }
+    .markdown-content ul, .markdown-content ol {
+      padding-left: 2em;
+    }
+    .markdown-content img {
+      max-width: 100%;
+      border-radius: 5px;
+    }
+  `;
+};
+
+// 修改 enhanceHtmlWithMarkdown，遇到完整 HTML 页面直接返回
+const enhanceHtmlWithMarkdown = (html: string): string => {
+  const { markdown, processed, htmlPage } = extractMarkdownBlocks(html);
+
+  // 如果有完整 HTML 页面代码块，直接返回该 HTML 内容
+  if (htmlPage) {
+    return htmlPage;
+  }
+
+  if (markdown.length === 0) {
+    return html; // No markdown found, return original
+  }
+
+  // Create the enhanced HTML with markdown processing capabilities
+  const markdownLibrary = `
+    <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
+  `;
+
+  const markdownStyle = `<style>${generateMarkdownCss()}</style>`;
+
+  // Create a script to process markdown placeholders
+  const markdownProcessor = `
+    <script>
+      // Store the markdown blocks
+      const markdownBlocks = ${JSON.stringify(markdown)};
+      
+      // Process markdown when the page loads
+      document.addEventListener('DOMContentLoaded', function() {
+        // Find all markdown block placeholders
+        const elements = document.querySelectorAll('.markdown-block');
+        
+        elements.forEach(element => {
+          const index = parseInt(element.getAttribute('data-index'), 10);
+          if (!isNaN(index) && index >= 0 && index < markdownBlocks.length) {
+            // Create a div for rendered markdown
+            const markdownDiv = document.createElement('div');
+            markdownDiv.className = 'markdown-content';
+            
+            // Use marked.js to render the markdown
+            markdownDiv.innerHTML = marked.parse(markdownBlocks[index]);
+            
+            // Replace the placeholder with rendered markdown
+            element.parentNode.replaceChild(markdownDiv, element);
+          }
+        });
+      });
+    </script>
+  `;
+
+  // Inject our code at the end of the head or the beginning of the body
+  if (processed.includes('</head>')) {
+    return processed.replace('</head>', `${markdownStyle}${markdownLibrary}</head>`) + markdownProcessor;
+  } else if (processed.includes('<body')) {
+    return processed.replace('<body', `<head>${markdownStyle}${markdownLibrary}</head><body`) + markdownProcessor;
+  } else {
+    // If no head or body tags, wrap everything
+    return `<!DOCTYPE html>
+      <html>
+        <head>${markdownStyle}${markdownLibrary}</head>
+        <body>${processed}${markdownProcessor}</body>
+      </html>`;
+  }
+};
 
 const ChatDialog: React.FC<ExtendedChatDialogProps> = ({
   messages,
@@ -1025,7 +1166,9 @@ const ChatDialog: React.FC<ExtendedChatDialogProps> = ({
 
     const isUser = showUserMessage;
     const isRegenerating = regeneratingMessageId === lastMessage.id;
-    const messageRating = getMessageRating(lastMessage.id);
+
+    // Check if content should be rendered as WebView
+    const shouldRenderAsWebView = !isUser && !lastMessage.isLoading && isWebViewContent(displayText);
 
     // 判断是否first_mes
     let isFirstMes = false;
@@ -1141,43 +1284,81 @@ const ChatDialog: React.FC<ExtendedChatDialogProps> = ({
               </Text>
             </View>
           )}
-          <ScrollView
-            style={[
-              styles.visualNovelTextContainer,
-              {
+          
+          {/* WebView content replaces ScrollView when appropriate */}
+          {shouldRenderAsWebView ? (
+            <View style={[
+              styles.visualNovelWebViewContainer,
+              { 
                 maxHeight: getVNTextMaxHeight(),
-                marginBottom: 0,
                 marginTop: vnExpanded ? 8 : 0,
               }
-            ]}
-            contentContainerStyle={{ flexGrow: 1 }}
-          >
-            <View style={styles.visualNovelTextWrapper}>
-              {containsComplexHtml(displayText) || /<\/?[a-z][^>]*>/i.test(displayText) ? (
-                <RichTextRenderer 
-                  html={optimizeHtmlForRendering(stripUnknownTags(displayText))}
-                  baseStyle={{ 
-                    color: visualNovelSettings.textColor,
-                    fontFamily: visualNovelSettings.fontFamily,
-                    fontSize: 16,
-                    lineHeight: 22
-                  }}
-                  onImagePress={(url) => setFullscreenImage(url)}
-                  maxImageHeight={MAX_IMAGE_HEIGHT}
-                />
-              ) : (
-                <Text style={[
-                  styles.visualNovelText,
-                  { 
-                    fontFamily: visualNovelSettings.fontFamily, 
-                    color: visualNovelSettings.textColor 
-                  }
-                ]}>
-                  {displayText}
-                </Text>
-              )}
+            ]}>
+              <WebView
+                style={styles.visualNovelWebView}
+                originWhitelist={['*']}
+                source={{ html: enhanceHtmlWithMarkdown(displayText) }} // Use our enhanced version
+                javaScriptEnabled={true}
+                domStorageEnabled={true}
+                startInLoadingState={true}
+                scalesPageToFit={false}
+                injectedJavaScript={`
+                  // Make content fit mobile viewport
+                  document.querySelector('meta[name="viewport"]')?.remove();
+                  var meta = document.createElement('meta');
+                  meta.name = 'viewport';
+                  meta.content = 'width=device-width, initial-scale=1, maximum-scale=1';
+                  document.getElementsByTagName('head')[0].appendChild(meta);
+                  true;
+                `}
+                renderLoading={() => (
+                  <View style={styles.webViewLoading}>
+                    <ActivityIndicator size="small" color="#fff" />
+                    <Text style={styles.webViewLoadingText}>加载中...</Text>
+                  </View>
+                )}
+              />
             </View>
-          </ScrollView>
+          ) : (
+            <ScrollView
+              style={[
+                styles.visualNovelTextContainer,
+                {
+                  maxHeight: getVNTextMaxHeight(),
+                  marginBottom: 0,
+                  marginTop: vnExpanded ? 8 : 0,
+                }
+              ]}
+              contentContainerStyle={{ flexGrow: 1 }}
+            >
+              <View style={styles.visualNovelTextWrapper}>
+                {containsComplexHtml(displayText) || /<\/?[a-z][^>]*>/i.test(displayText) ? (
+                  <RichTextRenderer 
+                    html={optimizeHtmlForRendering(stripUnknownTags(displayText))}
+                    baseStyle={{ 
+                      color: visualNovelSettings.textColor,
+                      fontFamily: visualNovelSettings.fontFamily,
+                      fontSize: 16,
+                      lineHeight: 22
+                    }}
+                    onImagePress={(url) => setFullscreenImage(url)}
+                    maxImageHeight={MAX_IMAGE_HEIGHT}
+                  />
+                ) : (
+                  <Text style={[
+                    styles.visualNovelText,
+                    { 
+                      fontFamily: visualNovelSettings.fontFamily, 
+                      color: visualNovelSettings.textColor 
+                    }
+                  ]}>
+                    {displayText}
+                  </Text>
+                )}
+              </View>
+            </ScrollView>
+          )}
+          
           <View style={styles.visualNovelActions}>
             {/* 音量按钮 */}
             {!isUser && !lastMessage.isLoading && (
@@ -2068,6 +2249,32 @@ const styles = StyleSheet.create({
     right: 20,
     zIndex: 20,
     gap: 12,
+  },
+  visualNovelWebViewContainer: {
+    flex: 1,
+    overflow: 'hidden',
+    borderRadius: 8,
+    backgroundColor: '#fff',
+    marginBottom: 8,
+  },
+  visualNovelWebView: {
+    flex: 1,
+    backgroundColor: 'transparent',
+  },
+  webViewLoading: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    right: 0,
+    bottom: 0,
+    justifyContent: 'center',
+    alignItems: 'center',
+    backgroundColor: 'rgba(0,0,0,0.3)',
+  },
+  webViewLoadingText: {
+    marginTop: 10,
+    color: '#fff',
+    fontSize: 14,
   },
 });
 

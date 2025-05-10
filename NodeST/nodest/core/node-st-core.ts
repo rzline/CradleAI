@@ -52,6 +52,9 @@ export class NodeSTCore {
                     flags = regexMatch[2] || flags;
                 }
 
+                // 修正：flags 为空时自动补全为 'g'
+                if (!flags) flags = 'g';
+
                 // 增加详细日志
                 const before = result;
                 const regex = new RegExp(pattern, flags);

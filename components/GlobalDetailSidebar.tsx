@@ -32,6 +32,9 @@ interface GlobalDetailSidebarProps {
   name?: string;
   onNameChange?: (text: string) => void;
   onDelete?: () => void;
+  // 新增：正则flags支持
+  flags?: string;
+  onFlagsChange?: (flags: string) => void;
 }
 
 const { width } = Dimensions.get('window');
@@ -51,6 +54,9 @@ const GlobalDetailSidebar: React.FC<GlobalDetailSidebarProps> = ({
   name,
   onNameChange,
   onDelete,
+  // 新增
+  flags,
+  onFlagsChange,
 }) => {
   const [localContent, setLocalContent] = useState(content);
   const [localName, setLocalName] = useState(name || '');
@@ -492,6 +498,23 @@ const GlobalDetailSidebar: React.FC<GlobalDetailSidebarProps> = ({
                 placeholderTextColor="#999"
                 autoCapitalize="none"
                 autoCorrect={false}
+              />
+            </View>
+            {/* 新增：flags 编辑 */}
+            <View style={styles.optionRow}>
+              <Text style={styles.optionLabel}>标志(flags):</Text>
+              <TextInput
+                style={[styles.nameInput, { flex: 1 }]}
+                value={typeof flags === 'string' ? flags : (localRegex.flags ?? 'g')}
+                onChangeText={text => {
+                  if (onFlagsChange) onFlagsChange(text);
+                  else handleRegexFieldChange('flags', text);
+                }}
+                placeholder="g, i, m等"
+                placeholderTextColor="#999"
+                autoCapitalize="none"
+                autoCorrect={false}
+                maxLength={6}
               />
             </View>
             <View style={styles.optionRow}>

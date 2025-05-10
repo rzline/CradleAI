@@ -74,6 +74,7 @@ const DEFAULT_REGEX_SCRIPT: GlobalRegexScript = {
   substituteRegex: 0,
   minDepth: null,
   maxDepth: null,
+  flags: 'g', // 新增：默认g
 };
 
 const defaultPreset: PresetJson = {
@@ -88,7 +89,7 @@ const defaultWorldBook: WorldBookJson = {
 const TABS = [
   { key: 'preset', label: '全局预设' },
   { key: 'worldbook', label: '全局世界书' },
-  // { key: 'regex', label: '全局正则' }, // 隐藏全局正则标签页
+  { key: 'regex', label: '全局正则' },
 ];
 
 // 工具函数：确保所有 FIXED 条目都存在
@@ -512,7 +513,10 @@ const handleRegexScriptClick = (script: GlobalRegexScript, idx: number) => {
   const handleRegexSidebarSave = async (updated: GlobalRegexScript) => {
     setRegexScriptList(list => {
       const arr = [...list];
-      if (regexDetailSidebar.index !== undefined) arr[regexDetailSidebar.index] = updated;
+      if (regexDetailSidebar.index !== undefined) {
+        // 修正：flags为空时自动补全为g
+        arr[regexDetailSidebar.index] = { ...updated, flags: updated.flags?.trim() || 'g' };
+      }
       // 持久化保存（修复：用arr而不是regexScriptList）
       (async () => {
         try {
@@ -1025,6 +1029,7 @@ const handleRegexScriptClick = (script: GlobalRegexScript, idx: number) => {
       ...DEFAULT_REGEX_SCRIPT,
       id: newId,
       scriptName: newRegexModal.name || `新正则脚本_${timestamp}`,
+      flags: 'g', // 新建时默认g
     };
     setRegexScriptList(list => [...list, newScript]);
     setSelectedRegexScriptId(newId);
@@ -1125,103 +1130,103 @@ const handleRegexScriptClick = (script: GlobalRegexScript, idx: number) => {
     </View>
   );
 
-  // ======= 全局正则脚本测试 =======
-  // const handleTestRegex = async () => {
-  //   try {
-  //     // 1. 样例数据
-  //     const userInputSample = "The test was rejected.";
-  //     const aiResponseSample = "This is the end.</Assistant>";
-  //     const expectedUserOutput = "OK.";
-  //     const expectedAiOutput = "This is the end.";
 
-  //     // 2. 读取所有启用的正则脚本
-  //     const enabledScripts = regexScriptList.filter(s => !s.disabled);
+  const handleTestRegex = async () => {
+    try {
+      // 1. 样例数据
+      const userInputSample = "The test was rejected.";
+      const aiResponseSample = "This is the end.</Assistant>";
+      const expectedUserOutput = "OK.";
+      const expectedAiOutput = "This is the end.";
 
-  //     // 3. 动态导入 NodeSTCore
-  //     let NodeSTCoreClass = NodeSTCore;
-  //     if (!NodeSTCoreClass) {
-  //       NodeSTCoreClass = (await import('@/NodeST/nodest/core/node-st-core')).NodeSTCore;
-  //     }
+      // 2. 读取所有启用的正则脚本
+      const enabledScripts = regexScriptList.filter(s => !s.disabled);
 
-  //     // 4. 调用静态方法进行正则处理，增加详细日志
-  //     let log = '';
-  //     log += `【测试开始】\n`;
-  //     log += `启用的正则脚本数量: ${enabledScripts.length}\n`;
-  //     enabledScripts.forEach((s, idx) => {
-  //       log += `脚本#${idx+1}: 名称=${s.scriptName}, findRegex=${s.findRegex}, replaceString=${s.replaceString}, placement=${JSON.stringify(s.placement)}\n`;
-  //     });
+      // 3. 动态导入 NodeSTCore
+      let NodeSTCoreClass = NodeSTCore;
+      if (!NodeSTCoreClass) {
+        NodeSTCoreClass = (await import('@/NodeST/nodest/core/node-st-core')).NodeSTCore;
+      }
 
-  //     log += `\n【用户输入测试】\n原始: ${userInputSample}\n`;
-  //     const processedUser = NodeSTCoreClass.applyGlobalRegexScripts(
-  //       userInputSample,
-  //       enabledScripts,
-  //       1 // placement=1, 用户输入
-  //     );
-  //     log += `处理后: ${processedUser}\n期望: ${expectedUserOutput}\n`;
+      // 4. 调用静态方法进行正则处理，增加详细日志
+      let log = '';
+      log += `【测试开始】\n`;
+      log += `启用的正则脚本数量: ${enabledScripts.length}\n`;
+      enabledScripts.forEach((s, idx) => {
+        log += `脚本#${idx+1}: 名称=${s.scriptName}, findRegex=${s.findRegex}, replaceString=${s.replaceString}, placement=${JSON.stringify(s.placement)}\n`;
+      });
 
-  //     // 详细逐步追踪每个脚本的应用
-  //     let tempUser = userInputSample;
-  //     enabledScripts.forEach((script, idx) => {
-  //       if (!script.placement.includes(1)) {
-  //         log += `脚本#${idx+1}（${script.scriptName}）未应用于用户输入（placement不含1）\n`;
-  //         return;
-  //       }
-  //       try {
-  //         let findRegex = script.findRegex;
-  //         if (findRegex.startsWith('/') && findRegex.endsWith('/')) {
-  //           findRegex = findRegex.slice(1, -1);
-  //         }
-  //         const flags = script.flags || '';
-  //         const regex = new RegExp(findRegex, flags);
-  //         const before = tempUser;
-  //         tempUser = tempUser.replace(regex, script.replaceString);
-  //         log += `脚本#${idx+1} 应用后: ${before} => ${tempUser}\n`;
-  //       } catch (e) {
-  //         log += `脚本#${idx+1} 应用异常: ${e}\n`;
-  //       }
-  //     });
+      log += `\n【用户输入测试】\n原始: ${userInputSample}\n`;
+      const processedUser = NodeSTCoreClass.applyGlobalRegexScripts(
+        userInputSample,
+        enabledScripts,
+        1 // placement=1, 用户输入
+      );
+      log += `处理后: ${processedUser}\n期望: ${expectedUserOutput}\n`;
 
-  //     log += `\n【AI响应测试】\n原始: ${aiResponseSample}\n`;
-  //     const processedAi = NodeSTCoreClass.applyGlobalRegexScripts(
-  //       aiResponseSample,
-  //       enabledScripts,
-  //       2 // placement=2, AI输出
-  //     );
-  //     log += `处理后: ${processedAi}\n期望: ${expectedAiOutput}\n`;
+      // 详细逐步追踪每个脚本的应用
+      let tempUser = userInputSample;
+      enabledScripts.forEach((script, idx) => {
+        if (!script.placement.includes(1)) {
+          log += `脚本#${idx+1}（${script.scriptName}）未应用于用户输入（placement不含1）\n`;
+          return;
+        }
+        try {
+          let findRegex = script.findRegex;
+          if (findRegex.startsWith('/') && findRegex.endsWith('/')) {
+            findRegex = findRegex.slice(1, -1);
+          }
+          const flags = script.flags || '';
+          const regex = new RegExp(findRegex, flags);
+          const before = tempUser;
+          tempUser = tempUser.replace(regex, script.replaceString);
+          log += `脚本#${idx+1} 应用后: ${before} => ${tempUser}\n`;
+        } catch (e) {
+          log += `脚本#${idx+1} 应用异常: ${e}\n`;
+        }
+      });
 
-  //     let tempAi = aiResponseSample;
-  //     enabledScripts.forEach((script, idx) => {
-  //       if (!script.placement.includes(2)) {
-  //         log += `脚本#${idx+1}（${script.scriptName}）未应用于AI输出（placement不含2）\n`;
-  //         return;
-  //       }
-  //       try {
-  //         let findRegex = script.findRegex;
-  //         if (findRegex.startsWith('/') && findRegex.endsWith('/')) {
-  //           findRegex = findRegex.slice(1, -1);
-  //         }
-  //         const flags = script.flags || '';
-  //         const regex = new RegExp(findRegex, flags);
-  //         const before = tempAi;
-  //         tempAi = tempAi.replace(regex, script.replaceString);
-  //         log += `脚本#${idx+1} 应用后: ${before} => ${tempAi}\n`;
-  //       } catch (e) {
-  //         log += `脚本#${idx+1} 应用异常: ${e}\n`;
-  //       }
-  //     });
+      log += `\n【AI响应测试】\n原始: ${aiResponseSample}\n`;
+      const processedAi = NodeSTCoreClass.applyGlobalRegexScripts(
+        aiResponseSample,
+        enabledScripts,
+        2 // placement=2, AI输出
+      );
+      log += `处理后: ${processedAi}\n期望: ${expectedAiOutput}\n`;
 
-  //     // 5. 生成测试报告
-  //     const userPass = processedUser === expectedUserOutput;
-  //     const aiPass = processedAi === expectedAiOutput;
-  //     log += `\n【结果汇总】\n`;
-  //     log += `用户输入: ${userPass ? "✅ 通过" : "❌ 不通过"}\n`;
-  //     log += `AI响应: ${aiPass ? "✅ 通过" : "❌ 不通过"}\n`;
+      let tempAi = aiResponseSample;
+      enabledScripts.forEach((script, idx) => {
+        if (!script.placement.includes(2)) {
+          log += `脚本#${idx+1}（${script.scriptName}）未应用于AI输出（placement不含2）\n`;
+          return;
+        }
+        try {
+          let findRegex = script.findRegex;
+          if (findRegex.startsWith('/') && findRegex.endsWith('/')) {
+            findRegex = findRegex.slice(1, -1);
+          }
+          const flags = script.flags || '';
+          const regex = new RegExp(findRegex, flags);
+          const before = tempAi;
+          tempAi = tempAi.replace(regex, script.replaceString);
+          log += `脚本#${idx+1} 应用后: ${before} => ${tempAi}\n`;
+        } catch (e) {
+          log += `脚本#${idx+1} 应用异常: ${e}\n`;
+        }
+      });
 
-  //     Alert.alert("全局正则测试结果", log);
-  //   } catch (e) {
-  //     Alert.alert("测试失败", String(e));
-  //   }
-  // };
+      // 5. 生成测试报告
+      const userPass = processedUser === expectedUserOutput;
+      const aiPass = processedAi === expectedAiOutput;
+      log += `\n【结果汇总】\n`;
+      log += `用户输入: ${userPass ? "✅ 通过" : "❌ 不通过"}\n`;
+      log += `AI响应: ${aiPass ? "✅ 通过" : "❌ 不通过"}\n`;
+
+      Alert.alert("全局正则测试结果", log);
+    } catch (e) {
+      Alert.alert("测试失败", String(e));
+    }
+  };
 
   // 微缩视图下切换预设条目启用
   const handleTogglePresetEnable = (idx: number) => {
@@ -1857,11 +1862,162 @@ const handleRegexScriptClick = (script: GlobalRegexScript, idx: number) => {
           </View>
         )}
 
-        {/* {activeTab === 'regex' && (
+        {activeTab === 'regex' && (
           <View style={{ padding: 16 }}>
-            ...全局正则相关内容...
+            <View style={styles.row}>
+              <Text style={styles.label}>启用全局正则</Text>
+              <Switch
+                value={regexEnabled}
+                onValueChange={handleRegexSwitch}
+                trackColor={{ false: '#ccc', true: theme.colors.primary }}
+                thumbColor={regexEnabled ? theme.colors.primary : '#eee'}
+              />
+            </View>
+            {/* 正则脚本下拉选择器 */}
+            {renderDropdown(
+              regexScriptList.map(script => ({ id: script.id, name: script.scriptName })),
+              selectedRegexScriptId,
+              handleRegexDropdownChange,
+              '选择正则脚本',
+              showRegexDropdown,
+              () => {
+                setShowRegexDropdown(!showRegexDropdown);
+              },
+              'preset' // 类型无实际影响
+            )}
+            <View style={styles.sectionHeader}>
+              <Text style={styles.sectionHeaderText}>正则脚本列表</Text>
+              <View style={{ flexDirection: 'row', alignItems: 'center' }}>
+                {/* 视图切换按钮 */}
+                <TouchableOpacity
+                  onPress={() => setRegexViewMode(v => v === 'compact' ? 'regular' : 'compact')}
+                  style={{ marginRight: 8 }}
+                >
+                  <Ionicons
+                    name={regexViewMode === 'compact' ? 'list' : 'grid'}
+                    size={22}
+                    color={theme.colors.primary}
+                  />
+                </TouchableOpacity>
+                {/* 管理按钮 */}
+                <TouchableOpacity onPress={handleRegexManage} style={{ marginRight: 8 }}>
+                  <Ionicons
+                    name="construct-outline"
+                    size={22}
+                    color={regexManaging ? theme.colors.primary : '#888'}
+                  />
+                </TouchableOpacity>
+                {/* 删除按钮 */}
+                <TouchableOpacity
+                  onPress={handleDeleteCurrentRegexScript}
+                  style={{ marginRight: 8 }}
+                  disabled={!selectedRegexScriptId}
+                >
+                  <Ionicons name="trash-outline" size={22} color={selectedRegexScriptId ? theme.colors.danger : '#ccc'} />
+                </TouchableOpacity>
+                {/* 新建按钮 */}
+                <TouchableOpacity onPress={handleCreateRegexScript} style={{ marginRight: 8 }}>
+                  <Ionicons name="duplicate-outline" size={22} color={theme.colors.primary} />
+                </TouchableOpacity>
+                {/* 导入按钮 */}
+                <TouchableOpacity onPress={handleImportRegexScript} style={{ marginRight: 8 }}>
+                  <Ionicons name="download-outline" size={22} color={theme.colors.primary} />
+                </TouchableOpacity>
+                {/* 测试按钮 */}
+                <TouchableOpacity onPress={handleTestRegex}>
+                  <Ionicons name="flask-outline" size={22} color={theme.colors.primary} />
+                </TouchableOpacity>
+              </View>
+            </View>
+            {/* 正则脚本列表 */}
+            {regexViewMode === 'compact'
+              ? regexScriptList.map((script, idx) => renderCompactRegexScript(script, idx))
+              : regexScriptList.map((script, idx) => (
+                  <TouchableOpacity
+                    key={script.id}
+                    style={styles.promptCard}
+                    onPress={() => handleRegexScriptClick(script, idx)}
+                    activeOpacity={0.7}
+                  >
+                    <View style={{ flexDirection: 'row', alignItems: 'center' }}>
+                      {regexManaging && (
+                        <TouchableOpacity
+                          onPress={() => toggleRegexSelect(idx)}
+                          style={{
+                            marginRight: 10,
+                            width: 22,
+                            height: 22,
+                            borderRadius: 11,
+                            borderWidth: 2,
+                            borderColor: theme.colors.primary,
+                            backgroundColor: regexSelectedIndexes.includes(idx) ? theme.colors.primary : '#fff',
+                            alignItems: 'center',
+                            justifyContent: 'center',
+                          }}
+                        >
+                          {regexSelectedIndexes.includes(idx) && (
+                            <Ionicons name="checkmark" size={14} color="#fff" />
+                          )}
+                        </TouchableOpacity>
+                      )}
+                      <View style={{ flex: 1 }}>
+                        <View style={styles.promptRow}>
+                          <Text style={styles.promptLabel}>名称</Text>
+                          <Text style={styles.promptValue}>{script.scriptName}</Text>
+                        </View>
+                        <View style={styles.promptRow}>
+                          <Text style={styles.promptLabel}>启用</Text>
+                          <Ionicons name={!script.disabled ? 'checkmark-circle' : 'close-circle'} size={18} color={!script.disabled ? theme.colors.primary : '#ccc'} />
+                        </View>
+                        <View style={styles.promptRow}>
+                          <Text style={styles.promptLabel}>正则</Text>
+                          <Text style={styles.promptValue} numberOfLines={1}>{script.findRegex}</Text>
+                        </View>
+                        <View style={styles.promptRow}>
+                          <Text style={styles.promptLabel}>替换</Text>
+                          <Text style={styles.promptValue} numberOfLines={1}>{script.replaceString}</Text>
+                        </View>
+                        <View style={styles.promptRow}>
+                          <Text style={styles.promptLabel}>作用域</Text>
+                          <Text style={styles.promptValue}>
+                            {script.placement?.includes(1) && '用户 '}
+                            {script.placement?.includes(2) && 'AI'}
+                          </Text>
+                        </View>
+                      </View>
+                      {/* 启用/禁用按钮 */}
+                      <TouchableOpacity
+                        style={{ marginLeft: 8 }}
+                        onPress={() => handleToggleRegexEnable(idx)}
+                      >
+                        <Ionicons
+                          name={!script.disabled ? 'checkmark-circle' : 'close-circle'}
+                          size={22}
+                          color={!script.disabled ? theme.colors.primary : '#888'}
+                        />
+                      </TouchableOpacity>
+                    </View>
+                  </TouchableOpacity>
+                ))
+            }
+            {/* 管理模式下显示删除按钮 */}
+            {regexManaging && (
+              <View style={{ marginTop: 12, alignItems: 'flex-end' }}>
+                <TouchableOpacity
+                  style={{
+                    backgroundColor: theme.colors.danger,
+                    borderRadius: 8,
+                    paddingVertical: 10,
+                    paddingHorizontal: 24,
+                  }}
+                  onPress={handleDeleteRegexScripts}
+                >
+                  <Text style={{ color: '#fff', fontWeight: 'bold', fontSize: 16 }}>删除选中脚本</Text>
+                </TouchableOpacity>
+              </View>
+            )}
           </View>
-        )} */}
+        )}
       </ScrollView>
 
       {/* 底部保存按钮 */}
@@ -2122,7 +2278,34 @@ const handleRegexScriptClick = (script: GlobalRegexScript, idx: number) => {
               ? regexScriptList[regexDetailSidebar.index].scriptName
               : undefined
           }
-          onContentChange={async text => {
+          // 新增：传递 flags 字段
+          flags={
+            typeof regexDetailSidebar.index === 'number' && regexScriptList[regexDetailSidebar.index]
+              ? regexScriptList[regexDetailSidebar.index].flags ?? 'g'
+              : 'g'
+          }
+            // 新增：flags 变更回调
+            onFlagsChange={async (text: string) => {
+            if (
+              typeof regexDetailSidebar.index !== 'number' ||
+              regexDetailSidebar.index < 0 ||
+              regexDetailSidebar.index >= regexScriptList.length
+            ) return;
+            setRegexScriptList((list: GlobalRegexScript[]) => {
+              const arr = [...list]; 
+              // flags 为空时自动赋值为 'g'
+              arr[regexDetailSidebar.index!] = { ...arr[regexDetailSidebar.index!], flags: text.trim() || 'g' };
+              // 持久化保存
+              (async () => {
+              try {
+                const { StorageAdapter } = await import('@/NodeST/nodest/utils/storage-adapter');
+                await StorageAdapter.saveGlobalRegexScriptList?.(arr);
+              } catch (e) {}
+              })();
+              return arr;
+            });
+            }}
+            onContentChange={async (text: string) => {
             if (
               typeof regexDetailSidebar.index !== 'number' ||
               regexDetailSidebar.index < 0 ||
@@ -2168,7 +2351,8 @@ const handleRegexScriptClick = (script: GlobalRegexScript, idx: number) => {
             ) return;
             setRegexScriptList(list => {
               const arr = [...list];
-              arr[regexDetailSidebar.index!] = { ...arr[regexDetailSidebar.index!], ...opts };
+              // flags 为空时自动赋值为 'g'
+              arr[regexDetailSidebar.index!] = { ...arr[regexDetailSidebar.index!], ...opts, flags: (opts.flags ?? arr[regexDetailSidebar.index!].flags ?? 'g') || 'g' };
               // 持久化保存
               (async () => {
                 try {

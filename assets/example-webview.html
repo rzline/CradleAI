@@ -1,0 +1,252 @@
+<!DOCTYPE html>
+<html lang="zh">
+<head>
+    <meta charset="UTF-8">
+    <title>百物斋</title>
+<style>
+    @import url('https://fonts.googleapis.com/css2?family=Noto+Serif+SC:wght@400;700&family=Shadows+Into+Light&display=swap');
+
+    /* 重置所有默认样式 */
+    * {
+        margin: 0;
+        padding: 0;
+        box-sizing: border-box;
+        -webkit-font-smoothing: antialiased;
+        -moz-osx-font-smoothing: grayscale;
+        text-shadow: 0 0 0 rgba(0,0,0,0);
+    }
+
+    /* 强制设置基础字体 */
+    :root {
+        --main-font: 'Noto Serif SC', serif, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, 'Open Sans', 'Helvetica Neue', sans-serif;
+        --handwriting-font: 'Shadows Into Light', cursive, var(--main-font);
+    }
+
+    body {
+            margin: 0;
+            padding: 0; /* 将 padding 改为 0 */
+            background-color: #1a1a1a;
+            min-height: 100vh;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            font-family: var(--main-font);
+            color: #333;
+            font-size: 16px;
+            line-height: 1.8;
+            text-rendering: optimizeLegibility;
+            -webkit-text-size-adjust: 100%;
+            -webkit-font-feature-settings: "kern" 1;
+            font-feature-settings: "kern" 1;
+        }
+
+    /* 确保所有文字继承基础字体 */
+    .notebook {
+        margin: 0 auto;
+        width: 90%;
+        max-width: 800px;
+        background: #f4f0e8;
+        padding: 40px;
+        box-shadow: 0 0 20px rgba(0,0,0,0.5);
+        position: relative;
+        border-radius: 5px;
+        transform: rotate(-1deg);
+        font-family: var(--main-font) !important;
+    }
+
+    .notebook p {
+        font-family: var(--main-font) !important;
+        color: #333 !important;
+        margin-bottom: 1em;
+        text-align: justify;
+        word-break: break-word;
+        text-rendering: optimizeLegibility;
+    }
+
+    .notebook::before {
+        content: '';
+        position: absolute;
+        top: 0;
+        left: 40px;
+        right: 40px;
+        height: 2px;
+        background: rgba(0,0,0,0.1);
+        box-shadow: 0 0 3px rgba(0,0,0,0.2);
+    }
+
+    .coffee-stain {
+        position: absolute;
+        top: 20px;
+        right: 40px;
+        width: 100px;
+        height: 100px;
+        background: rgba(139, 69, 19, 0.1);
+        border-radius: 50%;
+        transform: rotate(15deg);
+    }
+
+    .date {
+        font-family: var(--handwriting-font) !important;
+        color: #666 !important;
+        font-size: 1.2em;
+        margin-bottom: 20px;
+        border-bottom: 1px dashed #999;
+        padding-bottom: 10px;
+        font-weight: normal;
+    }
+
+    .entry {
+        margin-bottom: 30px;
+        line-height: 1.8;
+        text-align: justify;
+        position: relative;
+    }
+
+    .highlight {
+        background: rgba(255, 242, 0, 0.2);
+        padding: 2px 5px;
+        font-family: inherit !important;
+    }
+
+    .note {
+        font-family: var(--handwriting-font) !important;
+        color: #cc0000 !important;
+        font-size: 0.9em;
+        margin-top: 10px;
+        transform: rotate(1deg);
+        font-weight: normal;
+    }
+
+    .polaroid {
+        background: #fff;
+        padding: 10px;
+        box-shadow: 0 4px 8px rgba(0,0,0,0.2);
+        transform: rotate(2deg);
+        margin: 20px 0;
+        max-width: 300px;
+        position: relative;
+    }
+
+    .polaroid img {
+        width: 100%;
+        height: 200px;
+        object-fit: cover;
+        filter: sepia(20%);
+    }
+
+    .polaroid p {
+        font-family: var(--handwriting-font) !important;
+        text-align: center;
+        margin-top: 10px;
+        color: #333 !important;
+        font-weight: normal;
+    }
+
+    .tape {
+        position: absolute;
+        width: 100px;
+        height: 30px;
+        background: rgba(255,255,255,0.4);
+        transform: rotate(-45deg);
+        top: -15px;
+        left: -15px;
+    }
+
+    @keyframes flicker {
+        0% { opacity: 1; }
+        50% { opacity: 0.95; }
+        100% { opacity: 1; }
+    }
+
+    .mysterious-text {
+        color: #800000 !important;
+        font-style: italic;
+        animation: flicker 2s infinite;
+        font-family: inherit !important;
+    }
+
+    .paper-texture {
+        position: absolute;
+        top: 0;
+        left: 0;
+        right: 0;
+        bottom: 0;
+        background-image: url("data:image/svg+xml,%3Csvg width='100' height='100' viewBox='0 0 100 100' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='noise'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.8' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100' height='100' filter='url(%23noise)' opacity='0.05'/%3E%3C/svg%3E");
+        pointer-events: none;
+        opacity: 0.5;
+        mix-blend-mode: multiply;
+    }
+
+    /* 强制应用字体和颜色 */
+    .notebook * {
+        font-family: inherit;
+    }
+
+    /* 确保链接文字样式不会被浏览器默认样式覆盖 */
+    .notebook a {
+        color: inherit;
+        text-decoration: none;
+    }
+
+    /* 确保列表样式统一 */
+    .notebook ul, .notebook ol {
+        list-style-position: inside;
+        margin-bottom: 1em;
+    }
+
+    /* 添加字体回退方案 */
+    @font-face {
+        font-family: 'Noto Serif SC';
+        font-display: swap;
+        src: local('Noto Serif SC');
+    }
+
+    @font-face {
+        font-family: 'Shadows Into Light';
+        font-display: swap;
+        src: local('Shadows Into Light');
+    }
+
+    /* 简单箭头样式 */
+    .simple-arrow {
+        position: absolute;
+        bottom: 20px;
+        right: 40px;
+        font-size: 36px;
+        color: #333;
+    }
+</style>
+
+<div class="notebook">
+    <div class="coffee-stain"></div>
+    <div class="paper-texture"></div>
+    <div class="date">2024年10月25日 阴</div>
+    
+    <div class="entry">
+        <p>我是一名怪谈记者，专门调查各种超自然现象。但最近发生在我身上的事情，让我开始怀疑自己是否已经陷入了某个无法逃脱的怪谈之中。</p>
+        
+        <div class="polaroid">
+            <div class="tape"></div>
+            <img src="https://files.catbox.moe/mq7bkr.png" alt="神秘包裹照片">
+            <p>十天前收到的神秘包裹</p>
+        </div>
+
+        <p>十天前，一个没有寄件人信息的包裹出现在我的门口。里面只有一块看起来年代久远的<span class="highlight">玉佩</span>。我试图查找它的来源，但一无所获。更诡异的是，我发现这块玉佩<span class="mysterious-text">怎么都无法丢弃</span>。</p>
+
+        <p class="note">备注：尝试过以下方式处理玉佩：
+            <br>- 扔进垃圾桶 → 第二天出现在床头
+            <br>- 丢进河里 → 晚上回家发现挂在门把手上
+            <br>- 埋在后山 → 第二天出现在口袋里</p>
+
+        <p>根据我的调查，这块玉佩似乎具有某种<span class="highlight">起死回生</span>的能力，可以让佩戴者在死亡时复活，并将时间倒流至死亡前一小时。这个发现让我既困惑又不安。</p>
+
+        <p>更令人不安的是，最近每次我外出时，都能听到一个<span class="mysterious-text">奇怪的声音</span>在耳边响起。声音男女声夹杂，还带着回响。但却清晰地就像是有人在我耳边对我说话，其中内容也七七八八，总觉得自己好像被当乐子了？</p>
+
+        <div class="note" style="margin-top: 20px;">
+            ※最新记录：它又开始吐槽了，还总是出一些对错夹杂的馊主意，糟心，谁能把它从我脑子里踢出去，我一点也不想听到它吐槽我的私生活——
+        </div>
+    </div>
+    <div class="simple-arrow">➜</div>
+</div>
+</body>
+</html>

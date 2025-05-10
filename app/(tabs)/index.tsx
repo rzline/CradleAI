@@ -56,6 +56,10 @@ import { loadGlobalSettingsState } from '@/app/pages/global-settings' ;
 import { getApiSettings } from '@/utils/settings-helper'; 
 import { OpenRouterAdapter } from '@/NodeST/nodest/utils/openrouter-adapter';
 import { isTableMemoryEnabled, setTableMemoryEnabled } from '@/src/memory/integration/table-memory-integration';
+import { getWebViewExampleHtml } from '@/utils/webViewExample'; // 导入 WebView 示例
+
+
+
 // Create a stable memory configuration outside the component
 // 新增：全局缓存对象
 declare global {
@@ -145,6 +149,8 @@ const createStableMemoryConfig: CreateConfigFunction = (user: any): MemoryConfig
 export let characterViewModeCache: string | null = null;
 
 const App = () => {
+    // 新增：测试 WebView 示例按钮
+  const [isWebViewTestVisible, setIsWebViewTestVisible] = useState(false);
     // 新增：应用启动时预加载全局设置状态
     useEffect(() => {
       (async () => {
@@ -165,6 +171,48 @@ const App = () => {
       console.warn('[index] 同步表格记忆插件开关失败:', e);
     }
   }, []);
+
+
+    // 新增：处理 WebView 测试按钮点击
+  const handleWebViewTest = async () => {
+    try {
+      const webViewHtml = await getWebViewExampleHtml();
+      
+      // 如果没有选择的对话，先提示用户
+      if (!selectedConversationId) {
+        Alert.alert('提示', '请先选择一个角色开始对话');
+        return;
+      }
+      
+      // 如果当前不是视觉小说模式，提示用户切换
+      if (mode !== 'visual-novel') {
+        Alert.alert(
+          '切换到视觉小说模式',
+          '需要在视觉小说模式下才能测试WebView功能，是否切换？',
+          [
+            { text: '取消', style: 'cancel' },
+            { 
+              text: '切换', 
+              onPress: () => {
+                setMode('visual-novel');
+                // 延迟发送，等待模式切换完成
+                setTimeout(() => {
+                  handleSendMessage(webViewHtml, 'bot');
+                }, 300);
+              }
+            }
+          ]
+        );
+        return;
+      }
+      
+      // 发送 WebView HTML 作为机器人消息
+      handleSendMessage(webViewHtml, 'bot');
+    } catch (error) {
+      console.error('Failed to load WebView example:', error);
+      Alert.alert('错误', '加载WebView示例失败');
+    }
+  };
     // 新增：AI消息编辑
     const handleEditAiMessage = async (messageId: string, aiIndex: number, newContent: string) => {
       if (!selectedConversationId) return;
@@ -2513,6 +2561,28 @@ const getBackgroundImage = () => {
     <View style={styles.outerContainer}>
       
       <StatusBar translucent backgroundColor="transparent" />
+
+
+            {/* 新增：WebView测试按钮 */}
+      <TouchableOpacity
+        style={{
+          position: 'absolute',
+          bottom: 120,
+          right: 24,
+          zIndex: 99999,
+          backgroundColor: '#9c27b0',
+          borderRadius: 28,
+          width: 56,
+          height: 56,
+          justifyContent: 'center',
+          alignItems: 'center',
+          elevation: 10,
+        }}
+        onPress={handleWebViewTest}
+        activeOpacity={0.85}
+      >
+        <Text style={{ color: '#fff', fontWeight: 'bold', fontSize: 22 }}>Web</Text>
+      </TouchableOpacity>
             {/* 新增：初始化加载蒙层 */}
             {isInitializing && (
         <View style={styles.initializingOverlay}>
@@ -2819,7 +2889,6 @@ const getBackgroundImage = () => {
                   (characterToUse || isGroupMode) && styles.transparentBackground,
                   mode === 'background-focus' && !isGroupMode && styles.backgroundFocusContentContainer
                 ]}>
-                  {/* Conditionally render either GroupDialog or ChatDialog */}
                   {isGroupMode ? (
                     <GroupDialog
                       style={styles.chatDialog}
