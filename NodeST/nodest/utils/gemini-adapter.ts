@@ -465,10 +465,10 @@ private async executeGenerateContentWithCloudService(contents: ChatMessage[], ch
                 
                 // 创建一个新的系统消息，包含表格记忆和提示
                 const tableMemoryPrompt = `${tableMemoryText}\n\n<response_guidelines>
-    - 我会在回复中结合上面的表格记忆内容，表格中记录了角色相关的重要信息和事实。
-    - 我会确保回复与表格中的信息保持一致，不会捏造表格中不存在的信息。
-    - 我的回复会自然融入表格中的信息，不会生硬地提及"根据表格"之类的字眼。
-    - 我会确保回复保持角色人设的一致性。
+    - 你会在回复中结合上面的表格记忆内容，表格中记录了角色相关的重要信息和事实。
+    - 你会确保回复与表格中的信息保持一致，不会捏造表格中不存在的信息。
+    - 你的回复会自然融入表格中的信息，不会生硬地提及"根据表格"之类的字眼。
+    - 你会确保回复保持角色人设的一致性。
     </response_guidelines>`;
                 
                 // 保存最后一条用户消息（如果有的话）
@@ -484,7 +484,7 @@ private async executeGenerateContentWithCloudService(contents: ChatMessage[], ch
                 
                 // 添加表格记忆作为系统/助手消息
                 standardMessages.push({
-                    role: "model", // 或者助手角色，以兼容云服务API
+                    role: "user", // 或者助手角色，以兼容云服务API
                     content: tableMemoryPrompt
                 });
                 
@@ -638,10 +638,10 @@ private async executeGenerateContent(contents: ChatMessage[], modelId: string, c
     if (tableMemoryText) {
         // 构建表格记忆提示词，与云服务逻辑保持一致
         const tableMemoryPrompt = `${tableMemoryText}\n\n<response_guidelines>
-    - 我会在回复中结合上面的表格记忆内容，表格中记录了角色相关的重要信息和事实。
-    - 我会确保回复与表格中的信息保持一致，不会捏造表格中不存在的信息。
-    - 我的回复会自然融入表格中的信息，不会生硬地提及"根据表格"之类的字眼。
-    - 我会确保回复保持角色人设的一致性。
+    - 你会在回复中结合上面的表格记忆内容，表格中记录了角色相关的重要信息和事实。
+    - 你会确保回复与表格中的信息保持一致，不会捏造表格中不存在的信息。
+    - 你的回复会自然融入表格中的信息，不会生硬地提及"根据表格"之类的字眼。
+    - 你会确保回复保持角色人设的一致性。
     </response_guidelines>`;
 
         // 查找最后一个user消息的索引
@@ -673,7 +673,7 @@ private async executeGenerateContent(contents: ChatMessage[], modelId: string, c
 
         // 插入表格记忆消息
         enhancedContents.splice(insertIdx, 0, {
-            role: "model",
+            role: "user",
             parts: [{ text: tableMemoryPrompt }]
         });
 

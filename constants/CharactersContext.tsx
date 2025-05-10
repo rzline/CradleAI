@@ -593,6 +593,31 @@ const updateCharacter = async (character: Character) => {
     }
   };
 
+  // 新增：清理最后一条用户消息和最后一条isLoading bot消息（用于报错时同步本地和context）
+  const clearTransientMessages = async (conversationId: string) => {
+    setMessagesMap(prevMap => {
+      const currentMessages = prevMap[conversationId] || [];
+      let arr = [...currentMessages];
+      // 移除最后一条用户消息
+      for (let i = arr.length - 1; i >= 0; i--) {
+        if (arr[i].sender === 'user') {
+          arr.splice(i, 1);
+          break;
+        }
+      }
+      // 移除最后一条isLoading的bot消息
+      for (let i = arr.length - 1; i >= 0; i--) {
+        if (arr[i].sender === 'bot' && arr[i].isLoading) {
+          arr.splice(i, 1);
+          break;
+        }
+      }
+      const updatedMap = { ...prevMap, [conversationId]: arr };
+      saveMessages(updatedMap);
+      return updatedMap;
+    });
+  };
+
   // Add loadMemos function
   const loadMemos = async () => {
     try {
@@ -1757,6 +1782,7 @@ const generateCharacterFromCradle = async (cradleIdOrCharacter: string | CradleC
         addMessage,
         clearMessages,
         removeMessage, // Add the new function to the context
+        clearTransientMessages, // 新增
         memos,
         addMemo,
         updateMemo,

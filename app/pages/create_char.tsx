@@ -266,12 +266,15 @@ const CreateChar: React.FC<CreateCharProps> = ({
   const [alternateGreetings, setAlternateGreetings] = useState<string[]>([]);
   const [selectedGreetingIndex, setSelectedGreetingIndex] = useState<number>(0);
 
+
   // 新增：添加/删除开场白功能
   const handleAddGreeting = () => {
     setAlternateGreetings(prev => [...prev, '']);
     setSelectedGreetingIndex(alternateGreetings.length);
     setRoleCard(prev => ({ ...prev, first_mes: '' }));
+    setHasUnsavedChanges(true);
   };
+
 
   const handleDeleteGreeting = () => {
     if (alternateGreetings.length <= 1) return;
@@ -282,6 +285,7 @@ const CreateChar: React.FC<CreateCharProps> = ({
       setRoleCard(prevCard => ({ ...prevCard, first_mes: newGreetings[newIndex] }));
       return newGreetings;
     });
+    setHasUnsavedChanges(true);
   };
   // Handle detail view for world book, preset, and author note entries
   const handleViewDetail = (
@@ -309,6 +313,7 @@ const CreateChar: React.FC<CreateCharProps> = ({
       id: entryId // Store the ID for deletion
     });
   };
+
   // 处理开场白选择
   const handleSelectGreeting = (idx: number) => {
     setSelectedGreetingIndex(idx);
@@ -347,6 +352,27 @@ const CreateChar: React.FC<CreateCharProps> = ({
     
     setHasUnsavedChanges(true);
   };
+
+  // --- 新增：监听alternateGreetings变化自动同步first_mes ---
+  useEffect(() => {
+    // 当alternateGreetings变化时，自动同步first_mes
+    if (
+      alternateGreetings.length > 0 &&
+      (roleCard.first_mes !== alternateGreetings[selectedGreetingIndex])
+    ) {
+      console.log('[CreateChar][UI] alternateGreetings changed, syncing first_mes:', {
+        alternateGreetings,
+        selectedGreetingIndex,
+        newFirstMes: alternateGreetings[selectedGreetingIndex],
+        prevFirstMes: roleCard.first_mes
+      });
+      setRoleCard(prev => ({
+        ...prev,
+        first_mes: alternateGreetings[selectedGreetingIndex] || ''
+      }));
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [alternateGreetings, selectedGreetingIndex]);
 
   // World Book handling functions
   const handleAddWorldBookEntry = () => {
@@ -1028,18 +1054,35 @@ const CreateChar: React.FC<CreateCharProps> = ({
           }
 
           // 修复：导入alternateGreetings时，直接填充所有开场白
+          let greetings: string[] = [];
+          // 新增详细日志
+          console.log('[CreateChar][DEBUG] data.alternateGreetings:', data.alternateGreetings);
+          console.log('[CreateChar][DEBUG] data.data?.alternate_greetings:', data.data?.alternate_greetings);
+
           if (Array.isArray(data.alternateGreetings) && data.alternateGreetings.length > 0) {
-            setAlternateGreetings(data.alternateGreetings);
-            setSelectedGreetingIndex(0);
-            setRoleCard(prev => ({ ...prev, first_mes: data.alternateGreetings[0] || '' }));
+            greetings = data.alternateGreetings;
           } else if (Array.isArray(data.data?.alternate_greetings) && data.data.alternate_greetings.length > 0) {
-            setAlternateGreetings(data.data.alternate_greetings);
-            setSelectedGreetingIndex(0);
-            setRoleCard(prev => ({ ...prev, first_mes: data.data.alternate_greetings[0] || '' }));
+            greetings = data.data.alternate_greetings;
           } else if (data.roleCard?.first_mes) {
-            setAlternateGreetings([data.roleCard.first_mes]);
+            greetings = [data.roleCard.first_mes];
+          }
+          if (greetings.length > 0) {
+            // 新增：打印所有开场白内容
+            console.log('[CreateChar][UI] Filling alternateGreetings from import (all greetings):', greetings);
+            setAlternateGreetings(greetings);
             setSelectedGreetingIndex(0);
-            setRoleCard(prev => ({ ...prev, first_mes: data.roleCard.first_mes }));
+            setRoleCard(prev => {
+              const updated = { ...prev, first_mes: greetings[0] || '' };
+              console.log('[CreateChar][UI] setRoleCard for first_mes:', updated);
+              return updated;
+            });
+            setTimeout(() => {
+              console.log('[CreateChar][UI] After import, state:', {
+                alternateGreetings: greetings,
+                selectedGreetingIndex: 0,
+                roleCardFirstMes: greetings[0] || ''
+              });
+            }, 100);
           }
 
           // Only clear temporarily stored import data after successful load

@@ -50,7 +50,7 @@ export interface CharactersContextType {
   // 摇篮系统相关方法
   updateCradleSettings: (settings: CradleSettings) => Promise<void>;
   getCradleSettings: () => CradleSettings;
-  
+  clearTransientMessages(conversationId: string): Promise<void>
   // 摇篮系统检查图片更新
   checkCradleGeneration: () => {
     readyCharactersCount: number;

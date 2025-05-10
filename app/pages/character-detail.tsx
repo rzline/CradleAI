@@ -477,8 +477,10 @@ const CharacterDetail: React.FC = () => {
             greetings = foundCharacter.extraGreetings;
           } else if (data?.alternateGreetings && Array.isArray(data.alternateGreetings)) {
             greetings = data.alternateGreetings;
-          } else {
-            greetings = [roleCard.first_mes || ''];
+          } else if (data?.data?.alternate_greetings && Array.isArray(data.data.alternate_greetings)) {
+            greetings = data.data.alternate_greetings;
+          } else if (data?.roleCard?.first_mes) {
+            greetings = [data.roleCard.first_mes];
           }
           setAlternateGreetings(greetings);
           setSelectedGreetingIndex(0);
@@ -646,6 +648,7 @@ const CharacterDetail: React.FC = () => {
     }
   };
 
+  // 修改handleRoleCardChange以同步alternateGreetings
   const handleRoleCardChange = (field: keyof RoleCardJson, value: string) => {
     setRoleCard(prev => ({ ...prev, [field]: value }));
     if (field === 'first_mes') {
@@ -1045,6 +1048,7 @@ const CharacterDetail: React.FC = () => {
     confirmDeleteEntry(id, 'preset');
   };
 
+  // 处理开场白选择
   const handleSelectGreeting = (idx: number) => {
     setSelectedGreetingIndex(idx);
     setRoleCard(prev => ({
@@ -1054,15 +1058,14 @@ const CharacterDetail: React.FC = () => {
     setHasUnsavedChanges(true);
   };
 
+  // 新增：添加/删除开场白功能
   const handleAddGreeting = () => {
-    setAlternateGreetings(prev => {
-      const newArr = [...prev, ''];
-      setSelectedGreetingIndex(newArr.length - 1);
-      setRoleCard(prevCard => ({ ...prevCard, first_mes: '' }));
-      return newArr;
-    });
+    setAlternateGreetings(prev => [...prev, '']);
+    setSelectedGreetingIndex(alternateGreetings.length);
+    setRoleCard(prev => ({ ...prev, first_mes: '' }));
     setHasUnsavedChanges(true);
   };
+
 
   const handleDeleteGreeting = () => {
     if (alternateGreetings.length <= 1) return;

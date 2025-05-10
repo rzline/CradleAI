@@ -267,8 +267,17 @@ const CharactersScreen: React.FC = () => {
                   worldBook: importedData.worldBook,
                   avatar: avatarUri,
                   backgroundImage: importedData.backgroundImage,
-                  replaceDefaultPreset: false
+                  replaceDefaultPreset: false,
+                  alternateGreetings: importedData.alternateGreetings || [],
+                  data: {
+                    alternate_greetings: importedData.alternateGreetings || []
+                  }
                 };
+                console.log('[Character] 写入导入数据到temp_import_data, alternateGreetings:', 
+                  completeData.alternateGreetings && Array.isArray(completeData.alternateGreetings) 
+                    ? `(${completeData.alternateGreetings.length} items)` 
+                    : 'undefined');
+                
                 await AsyncStorage.setItem('temp_import_data', JSON.stringify(completeData));
                 setCreationType('import');
                 setShowCreationModal(true);
@@ -284,14 +293,23 @@ const CharactersScreen: React.FC = () => {
                     copyToCacheDirectory: true,
                   });
                   if (!presetResult.assets || !presetResult.assets[0]) {
-                    // 用户取消
                     const completeData = {
                       roleCard: importedData.roleCard,
                       worldBook: importedData.worldBook,
                       avatar: avatarUri,
                       backgroundImage: importedData.backgroundImage,
-                      replaceDefaultPreset: false
+                      replaceDefaultPreset: false,
+                      alternateGreetings: importedData.alternateGreetings || [],
+                      data: {
+                        alternate_greetings: importedData.alternateGreetings || []
+                      }
                     };
+                    
+                    console.log('[Character] 写入导入数据到temp_import_data(取消预设导入), alternateGreetings:', 
+                      completeData.alternateGreetings && Array.isArray(completeData.alternateGreetings) 
+                        ? `(${completeData.alternateGreetings.length} items)` 
+                        : 'undefined');
+                    
                     await AsyncStorage.setItem('temp_import_data', JSON.stringify(completeData));
                     setCreationType('import');
                     setShowCreationModal(true);
@@ -308,8 +326,18 @@ const CharactersScreen: React.FC = () => {
                     preset: presetJson,
                     avatar: avatarUri,
                     backgroundImage: importedData.backgroundImage,
-                    replaceDefaultPreset: true
+                    replaceDefaultPreset: true,
+                    alternateGreetings: importedData.alternateGreetings || [],
+                    data: {
+                      alternate_greetings: importedData.alternateGreetings || []
+                    }
                   };
+                  
+                  console.log('[Character] 写入导入数据到temp_import_data(含预设), alternateGreetings:', 
+                    completeData.alternateGreetings && Array.isArray(completeData.alternateGreetings) 
+                      ? `(${completeData.alternateGreetings.length} items)` 
+                      : 'undefined');
+                  
                   await AsyncStorage.setItem('temp_import_data', JSON.stringify(completeData));
                   setCreationType('import');
                   setShowCreationModal(true);
@@ -322,8 +350,18 @@ const CharactersScreen: React.FC = () => {
                     worldBook: importedData.worldBook,
                     avatar: avatarUri,
                     backgroundImage: importedData.backgroundImage,
-                    replaceDefaultPreset: false
+                    replaceDefaultPreset: false,
+                    alternateGreetings: importedData.alternateGreetings || [],
+                    data: {
+                      alternate_greetings: importedData.alternateGreetings || []
+                    }
                   };
+                  
+                  console.log('[Character] 写入导入数据到temp_import_data(预设导入失败), alternateGreetings:', 
+                    completeData.alternateGreetings && Array.isArray(completeData.alternateGreetings) 
+                      ? `(${completeData.alternateGreetings.length} items)` 
+                      : 'undefined');
+                  
                   await AsyncStorage.setItem('temp_import_data', JSON.stringify(completeData));
                   setCreationType('import');
                   setShowCreationModal(true);
@@ -334,15 +372,24 @@ const CharactersScreen: React.FC = () => {
           ]
         );
       } else {
-        // 不导入预设 或 直接导入JSON
         const completeData = {
           roleCard: importedData.roleCard,
           worldBook: importedData.worldBook,
           preset: importedData.preset,
           avatar: avatarUri,
           backgroundImage: importedData.backgroundImage,
-          replaceDefaultPreset: !!importedData.preset
+          replaceDefaultPreset: !!importedData.preset,
+          alternateGreetings: importedData.alternateGreetings || [],
+          data: {
+            alternate_greetings: importedData.alternateGreetings || []
+          }
         };
+        
+        console.log('[Character] 写入导入数据到temp_import_data(直接JSON), alternateGreetings:', 
+          completeData.alternateGreetings && Array.isArray(completeData.alternateGreetings) 
+            ? `(${completeData.alternateGreetings.length} items)` 
+            : 'undefined');
+        
         await AsyncStorage.setItem('temp_import_data', JSON.stringify(completeData));
         setCreationType('import');
         setShowCreationModal(true);

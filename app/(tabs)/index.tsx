@@ -253,9 +253,11 @@ const App = () => {
           Alert.alert('编辑成功', 'AI消息内容已更新');
         } else {
           setTransientError("处理消息时出现了错误");
+          setTimeout(() => setTransientError(null), 5000); // 5秒后自动消失
         }
       } catch (e) {
         setTransientError("处理消息时出现了错误");
+        setTimeout(() => setTransientError(null), 5000); // 5秒后自动消失
       }
     };
 
@@ -345,9 +347,11 @@ const App = () => {
       Alert.alert('删除成功', 'AI消息及其对应用户消息已删除');
     } else {
       setTransientError("处理消息时出现了错误");
+      setTimeout(() => setTransientError(null), 5000); // 5秒后自动消失
     }
   } catch (e) {
     setTransientError("处理消息时出现了错误");
+    setTimeout(() => setTransientError(null), 5000); // 5秒后自动消失
   }
 };
   const [isTestMarkdownVisible, setIsTestMarkdownVisible] = useState(false);
@@ -384,6 +388,7 @@ const App = () => {
     setCharacters ,// 新增：用于兜底时补充context
     addCharacter, // <-- 修复：确保解构
     addConversation, // <-- 修复：确保解构
+    clearTransientMessages, // <-- 新增：解构
   } = useCharacters();
   
   const [selectedConversationId, setSelectedConversationId] = useState<string | null>(null);
@@ -1050,12 +1055,27 @@ useEffect(() => {
 
     if (isTransientError) {
       setTransientError("处理消息时出现了错误");
-      setTimeout(() => setTransientError(null), 2500); // 2.5秒后自动消失
+      setTimeout(() => setTransientError(null), 5000); // 5秒后自动消失
+      // --- 新增：自动清理最后一条用户消息和bot isLoading消息 ---
+      if (selectedConversationId) {
+        await clearTransientMessages(selectedConversationId);
+      }
       return;
     }
 
-    const messageId = await sendMessageInternal(newMessage, sender, isLoading);
-    
+    let messageId: string | null = null;
+    try {
+      messageId = await sendMessageInternal(newMessage, sender, isLoading);
+    } catch (err) {
+      setTransientError("处理消息时出现了错误");
+      setTimeout(() => setTransientError(null), 5000); // 5秒后自动消失
+      // --- 新增：自动清理最后一条用户消息和bot isLoading消息 ---
+      if (selectedConversationId) {
+        await clearTransientMessages(selectedConversationId);
+      }
+      return;
+    }
+
     // === 新实现：直接追加消息到本地状态 ===
     setMessages(prev => [
       ...prev,
@@ -1127,7 +1147,11 @@ useEffect(() => {
 
     if (isErrorMessage) {
       setTransientError("处理消息时出现了错误");
-      setTimeout(() => setTransientError(null), 2500);
+      setTimeout(() => setTransientError(null), 5000); // 5秒后自动消失
+      // --- 新增：自动清理最后一条用户消息和bot isLoading消息 ---
+      if (selectedConversationId) {
+        await clearTransientMessages(selectedConversationId);
+      }
       return null;
     }
 
@@ -1174,7 +1198,17 @@ useEffect(() => {
     };
 
     // 只在Context中更新消息，本地状态通过useEffect自动更新
-    await addMessage(selectedConversationId, newMessageObj);
+    try {
+      await addMessage(selectedConversationId, newMessageObj);
+    } catch (err) {
+      setTransientError("处理消息时出现了错误");
+      setTimeout(() => setTransientError(null), 5000); // 5秒后自动消失
+      // --- 新增：自动清理最后一条用户消息和bot isLoading消息 ---
+      if (selectedConversationId) {
+        await clearTransientMessages(selectedConversationId);
+      }
+      return null;
+    }
     return messageId;
   };
 
@@ -1320,6 +1354,7 @@ useEffect(() => {
       } else {
         // 生成失败，仅弹出 notification
         setTransientError("处理消息时出现了错误");
+        setTimeout(() => setTransientError(null), 5000); // 5秒后自动消失
         setRegeneratingMessageId(null);
         return;
       }
@@ -1338,6 +1373,7 @@ useEffect(() => {
       
       setRegeneratingMessageId(null);
       setTransientError("处理消息时出现了错误");
+      setTimeout(() => setTransientError(null), 5000); // 5秒后自动消失
       return;
     }
   };

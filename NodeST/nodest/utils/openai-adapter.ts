@@ -207,13 +207,13 @@ export class OpenAIAdapter {
       }
       let insertIdx = lastUserIdx !== -1 ? lastUserIdx : enhancedMessages.length;
       enhancedMessages.splice(insertIdx, 0, {
-        role: "assistant",
+        role: "user",
         content: tableMemoryText + `
 <response_guidelines>
-- 我会在回复中结合上面的表格记忆内容，表格中记录了角色相关的重要信息和事实。
-- 我会确保回复与表格中的信息保持一致，不会捏造表格中不存在的信息。
-- 我的回复会自然融入表格中的信息，不会生硬地提及"根据表格"之类的字眼。
-- 我会确保回复保持角色人设的一致性。
+- 你会在回复中结合上面的表格记忆内容，表格中记录了角色相关的重要信息和事实。
+- 你会确保回复与表格中的信息保持一致，不会捏造表格中不存在的信息。
+- 你的回复会自然融入表格中的信息，不会生硬地提及"根据表格"之类的字眼。
+- 你会确保回复保持角色人设的一致性。
 </response_guidelines>`
       });
     }
@@ -457,10 +457,10 @@ export class OpenAIAdapter {
       if (tableMemoryText) {
         // 构建表格记忆提示词，与gemini-adapter逻辑保持一致
         const tableMemoryPrompt = `${tableMemoryText}\n\n<response_guidelines>
-- 我会在回复中结合上面的表格记忆内容，表格中记录了角色相关的重要信息和事实。
-- 我会确保回复与表格中的信息保持一致，不会捏造表格中不存在的信息。
-- 我的回复会自然融入表格中的信息，不会生硬地提及"根据表格"之类的字眼。
-- 我会确保回复保持角色人设的一致性。
+- 你会在回复中结合上面的表格记忆内容，表格中记录了角色相关的重要信息和事实。
+- 你会确保回复与表格中的信息保持一致，不会捏造表格中不存在的信息。
+- 你的回复会自然融入表格中的信息，不会生硬地提及"根据表格"之类的字眼。
+- 你会确保回复保持角色人设的一致性。
 </response_guidelines>`;
 
         // 查找最后一个user消息的索引
@@ -477,7 +477,7 @@ export class OpenAIAdapter {
         
         // 插入表格记忆消息
         enhancedContents.splice(insertIdx, 0, {
-          role: "system",
+          role: "user",
           parts: [{ text: tableMemoryPrompt }]
         });
 
@@ -603,10 +603,10 @@ export class OpenAIAdapter {
         
         // 创建一个新的系统消息，包含表格记忆和提示
         const tableMemoryPrompt = `${tableMemoryText}\n\n<response_guidelines>
-- 我会在回复中结合上面的表格记忆内容，表格中记录了角色相关的重要信息和事实。
-- 我会确保回复与表格中的信息保持一致，不会捏造表格中不存在的信息。
-- 我的回复会自然融入表格中的信息，不会生硬地提及"根据表格"之类的字眼。
-- 我会确保回复保持角色人设的一致性。
+- 你会在回复中结合上面的表格记忆内容，表格中记录了角色相关的重要信息和事实。
+- 你会确保回复与表格中的信息保持一致，不会捏造表格中不存在的信息。
+- 你的回复会自然融入表格中的信息，不会生硬地提及"根据表格"之类的字眼。
+- 你会确保回复保持角色人设的一致性。
 </response_guidelines>`;
         
         // 保存最后一条用户消息（如果有的话）
@@ -622,7 +622,7 @@ export class OpenAIAdapter {
         
         // 添加表格记忆作为系统消息
         standardMessages.push({
-          role: "system",
+          role: "user",
           content: tableMemoryPrompt
         });
         

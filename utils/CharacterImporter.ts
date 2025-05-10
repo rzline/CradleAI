@@ -122,36 +122,26 @@ export class CharacterImporter {
     
     // 首先检查data.chara.data.alternate_greetings
     if (Array.isArray(data.chara.data?.alternate_greetings)) {
-      console.log('[Character Import] Found alternate_greetings in data.chara.data:', 
-        data.chara.data.alternate_greetings.length);
       alternateGreetings = data.chara.data.alternate_greetings;
     } 
     // 也检查data.data.alternate_greetings
     else if (Array.isArray(data.data?.alternate_greetings)) {
-      console.log('[Character Import] Found alternate_greetings in data.data:', 
-        data.data.alternate_greetings.length);
       alternateGreetings = data.data.alternate_greetings;
     }
     // 直接检查最顶层
     else if (Array.isArray(data.alternate_greetings)) {
-      console.log('[Character Import] Found alternate_greetings in top level:', 
-        data.alternate_greetings.length);
       alternateGreetings = data.alternate_greetings;
     }
     
     // 如果找到了alternateGreetings，确保包含first_mes
     if (alternateGreetings && alternateGreetings.length > 0 && roleCard.first_mes) {
-      // 检查first_mes是否已经在alternateGreetings中
       if (!alternateGreetings.includes(roleCard.first_mes)) {
-        // 将first_mes添加到alternateGreetings的开头
         alternateGreetings = [roleCard.first_mes, ...alternateGreetings];
-        console.log('[Character Import] Added first_mes to alternateGreetings');
       }
     } 
     // 如果没有找到alternateGreetings但有first_mes，创建只包含first_mes的数组
     else if (roleCard.first_mes) {
       alternateGreetings = [roleCard.first_mes];
-      console.log('[Character Import] Created alternateGreetings from first_mes');
     }
 
     console.log('[Character Import] Final alternateGreetings:', 
