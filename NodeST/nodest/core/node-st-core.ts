@@ -21,6 +21,29 @@ import { StorageAdapter } from '../utils/storage-adapter';
 
 export class NodeSTCore {
 
+    // 添加静态属性用于存储最新请求/响应
+    private static latestRequestData: {
+        request: any;
+        response?: string;
+        timestamp: number;
+        adapter: string;
+    } | null = null;
+
+    // 添加静态方法用于获取最新请求/响应
+    public static getLatestRequestData() {
+        return NodeSTCore.latestRequestData;
+    }
+
+    // 添加静态方法用于记录请求/响应
+    public static logRequestResponse(request: any, response: string | null, adapter: string) {
+        NodeSTCore.latestRequestData = {
+            request,
+            response: response || undefined,
+            timestamp: Date.now(),
+            adapter
+        };
+        console.log(`[NodeSTCore][RequestLog] 已记录请求/响应，适配器: ${adapter}, 请求长度: ${JSON.stringify(request).length}, 响应长度: ${response?.length || 0}`);
+    }
     /**
      * 应用全局正则脚本到文本
      * @param text 输入文本
@@ -927,11 +950,23 @@ export class NodeSTCore {
             const worldBook = await this.loadJson<WorldBookJson>(
                 this.getStorageKey(conversationId, '_world')
             );
-            // === 新增：全局正则脚本处理 ===
+            // === 新增：全局正则脚本处理（支持绑定） ===
             let globalRegexScripts: any[] = [];
             let globalRegexEnabled = false;
             try {
-                globalRegexScripts = await StorageAdapter.loadGlobalRegexScriptList?.() || [];
+                // 读取所有正则脚本组，筛选全部绑定和当前角色绑定的组
+                const regexGroups = await StorageAdapter.loadGlobalRegexScriptGroups?.() || [];
+                if (regexGroups.length > 0) {
+                    globalRegexScripts = regexGroups
+                        .filter(g =>
+                            g.bindType === 'all' ||
+                            (g.bindType === 'character' && g.bindCharacterId && characterId && g.bindCharacterId === characterId)
+                        )
+                        .flatMap(g => Array.isArray(g.scripts) ? g.scripts : []);
+                } else {
+                    // 兼容旧格式
+                    globalRegexScripts = await StorageAdapter.loadGlobalRegexScriptList?.() || [];
+                }
                 const regexEnabledVal = await (await import('@react-native-async-storage/async-storage')).default.getItem('nodest_global_regex_enabled');
                 globalRegexEnabled = regexEnabledVal === 'true';
             } catch (e) {
@@ -1773,7 +1808,8 @@ export class NodeSTCore {
                         : 'Gemini',
                 apiProvider: this.apiSettings?.apiProvider
             });
-
+        // === 新增：记录请求体数据 ===
+        NodeSTCore.logRequestResponse(cleanedContents, null, adapter ? adapter.constructor.name : 'unknown');
             // 发送到API
             let responseText: string | null = null;
             // === 修正：只在没有记忆搜索结果时才直接请求chatCompletion ===
@@ -1800,6 +1836,8 @@ export class NodeSTCore {
                     hasResponse: !!response,
                     responseLength: response?.length || 0
                 });
+                            // === 新增：记录响应数据 ===
+            NodeSTCore.logRequestResponse(cleanedContents, response, adapter ? adapter.constructor.name : 'unknown');
                 if (response) {
                     console.log('[NodeSTCore] Saving updated history and framework...');
                     // 保存更新后的框架内容
@@ -1817,16 +1855,23 @@ export class NodeSTCore {
                     // Try with cloud service directly
                     return null;
                 }
-                console.log('[NodeSTCore] 调用generateContent，传递characterId:', characterId); 
+                // console.log('[NodeSTCore] 调用generateContent，传递characterId:', characterId); 
                 const response = await activeAdapter.generateContent(cleanedContents, characterId);
                 console.log('[NodeSTCore] API response received:', {
                     hasResponse: !!response,
                     responseLength: response?.length || 0
                 });
+                            // === 新增：记录响应数据 ===
+            NodeSTCore.logRequestResponse(cleanedContents, response, adapter ? adapter.constructor.name : 'unknown');
                 if (response) {
                     responseText = response;
                 }
             }
+
+                // === 新增：确保响应也被记录 ===
+                if (responseText && NodeSTCore.latestRequestData) {
+                    NodeSTCore.latestRequestData.response = responseText;
+                }
 
             // === 新增：对AI响应应用全局正则脚本（placement=2） ===
             if (globalRegexEnabled && globalRegexScripts.length > 0 && typeof responseText === 'string') {
@@ -2116,16 +2161,17 @@ export class NodeSTCore {
             }
 
             // 添加适配器类型日志
-            console.log('[NodeSTCore] Using adapter:', {
-                type:
-                    activeAdapter instanceof OpenRouterAdapter
-                        ? 'OpenRouter'
-                        : activeAdapter instanceof OpenAIAdapter
-                        ? 'OpenAICompatible'
-                        : 'Gemini',
-                apiProvider: this.apiSettings?.apiProvider
-            });
-
+            // console.log('[NodeSTCore] Using adapter:', {
+            //     type:
+            //         activeAdapter instanceof OpenRouterAdapter
+            //             ? 'OpenRouter'
+            //             : activeAdapter instanceof OpenAIAdapter
+            //             ? 'OpenAICompatible'
+            //             : 'Gemini',
+            //     apiProvider: this.apiSettings?.apiProvider
+            // });
+        // === 新增：记录请求体数据 ===
+        NodeSTCore.logRequestResponse(cleanedContents, null, adapter ? adapter.constructor.name : 'unknown');
             // 发送到API，传递记忆搜索结果
             let responseText: string | null = null;
             // 修正：只根据memoryResults是否存在决定调用哪个方法，避免重复请求
@@ -2167,10 +2213,15 @@ export class NodeSTCore {
                     hasResponse: !!response,
                     responseLength: response?.length || 0
                 });
+                
                 if (response) {
                     responseText = response;
                 }
             }
+
+                if (responseText && NodeSTCore.latestRequestData) {
+            NodeSTCore.latestRequestData.response = responseText;
+        }
 
             // === 新增：对AI响应应用全局正则脚本（placement=2） ===
             if (globalRegexEnabled && globalRegexScripts.length > 0 && typeof responseText === 'string') {
@@ -2197,6 +2248,7 @@ export class NodeSTCore {
                     updatedHistory
                 );
                 console.log('[NodeSTCore] Content framework and history saved successfully');
+
             }
 
             return responseText;

@@ -12,7 +12,7 @@ import {
   TextInput,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
-import { useRouter } from 'expo-router';
+import { useRouter, useLocalSearchParams } from 'expo-router';
 import { PresetJson, WorldBookJson, GlobalPresetConfig, GlobalWorldbookConfig, WorldBookEntry } from '@/shared/types';
 import { theme } from '@/constants/theme';
 import { DEFAULT_PRESET_ENTRIES } from './character-detail'; // 路径根据实际情况调整
@@ -58,6 +58,15 @@ type GlobalRegexScript = {
   minDepth: number | null;
   maxDepth: number | null;
   flags?: string; // 新增：正则表达式标志
+};
+
+// 新增：全局正则脚本组类型
+type GlobalRegexScriptGroup = {
+  id: string;
+  name: string;
+  scripts: GlobalRegexScript[];
+  bindType?: 'character' | 'all';
+  bindCharacterId?: string;
 };
 
 const DEFAULT_REGEX_SCRIPT: GlobalRegexScript = {
@@ -184,6 +193,10 @@ export default function GlobalSettingsPage() {
       }
     };
   const router = useRouter();
+  const params = useLocalSearchParams();
+  const characterId = params.characterId as string | undefined;
+  const characterName = params.charactername as string | undefined;
+
   const [activeTab, setActiveTab] = useState<'preset' | 'worldbook' | 'regex'>('preset');
   const [presetConfig, setPresetConfig] = useState<GlobalPresetConfig>({
     enabled: false,
@@ -248,19 +261,22 @@ export default function GlobalSettingsPage() {
     content: '',
   });
 
-  // 新增：全局正则脚本状态
-  const [regexScriptList, setRegexScriptList] = useState<GlobalRegexScript[]>([]);
-  const [selectedRegexScriptId, setSelectedRegexScriptId] = useState<string>('');
+  // 修改：全局正则脚本状态
+  const [regexScriptGroups, setRegexScriptGroups] = useState<GlobalRegexScriptGroup[]>([]);
+  const [selectedRegexGroupId, setSelectedRegexGroupId] = useState<string>('');
+  const [selectedRegexScript, setSelectedRegexScript] = useState<GlobalRegexScript | null>(null);
   const [showRegexDropdown, setShowRegexDropdown] = useState(false);
   const [regexViewMode, setRegexViewMode] = useState<'compact' | 'regular'>('compact');
   const [regexManaging, setRegexManaging] = useState(false);
   const [regexSelectedIndexes, setRegexSelectedIndexes] = useState<number[]>([]);
   const [regexEnabled, setRegexEnabled] = useState(false);
 
+  // 新增：正则脚本组新建弹窗
+  const [newRegexGroupModal, setNewRegexGroupModal] = useState<{ visible: boolean; name: string }>({ visible: false, name: '' });
+
   // 新增：正则脚本侧边栏
   const [regexDetailSidebar, setRegexDetailSidebar] = useState<{
     isVisible: boolean;
-    script?: GlobalRegexScript;
     index?: number;
   }>({ isVisible: false });
 
@@ -277,6 +293,31 @@ export default function GlobalSettingsPage() {
   // 新增：控制是否显示被禁用的条目
   const [showDisabledPreset, setShowDisabledPreset] = useState(true);
   const [showDisabledWorldbook, setShowDisabledWorldbook] = useState(true);
+
+  // 新增：角色ID到角色名的映射（用于显示绑定角色名）
+  const [characterNameMap, setCharacterNameMap] = useState<{ [id: string]: string }>({});
+
+  // 页面加载时，恢复角色名映射
+  useEffect(() => {
+    (async () => {
+      try {
+        const mapStr = await AsyncStorage.getItem('nodest_global_regex_character_name_map');
+        if (mapStr) setCharacterNameMap(JSON.parse(mapStr));
+      } catch {}
+    })();
+  }, []);
+
+  // 页面参数变化时，自动补充当前角色名到映射（如果有）
+  useEffect(() => {
+    if (characterId && characterName) {
+      setCharacterNameMap(prev => {
+        if (prev[characterId] === characterName) return prev;
+        const updated = { ...prev, [characterId]: characterName };
+        AsyncStorage.setItem('nodest_global_regex_character_name_map', JSON.stringify(updated));
+        return updated;
+      });
+    }
+  }, [characterId, characterName]);
 
   // 加载初始配置和模板列表
   useEffect(() => {
@@ -320,11 +361,29 @@ export default function GlobalSettingsPage() {
           setWorldbookConfig(cfg => ({ ...cfg, enabled: worldbookEnabled === 'true' }));
         }
 
-        // 读取所有正则脚本
-        const regexList: GlobalRegexScript[] = await StorageAdapter.loadGlobalRegexScriptList?.() || [];
-        setRegexScriptList(regexList);
-        const selectedRegexId = await StorageAdapter.loadSelectedGlobalRegexScriptId?.();
-        setSelectedRegexScriptId(selectedRegexId || (regexList[0]?.id ?? ''));
+        // 读取所有正则脚本组
+        const loadedGroups = await StorageAdapter.loadGlobalRegexScriptGroups?.() || [];
+        const regexGroups: GlobalRegexScriptGroup[] = loadedGroups.map(group => ({
+          ...group,
+          bindType: group.bindType === 'character' || group.bindType === 'all' ? group.bindType : undefined,
+          scripts: group.scripts || []
+        }));
+
+        // 如果没有脚本组，将现有脚本转换为一个默认组
+        if (regexGroups.length === 0) {
+          const defaultGroup: GlobalRegexScriptGroup = {
+            id: `group_${Date.now()}`,
+            name: '默认脚本组',
+            scripts: [],
+          };
+          setRegexScriptGroups([defaultGroup]);
+          setSelectedRegexGroupId(defaultGroup.id);
+        } else {
+          setRegexScriptGroups(regexGroups);
+          const selectedGroupId = await StorageAdapter.loadSelectedGlobalRegexGroupId?.();
+          setSelectedRegexGroupId(selectedGroupId || (regexGroups[0]?.id ?? ''));
+        }
+
         // 读取正则脚本启用状态
         const regexEnabledVal = await AsyncStorage.getItem('nodest_global_regex_enabled');
         if (regexEnabledVal !== null) setRegexEnabled(regexEnabledVal === 'true');
@@ -393,15 +452,16 @@ export default function GlobalSettingsPage() {
     });
   };
 
-// 点击正则脚本，打开详情侧边栏
-const handleRegexScriptClick = (script: GlobalRegexScript, idx: number) => {
-  if (regexManaging) {
-    toggleRegexSelect(idx);
-    return;
-  }
-  // 只传递 index，不传递 script 快照
-  setRegexDetailSidebar({ isVisible: true, index: idx });
-};
+  // 点击正则脚本，打开详情侧边栏
+  const handleRegexScriptClick = (script: GlobalRegexScript, idx: number) => {
+    if (regexManaging) {
+      toggleRegexSelect(idx);
+      return;
+    }
+    // 设置当前选中脚本
+    setSelectedRegexScript(script);
+    setRegexDetailSidebar({ isVisible: true, index: idx });
+  };
 
   // 关闭侧边栏
   const handleCloseSidebar = () => {
@@ -413,13 +473,13 @@ const handleRegexScriptClick = (script: GlobalRegexScript, idx: number) => {
   // 保存预设条目更改
   const handlePresetContentChange = (text: string) => {
     if (detailSidebar.entryIndex === undefined) return;
-    
+
     setPresetEntries(entries => {
       const updatedEntries = [...entries];
       const index = detailSidebar.entryIndex!;
-      updatedEntries[index] = { 
-        ...updatedEntries[index], 
-        content: text 
+      updatedEntries[index] = {
+        ...updatedEntries[index],
+        content: text
       };
       return updatedEntries;
     });
@@ -428,13 +488,13 @@ const handleRegexScriptClick = (script: GlobalRegexScript, idx: number) => {
   // 保存预设条目名称更改
   const handlePresetNameChange = (text: string) => {
     if (detailSidebar.entryIndex === undefined) return;
-    
+
     setPresetEntries(entries => {
       const updatedEntries = [...entries];
       const index = detailSidebar.entryIndex!;
-      updatedEntries[index] = { 
-        ...updatedEntries[index], 
-        name: text 
+      updatedEntries[index] = {
+        ...updatedEntries[index],
+        name: text
       };
       return updatedEntries;
     });
@@ -443,12 +503,12 @@ const handleRegexScriptClick = (script: GlobalRegexScript, idx: number) => {
   // 保存预设条目选项更改
   const handlePresetOptionsChange = (options: any) => {
     if (detailSidebar.entryIndex === undefined) return;
-    
+
     setPresetEntries(entries => {
       const updatedEntries = [...entries];
       const index = detailSidebar.entryIndex!;
-      updatedEntries[index] = { 
-        ...updatedEntries[index], 
+      updatedEntries[index] = {
+        ...updatedEntries[index],
         enable: options.enable,
         role: options.role,
         insertType: options.insertType,
@@ -461,7 +521,7 @@ const handleRegexScriptClick = (script: GlobalRegexScript, idx: number) => {
   // 保存世界书条目更改
   const handleWorldbookContentChange = (text: string) => {
     if (!detailSidebar.entryKey) return;
-    
+
     setWorldbookConfig(cfg => {
       const entries = { ...(cfg.worldbookJson?.entries || {}) };
       const key = detailSidebar.entryKey!;
@@ -476,7 +536,7 @@ const handleRegexScriptClick = (script: GlobalRegexScript, idx: number) => {
   // 保存世界书条目注释更改
   const handleWorldbookNameChange = (text: string) => {
     if (!detailSidebar.entryKey) return;
-    
+
     setWorldbookConfig(cfg => {
       const entries = { ...(cfg.worldbookJson?.entries || {}) };
       const key = detailSidebar.entryKey!;
@@ -491,12 +551,12 @@ const handleRegexScriptClick = (script: GlobalRegexScript, idx: number) => {
   // 保存世界书条目选项更改
   const handleWorldbookOptionsChange = (options: any) => {
     if (!detailSidebar.entryKey) return;
-    
+
     setWorldbookConfig(cfg => {
       const entries = { ...(cfg.worldbookJson?.entries || {}) };
       const key = detailSidebar.entryKey!;
-      entries[key] = { 
-        ...entries[key], 
+      entries[key] = {
+        ...entries[key],
         disable: options.disable,
         constant: options.constant,
         position: options.position,
@@ -511,37 +571,45 @@ const handleRegexScriptClick = (script: GlobalRegexScript, idx: number) => {
 
   // 保存正则脚本更改
   const handleRegexSidebarSave = async (updated: GlobalRegexScript) => {
-    setRegexScriptList(list => {
-      const arr = [...list];
-      if (regexDetailSidebar.index !== undefined) {
-        // 修正：flags为空时自动补全为g
-        arr[regexDetailSidebar.index] = { ...updated, flags: updated.flags?.trim() || 'g' };
-      }
-      // 持久化保存（修复：用arr而不是regexScriptList）
-      (async () => {
-        try {
-          const { StorageAdapter } = await import('@/NodeST/nodest/utils/storage-adapter');
-          await StorageAdapter.saveGlobalRegexScriptList?.(arr);
-        } catch (e) {
-          // ignore
+    if (regexDetailSidebar.index === undefined) return;
+
+    setRegexScriptGroups(groups =>
+      groups.map(group => {
+        if (group.id === selectedRegexGroupId) {
+          const updatedScripts = [...group.scripts];
+          // 修正：flags为空时自动补全为g
+          updatedScripts[regexDetailSidebar.index!] = {
+            ...updated,
+            flags: updated.flags?.trim() || 'g'
+          };
+          return { ...group, scripts: updatedScripts };
         }
-      })();
-      return arr;
-    });
+        return group;
+      })
+    );
+
+    // 持久化保存
+    try {
+      const { StorageAdapter } = await import('@/NodeST/nodest/utils/storage-adapter');
+      await StorageAdapter.saveGlobalRegexScriptGroups?.(regexScriptGroups);
+    } catch (e) {
+      // ignore
+    }
+
     handleCloseRegexSidebar();
   };
 
   // 删除预设条目
   const handleDeletePresetEntry = () => {
     if (detailSidebar.entryIndex === undefined) return;
-    
+
     Alert.alert("删除确认", "确定要删除此预设条目吗？", [
       { text: "取消", style: "cancel" },
-      { 
-        text: "删除", 
-        style: "destructive", 
+      {
+        text: "删除",
+        style: "destructive",
         onPress: () => {
-          setPresetEntries(entries => 
+          setPresetEntries(entries =>
             entries.filter((_, idx) => idx !== detailSidebar.entryIndex)
           );
           handleCloseSidebar();
@@ -553,12 +621,12 @@ const handleRegexScriptClick = (script: GlobalRegexScript, idx: number) => {
   // 删除世界书条目
   const handleDeleteWorldbookEntry = () => {
     if (!detailSidebar.entryKey) return;
-    
+
     Alert.alert("删除确认", "确定要删除此世界书条目吗？", [
       { text: "取消", style: "cancel" },
-      { 
-        text: "删除", 
-        style: "destructive", 
+      {
+        text: "删除",
+        style: "destructive",
         onPress: () => {
           setWorldbookConfig(cfg => {
             const entries = { ...(cfg.worldbookJson?.entries || {}) };
@@ -577,11 +645,15 @@ const handleRegexScriptClick = (script: GlobalRegexScript, idx: number) => {
   // 删除正则脚本
   const handleDeleteCurrentRegexScript = () => setShowDeleteRegexModal(true);
   const confirmDeleteRegexScript = () => {
-    setRegexScriptList(list => {
-      const newList = list.filter(s => s.id !== selectedRegexScriptId);
-      setSelectedRegexScriptId('');
-      return newList;
-    });
+    setRegexScriptGroups(groups =>
+      groups.map(group => {
+        if (group.id === selectedRegexGroupId) {
+          const updatedScripts = group.scripts.filter(s => s.id !== selectedRegexScript?.id);
+          return { ...group, scripts: updatedScripts };
+        }
+        return group;
+      })
+    );
     setShowDeleteRegexModal(false);
   };
 
@@ -679,8 +751,14 @@ const handleRegexScriptClick = (script: GlobalRegexScript, idx: number) => {
         text: '删除',
         style: 'destructive',
         onPress: () => {
-          setRegexScriptList(prev =>
-            prev.filter((_, idx) => !regexSelectedIndexes.includes(idx))
+          setRegexScriptGroups(groups =>
+            groups.map(group => {
+              if (group.id === selectedRegexGroupId) {
+                const updatedScripts = group.scripts.filter((_, idx) => !regexSelectedIndexes.includes(idx));
+                return { ...group, scripts: updatedScripts };
+              }
+              return group;
+            })
           );
           setRegexSelectedIndexes([]);
           setRegexManaging(false);
@@ -787,7 +865,7 @@ const handleRegexScriptClick = (script: GlobalRegexScript, idx: number) => {
   const handlePresetTemplateChange = (id: string) => {
     // 保持启用状态不变
     const wasEnabled = presetConfig.enabled;
-    
+
     setSelectedPresetId(id);
     const tpl = globalPresetList.find(t => t.id === id);
     if (tpl) {
@@ -855,7 +933,50 @@ const handleRegexScriptClick = (script: GlobalRegexScript, idx: number) => {
     }
     setNewTemplateModal({ visible: false, type: 'preset', name: '' });
   };
+  // 微缩视图下切换预设条目启用
+  const handleTogglePresetEnable = (idx: number) => {
+    setPresetEntries(prev => {
+      const arr = [...prev];
+      arr[idx] = { ...arr[idx], enable: !arr[idx].enable };
+      return arr;
+    });
+  };
 
+  // 微缩视图下切换世界书条目禁用
+  const handleToggleWorldbookDisable = (key: string) => {
+    setWorldbookConfig(cfg => {
+      const entries = { ...(cfg.worldbookJson?.entries || {}) };
+      if (entries[key]) {
+        entries[key] = { ...entries[key], disable: !entries[key].disable };
+      }
+      return {
+        ...cfg,
+        worldbookJson: { ...cfg.worldbookJson, entries },
+      };
+    });
+  };
+
+  // 微缩视图渲染预设条目
+  const renderCompactPresetEntry = (entry: PresetEntryUI, idx: number) => (
+    <View key={entry.id} style={styles.compactCard}>
+      <TouchableOpacity
+        style={styles.compactName}
+        onPress={() => handlePresetEntryClick(entry, idx)}
+      >
+        <Text style={styles.compactNameText} numberOfLines={1}>{entry.name || '未命名'}</Text>
+      </TouchableOpacity>
+      <TouchableOpacity
+        style={styles.compactSwitch}
+        onPress={() => handleTogglePresetEnable(idx)}
+      >
+        <Ionicons
+          name={entry.enable ? 'checkmark-circle' : 'close-circle'}
+          size={22}
+          color={entry.enable ? theme.colors.primary : '#888'}
+        />
+      </TouchableOpacity>
+    </View>
+  );
   // 模板删除逻辑
   const handleDeleteCurrentPresetTemplate = () => {
     if (!selectedPresetId) return;
@@ -885,7 +1006,10 @@ const handleRegexScriptClick = (script: GlobalRegexScript, idx: number) => {
     }
     setShowDeleteTemplateModal(null);
   };
-
+  const handleRegexSwitch = async (value: boolean) => {
+    setRegexEnabled(value);
+    await AsyncStorage.setItem('nodest_global_regex_enabled', value ? 'true' : 'false');
+  };
   // 下拉重命名
   const handleRenameTemplate = (type: 'preset' | 'worldbook', id: string, name: string) => {
     setRenameModal({ visible: true, type, id, name });
@@ -976,7 +1100,7 @@ const handleRegexScriptClick = (script: GlobalRegexScript, idx: number) => {
     // 保持启用状态不变
     const wasEnabled = worldbookConfig.enabled;
     const wasPriority = worldbookConfig.priority;
-    
+
     setSelectedWorldbookId(id);
     const tpl = globalWorldbookList.find(t => t.id === id);
     if (tpl) {
@@ -1021,7 +1145,184 @@ const handleRegexScriptClick = (script: GlobalRegexScript, idx: number) => {
   };
 
   // ======= 全局正则脚本相关 =======
-  const handleCreateRegexScript = () => setNewRegexModal({ visible: true, name: '' });
+  // 绑定角色
+  const handleBindCharacter = (groupId: string) => {
+    setRegexScriptGroups(groups =>
+      groups.map(group => {
+        if (group.id === groupId) {
+          // 互斥逻辑：如果已全部绑定则不能角色绑定
+          if (group.bindType === 'all') return group;
+          // 切换绑定/解绑
+          if (group.bindType === 'character' && group.bindCharacterId === characterId) {
+            // 解绑时不移除映射，保留历史
+            persistRegexScriptGroups(groups.map(g =>
+              g.id === groupId ? { ...g, bindType: undefined, bindCharacterId: undefined } : g
+            ));
+            return { ...group, bindType: undefined, bindCharacterId: undefined };
+          }
+          // 绑定时，保存角色名到映射
+          if (characterId && characterName) {
+            setCharacterNameMap(prev => {
+              if (prev[characterId] === characterName) return prev;
+              const updated = { ...prev, [characterId]: characterName };
+              AsyncStorage.setItem('nodest_global_regex_character_name_map', JSON.stringify(updated));
+              return updated;
+            });
+          }
+          const updatedGroups = groups.map(g =>
+            g.id === groupId ? { ...g, bindType: 'character' as 'character', bindCharacterId: characterId } : g
+          );
+          persistRegexScriptGroups(updatedGroups);
+          return { ...group, bindType: 'character' as 'character', bindCharacterId: characterId };
+        }
+        return group;
+      })
+    );
+  };
+
+  // 全部绑定
+  const handleBindAll = (groupId: string) => {
+    setRegexScriptGroups(groups =>
+      groups.map(group => {
+        if (group.id === groupId) {
+          if (group.bindType === 'character') return group;
+          if (group.bindType === 'all') {
+            persistRegexScriptGroups(groups.map(g =>
+              g.id === groupId ? { ...g, bindType: undefined, bindCharacterId: undefined } : g
+            ));
+            return { ...group, bindType: undefined, bindCharacterId: undefined };
+          }
+          const updatedGroups = groups.map(g =>
+            g.id === groupId ? { ...g, bindType: 'all' as 'all', bindCharacterId: undefined } : g
+          );
+          persistRegexScriptGroups(updatedGroups);
+          return { ...group, bindType: 'all' as 'all', bindCharacterId: undefined };
+        }
+        return group;
+      })
+    );
+  };
+
+  // 持久化正则脚本组和角色名映射
+  const persistRegexScriptGroups = async (groups: GlobalRegexScriptGroup[]) => {
+    try {
+      const { StorageAdapter } = await import('@/NodeST/nodest/utils/storage-adapter');
+      await StorageAdapter.saveGlobalRegexScriptGroups?.(
+        groups.map(g => ({
+          ...g,
+          bindType: g.bindType as 'character' | 'all' | undefined,
+          bindCharacterId: g.bindCharacterId
+        }))
+      );
+      await AsyncStorage.setItem('nodest_global_regex_character_name_map', JSON.stringify(characterNameMap));
+    } catch {}
+  };
+
+  // 渲染绑定按钮
+  const renderBindButtons = (group: GlobalRegexScriptGroup) => {
+    // 获取已绑定角色名（优先用映射，其次用当前页面参数）
+    let boundName: string | undefined;
+    if (group.bindType === 'character' && group.bindCharacterId) {
+      boundName = characterNameMap[group.bindCharacterId] || (group.bindCharacterId === characterId ? characterName : undefined);
+    }
+    return (
+      <View style={{ flexDirection: 'row', alignItems: 'center', marginLeft: 4 }}>
+        {/* 绑定角色按钮 */}
+        <TouchableOpacity
+          onPress={() => handleBindCharacter(group.id)}
+          disabled={!characterId || group.bindType === 'all'}
+          style={{ padding: 4, opacity: group.bindType === 'all' ? 0.4 : 1 }}
+        >
+          {group.bindType === 'character' && group.bindCharacterId ? (
+            boundName ? (
+              // 显示已绑定角色名
+              <View style={{
+                minWidth: 36, height: 22, borderRadius: 11, backgroundColor: '#eee',
+                alignItems: 'center', justifyContent: 'center', borderWidth: 1, borderColor: '#888', paddingHorizontal: 6
+              }}>
+                <Text style={{ fontSize: 12, color: '#333' }}>
+                  {boundName}
+                </Text>
+              </View>
+            ) : (
+              // 没有角色名时显示首字
+              <View style={{
+                width: 22, height: 22, borderRadius: 11, backgroundColor: '#eee',
+                alignItems: 'center', justifyContent: 'center', borderWidth: 1, borderColor: '#888'
+              }}>
+                <Text style={{ fontSize: 12, color: '#333' }}>
+                  {group.bindCharacterId[0] || '角'}
+                </Text>
+              </View>
+            )
+          ) : (
+            <Ionicons name="person-add-outline" size={18} color={theme.colors.primary} />
+          )}
+        </TouchableOpacity>
+        {/* 全部绑定按钮 */}
+        <TouchableOpacity
+          onPress={() => handleBindAll(group.id)}
+          disabled={group.bindType === 'character'}
+          style={{ padding: 4, opacity: group.bindType === 'character' ? 0.4 : 1 }}
+        >
+          {group.bindType === 'all' ? (
+            <Ionicons name="star" size={18} color="#f7c325" />
+          ) : (
+            <Ionicons name="star-outline" size={18} color={theme.colors.primary} />
+          )}
+        </TouchableOpacity>
+      </View>
+    );
+  };
+
+  const handleCreateRegexGroup = () => setNewRegexGroupModal({ visible: true, name: '' });
+  const handleConfirmCreateRegexGroup = () => {
+    const timestamp = Date.now();
+    const newId = `group_${timestamp}`;
+    const newGroup: GlobalRegexScriptGroup = {
+      id: newId,
+      name: newRegexGroupModal.name || `新脚本组_${timestamp}`,
+      scripts: []
+    };
+    setRegexScriptGroups(groups => [...groups, newGroup]);
+    setSelectedRegexGroupId(newId);
+    setNewRegexGroupModal({ visible: false, name: '' });
+  };
+
+  const handleDeleteCurrentRegexGroup = () => {
+    if (!selectedRegexGroupId) return;
+
+    Alert.alert("删除确认", "确定要删除此脚本组及其所有脚本吗？", [
+      { text: "取消", style: "cancel" },
+      {
+        text: "删除",
+        style: "destructive",
+        onPress: () => {
+          setRegexScriptGroups(groups => groups.filter(g => g.id !== selectedRegexGroupId));
+          if (regexScriptGroups.length > 1) {
+            const remainingGroups = regexScriptGroups.filter(g => g.id !== selectedRegexGroupId);
+            setSelectedRegexGroupId(remainingGroups[0]?.id || '');
+          } else {
+            setSelectedRegexGroupId('');
+          }
+        }
+      }
+    ]);
+  };
+
+  const handleRegexGroupChange = (id: string) => {
+    setSelectedRegexGroupId(id);
+    setShowRegexDropdown(false);
+  };
+
+  const handleCreateRegexScript = () => {
+    if (!selectedRegexGroupId) {
+      Alert.alert("提示", "请先创建或选择一个脚本组");
+      return;
+    }
+    setNewRegexModal({ visible: true, name: '' });
+  };
+
   const handleConfirmCreateRegex = () => {
     const timestamp = Date.now();
     const newId = `regex_${timestamp}`;
@@ -1031,105 +1332,37 @@ const handleRegexScriptClick = (script: GlobalRegexScript, idx: number) => {
       scriptName: newRegexModal.name || `新正则脚本_${timestamp}`,
       flags: 'g', // 新建时默认g
     };
-    setRegexScriptList(list => [...list, newScript]);
-    setSelectedRegexScriptId(newId);
+
+    // 添加到当前选中的组
+    setRegexScriptGroups(groups =>
+      groups.map(group =>
+        group.id === selectedRegexGroupId
+          ? { ...group, scripts: [...group.scripts, newScript] }
+          : group
+      )
+    );
+
+    setSelectedRegexScript(newScript);
     setNewRegexModal({ visible: false, name: '' });
   };
 
-  const handleRegexDropdownChange = (id: string) => {
-    setSelectedRegexScriptId(id);
-    setShowRegexDropdown(false);
+  const getCurrentGroupScripts = (): GlobalRegexScript[] => {
+    const currentGroup = regexScriptGroups.find(g => g.id === selectedRegexGroupId);
+    return currentGroup?.scripts || [];
   };
 
   const handleToggleRegexEnable = (idx: number) => {
-    setRegexScriptList(list => {
-      const arr = [...list];
-      arr[idx] = { ...arr[idx], disabled: !arr[idx].disabled };
-      return arr;
-    });
+    setRegexScriptGroups(groups =>
+      groups.map(group => {
+        if (group.id === selectedRegexGroupId) {
+          const updatedScripts = [...group.scripts];
+          updatedScripts[idx] = { ...updatedScripts[idx], disabled: !updatedScripts[idx].disabled };
+          return { ...group, scripts: updatedScripts };
+        }
+        return group;
+      })
+    );
   };
-
-  const handleRegexSwitch = async (value: boolean) => {
-    setRegexEnabled(value);
-    await AsyncStorage.setItem('nodest_global_regex_enabled', value ? 'true' : 'false');
-  };
-
-  const handleImportRegexScript = async () => {
-    try {
-      const result = await DocumentPicker.getDocumentAsync({
-        type: 'application/json',
-        copyToCacheDirectory: true,
-        multiple: false,
-      });
-      if (result.canceled || !result.assets?.[0]?.uri) return;
-      const fileUri = result.assets[0].uri;
-      const fileName = result.assets[0].name || '';
-      const fileContent = await fetch(fileUri).then(r => r.text());
-      const importedScript: GlobalRegexScript = JSON.parse(fileContent);
-
-      // 校验基本字段
-      if (!importedScript || !importedScript.scriptName) {
-        Alert.alert('导入失败', '不是有效的正则脚本JSON');
-        return;
-      }
-
-      // 自动重命名逻辑
-      let baseName = importedScript.scriptName;
-      const existNames = regexScriptList.map(s => s.scriptName);
-      let newName = baseName;
-      let suffix = 1;
-      while (existNames.includes(newName)) {
-        newName = `${baseName}（${suffix}）`;
-        suffix++;
-      }
-
-      // 追加新脚本
-      const timestamp = Date.now();
-      const newId = `regex_${timestamp}`;
-      const newScript: GlobalRegexScript = {
-        ...importedScript,
-        id: newId,
-        scriptName: newName,
-      };
-      setRegexScriptList(list => [...list, newScript]);
-      setSelectedRegexScriptId(newId);
-
-      // 持久化保存
-      try {
-        const { StorageAdapter } = await import('@/NodeST/nodest/utils/storage-adapter');
-        await StorageAdapter.saveGlobalRegexScriptList?.([...regexScriptList, newScript]);
-        await StorageAdapter.saveSelectedGlobalRegexScriptId?.(newId);
-      } catch (e) {
-        // ignore
-      }
-
-      Alert.alert('导入成功', '已成功导入正则脚本');
-    } catch (e) {
-      Alert.alert('导入失败', String(e));
-    }
-  };
-
-  const renderCompactRegexScript = (script: GlobalRegexScript, idx: number) => (
-    <View key={script.id} style={styles.compactCard}>
-      <TouchableOpacity
-        style={styles.compactName}
-        onPress={() => handleRegexScriptClick(script, idx)}
-      >
-        <Text style={styles.compactNameText} numberOfLines={1}>{script.scriptName || '未命名'}</Text>
-      </TouchableOpacity>
-      <TouchableOpacity
-        style={styles.compactSwitch}
-        onPress={() => handleToggleRegexEnable(idx)}
-      >
-        <Ionicons
-          name={!script.disabled ? 'checkmark-circle' : 'close-circle'}
-          size={22}
-          color={!script.disabled ? theme.colors.primary : '#888'}
-        />
-      </TouchableOpacity>
-    </View>
-  );
-
 
   const handleTestRegex = async () => {
     try {
@@ -1139,8 +1372,13 @@ const handleRegexScriptClick = (script: GlobalRegexScript, idx: number) => {
       const expectedUserOutput = "OK.";
       const expectedAiOutput = "This is the end.";
 
-      // 2. 读取所有启用的正则脚本
-      const enabledScripts = regexScriptList.filter(s => !s.disabled);
+      // 2. 从所有组中读取所有启用的正则脚本
+      const allEnabledScripts: GlobalRegexScript[] = [];
+      regexScriptGroups.forEach(group => {
+        group.scripts
+          .filter(s => !s.disabled)
+          .forEach(script => allEnabledScripts.push(script));
+      });
 
       // 3. 动态导入 NodeSTCore
       let NodeSTCoreClass = NodeSTCore;
@@ -1151,24 +1389,24 @@ const handleRegexScriptClick = (script: GlobalRegexScript, idx: number) => {
       // 4. 调用静态方法进行正则处理，增加详细日志
       let log = '';
       log += `【测试开始】\n`;
-      log += `启用的正则脚本数量: ${enabledScripts.length}\n`;
-      enabledScripts.forEach((s, idx) => {
-        log += `脚本#${idx+1}: 名称=${s.scriptName}, findRegex=${s.findRegex}, replaceString=${s.replaceString}, placement=${JSON.stringify(s.placement)}\n`;
+      log += `启用的正则脚本数量: ${allEnabledScripts.length}\n`;
+      allEnabledScripts.forEach((s, idx) => {
+        log += `脚本#${idx + 1}: 名称=${s.scriptName}, findRegex=${s.findRegex}, replaceString=${s.replaceString}, placement=${JSON.stringify(s.placement)}\n`;
       });
 
       log += `\n【用户输入测试】\n原始: ${userInputSample}\n`;
       const processedUser = NodeSTCoreClass.applyGlobalRegexScripts(
         userInputSample,
-        enabledScripts,
+        allEnabledScripts,
         1 // placement=1, 用户输入
       );
       log += `处理后: ${processedUser}\n期望: ${expectedUserOutput}\n`;
 
       // 详细逐步追踪每个脚本的应用
       let tempUser = userInputSample;
-      enabledScripts.forEach((script, idx) => {
+      allEnabledScripts.forEach((script, idx) => {
         if (!script.placement.includes(1)) {
-          log += `脚本#${idx+1}（${script.scriptName}）未应用于用户输入（placement不含1）\n`;
+          log += `脚本#${idx + 1}（${script.scriptName}）未应用于用户输入（placement不含1）\n`;
           return;
         }
         try {
@@ -1180,24 +1418,24 @@ const handleRegexScriptClick = (script: GlobalRegexScript, idx: number) => {
           const regex = new RegExp(findRegex, flags);
           const before = tempUser;
           tempUser = tempUser.replace(regex, script.replaceString);
-          log += `脚本#${idx+1} 应用后: ${before} => ${tempUser}\n`;
+          log += `脚本#${idx + 1} 应用后: ${before} => ${tempUser}\n`;
         } catch (e) {
-          log += `脚本#${idx+1} 应用异常: ${e}\n`;
+          log += `脚本#${idx + 1} 应用异常: ${e}\n`;
         }
       });
 
       log += `\n【AI响应测试】\n原始: ${aiResponseSample}\n`;
       const processedAi = NodeSTCoreClass.applyGlobalRegexScripts(
         aiResponseSample,
-        enabledScripts,
+        allEnabledScripts,
         2 // placement=2, AI输出
       );
       log += `处理后: ${processedAi}\n期望: ${expectedAiOutput}\n`;
 
       let tempAi = aiResponseSample;
-      enabledScripts.forEach((script, idx) => {
+      allEnabledScripts.forEach((script, idx) => {
         if (!script.placement.includes(2)) {
-          log += `脚本#${idx+1}（${script.scriptName}）未应用于AI输出（placement不含2）\n`;
+          log += `脚本#${idx + 1}（${script.scriptName}）未应用于AI输出（placement不含2）\n`;
           return;
         }
         try {
@@ -1209,9 +1447,9 @@ const handleRegexScriptClick = (script: GlobalRegexScript, idx: number) => {
           const regex = new RegExp(findRegex, flags);
           const before = tempAi;
           tempAi = tempAi.replace(regex, script.replaceString);
-          log += `脚本#${idx+1} 应用后: ${before} => ${tempAi}\n`;
+          log += `脚本#${idx + 1} 应用后: ${before} => ${tempAi}\n`;
         } catch (e) {
-          log += `脚本#${idx+1} 应用异常: ${e}\n`;
+          log += `脚本#${idx + 1} 应用异常: ${e}\n`;
         }
       });
 
@@ -1227,140 +1465,6 @@ const handleRegexScriptClick = (script: GlobalRegexScript, idx: number) => {
       Alert.alert("测试失败", String(e));
     }
   };
-
-  // 微缩视图下切换预设条目启用
-  const handleTogglePresetEnable = (idx: number) => {
-    setPresetEntries(prev => {
-      const arr = [...prev];
-      arr[idx] = { ...arr[idx], enable: !arr[idx].enable };
-      return arr;
-    });
-  };
-
-  // 微缩视图下切换世界书条目禁用
-  const handleToggleWorldbookDisable = (key: string) => {
-    setWorldbookConfig(cfg => {
-      const entries = { ...(cfg.worldbookJson?.entries || {}) };
-      if (entries[key]) {
-        entries[key] = { ...entries[key], disable: !entries[key].disable };
-      }
-      return {
-        ...cfg,
-        worldbookJson: { ...cfg.worldbookJson, entries },
-      };
-    });
-  };
-
-  // 微缩视图渲染预设条目
-  const renderCompactPresetEntry = (entry: PresetEntryUI, idx: number) => (
-    <View key={entry.id} style={styles.compactCard}>
-      <TouchableOpacity
-        style={styles.compactName}
-        onPress={() => handlePresetEntryClick(entry, idx)}
-      >
-        <Text style={styles.compactNameText} numberOfLines={1}>{entry.name || '未命名'}</Text>
-      </TouchableOpacity>
-      <TouchableOpacity
-        style={styles.compactSwitch}
-        onPress={() => handleTogglePresetEnable(idx)}
-      >
-        <Ionicons
-          name={entry.enable ? 'checkmark-circle' : 'close-circle'}
-          size={22}
-          color={entry.enable ? theme.colors.primary : '#888'}
-        />
-      </TouchableOpacity>
-    </View>
-  );
-
-  // 微缩视图渲染世界书条目
-  const renderCompactWorldbookEntry = (key: string, entry: WorldBookEntry, idx: number) => (
-    <View key={key} style={styles.compactCard}>
-      <TouchableOpacity
-        style={styles.compactName}
-        onPress={() => handleWorldbookEntryClick(key, entry)}
-      >
-        <Text style={styles.compactNameText} numberOfLines={1}>{entry.comment || '未命名'}</Text>
-      </TouchableOpacity>
-      <TouchableOpacity
-        style={styles.compactSwitch}
-        onPress={() => handleToggleWorldbookDisable(key)}
-      >
-        <Ionicons
-          name={entry.disable ? 'close-circle' : 'checkmark-circle'}
-          size={22}
-          color={entry.disable ? '#888' : theme.colors.primary}
-        />
-      </TouchableOpacity>
-    </View>
-  );
-
-  // ======= 保存 =======
-  const handleSave = async () => {
-    setIsSaving(true);
-    try {
-      // 合并 FIXED 条目
-      const mergedPresetEntries = ensureFixedPresetEntries(presetEntries);
-      const promptOrder = buildPromptOrderFromEntries(mergedPresetEntries);
-      const normalizedPresetJson = {
-        prompts: presetEntryUIToPrompts(mergedPresetEntries),
-        prompt_order: [promptOrder]
-      };
-
-      // 更新当前模板内容
-      setGlobalPresetList(list =>
-        list.map(tpl =>
-          tpl.id === selectedPresetId
-            ? { ...tpl, presetJson: normalizedPresetJson }
-            : tpl
-        )
-      );
-      setGlobalWorldbookList(list =>
-        list.map(tpl =>
-          tpl.id === selectedWorldbookId
-            ? { ...tpl, worldbookJson: worldbookConfig.worldbookJson }
-            : tpl
-        )
-      );
-
-      // 保存所有模板和当前选中id
-      const { StorageAdapter } = await import('@/NodeST/nodest/utils/storage-adapter');
-      await StorageAdapter.saveGlobalPresetList?.(globalPresetList);
-      await StorageAdapter.saveSelectedGlobalPresetId?.(selectedPresetId);
-      await StorageAdapter.saveGlobalWorldbookList?.(globalWorldbookList);
-      await StorageAdapter.saveSelectedGlobalWorldbookId?.(selectedWorldbookId);
-      await StorageAdapter.saveGlobalRegexScriptList?.(regexScriptList);
-      await StorageAdapter.saveSelectedGlobalRegexScriptId?.(selectedRegexScriptId);
-
-      // 持久化开关状态
-      await AsyncStorage.setItem('nodest_global_preset_enabled', presetConfig.enabled ? 'true' : 'false');
-      await AsyncStorage.setItem('nodest_global_worldbook_enabled', worldbookConfig.enabled ? 'true' : 'false');
-      await AsyncStorage.setItem('nodest_global_regex_enabled', regexEnabled ? 'true' : 'false');
-
-      // 联动后端
-      if (NodeSTCore) {
-        const core = new NodeSTCore('');
-        if (presetConfig.enabled) {
-          await core.setGlobalPreset('开启', JSON.stringify(normalizedPresetJson));
-        }
-        if (!presetConfig.enabled) {
-          await core.setGlobalPreset('关闭', '');
-        }
-        if (worldbookConfig.enabled) {
-          await core.setGlobalWorldbook('开启', worldbookConfig.priority, JSON.stringify(worldbookConfig.worldbookJson));
-        }
-        if (!worldbookConfig.enabled) {
-          await core.setGlobalWorldbook('关闭', worldbookConfig.priority, '');
-        }
-      }
-      Alert.alert('保存成功');
-    } catch (e) {
-      Alert.alert('保存失败', String(e));
-    } finally {
-      setIsSaving(false);
-    }
-  };
-
   // 下拉选择器组件，增加重命名按钮
   const renderDropdown = (
     list: { id: string; name: string }[],
@@ -1438,8 +1542,274 @@ const handleRegexScriptClick = (script: GlobalRegexScript, idx: number) => {
       )}
     </View>
   );
+  const handleImportRegexScript = async () => {
+    if (!selectedRegexGroupId) {
+      Alert.alert("提示", "请先创建或选择一个脚本组");
+      return;
+    }
 
-  // ======= 渲染 =======
+    try {
+      const result = await DocumentPicker.getDocumentAsync({
+        type: 'application/json',
+        copyToCacheDirectory: true,
+        multiple: false,
+      });
+      if (result.canceled || !result.assets?.[0]?.uri) return;
+      const fileUri = result.assets[0].uri;
+      const fileName = result.assets[0].name || '';
+      const fileContent = await fetch(fileUri).then(r => r.text());
+      const importedScript: GlobalRegexScript = JSON.parse(fileContent);
+
+      // 校验基本字段
+      if (!importedScript || !importedScript.scriptName) {
+        Alert.alert('导入失败', '不是有效的正则脚本JSON');
+        return;
+      }
+
+      // 自动重命名逻辑
+      let baseName = importedScript.scriptName;
+      const currentScripts = getCurrentGroupScripts();
+      const existNames = currentScripts.map(s => s.scriptName);
+      let newName = baseName;
+      let suffix = 1;
+      while (existNames.includes(newName)) {
+        newName = `${baseName}（${suffix}）`;
+        suffix++;
+      }
+
+      // 追加新脚本到当前组
+      const timestamp = Date.now();
+      const newId = `regex_${timestamp}`;
+      const newScript: GlobalRegexScript = {
+        ...importedScript,
+        id: newId,
+        scriptName: newName,
+      };
+
+      setRegexScriptGroups(groups =>
+        groups.map(group =>
+          group.id === selectedRegexGroupId
+            ? { ...group, scripts: [...group.scripts, newScript] }
+            : group
+        )
+      );
+
+      setSelectedRegexScript(newScript);
+
+      // 持久化保存
+      try {
+        const { StorageAdapter } = await import('@/NodeST/nodest/utils/storage-adapter');
+        await StorageAdapter.saveGlobalRegexScriptGroups?.(regexScriptGroups);
+        await StorageAdapter.saveSelectedGlobalRegexGroupId?.(selectedRegexGroupId);
+      } catch (e) {
+        // ignore
+      }
+
+      Alert.alert('导入成功', '已成功导入正则脚本');
+    } catch (e) {
+      Alert.alert('导入失败', String(e));
+    }
+  };
+
+  const renderCompactRegexScript = (script: GlobalRegexScript, idx: number) => {
+    const group = regexScriptGroups.find(g => g.id === selectedRegexGroupId);
+    return (
+      <View key={script.id} style={styles.compactCard}>
+        <TouchableOpacity
+          style={styles.compactName}
+          onPress={() => handleRegexScriptClick(script, idx)}
+        >
+          <Text style={styles.compactNameText} numberOfLines={1}>{script.scriptName || '未命名'}</Text>
+        </TouchableOpacity>
+        {/* 绑定状态展示 */}
+        {group?.bindType === 'character' && group.bindCharacterId === characterId && (
+          <View style={{ marginRight: 4 }}>
+            <Ionicons name="person-circle" size={18} color={theme.colors.primary} />
+          </View>
+        )}
+        {group?.bindType === 'all' && (
+          <View style={{ marginRight: 4 }}>
+            <Ionicons name="star" size={18} color="#f7c325" />
+          </View>
+        )}
+        <TouchableOpacity
+          style={styles.compactSwitch}
+          onPress={() => handleToggleRegexEnable(idx)}
+        >
+          <Ionicons
+            name={!script.disabled ? 'checkmark-circle' : 'close-circle'}
+            size={22}
+            color={!script.disabled ? theme.colors.primary : '#888'}
+          />
+        </TouchableOpacity>
+      </View>
+    );
+  };
+
+  const renderRegexGroupDropdown = () => (
+    <View style={{ marginVertical: 8 }}>
+      <Text style={{ color: theme.colors.text, marginBottom: 4 }}>选择正则脚本组</Text>
+      <TouchableOpacity
+        onPress={() => setShowRegexDropdown(!showRegexDropdown)}
+        style={{
+          borderWidth: 1,
+          borderColor: '#444',
+          borderRadius: 6,
+          backgroundColor: theme.colors.cardBackground,
+          flexDirection: 'row',
+          alignItems: 'center',
+          paddingHorizontal: 8,
+          height: 40,
+        }}
+      >
+        <Ionicons name="list" size={18} color={theme.colors.primary} style={{ marginRight: 6 }} />
+        <Text style={{ flex: 1, color: theme.colors.text }}>
+          {regexScriptGroups.find(g => g.id === selectedRegexGroupId)?.name || '请选择脚本组'}
+        </Text>
+        <Ionicons name={showRegexDropdown ? "chevron-up" : "chevron-down"} size={18} color="#888" />
+      </TouchableOpacity>
+      {showRegexDropdown && (
+        <View style={{
+          backgroundColor: theme.colors.cardBackground,
+          borderWidth: 1,
+          borderColor: '#444',
+          borderRadius: 6,
+          zIndex: 10,
+          maxHeight: 200,
+          marginTop: 4,
+        }}>
+          <ScrollView nestedScrollEnabled={true}>
+            {regexScriptGroups.map(group => (
+              <View key={group.id} style={{ flexDirection: 'row', alignItems: 'center', paddingHorizontal: 4 }}>
+                <TouchableOpacity
+                  onPress={() => handleRegexGroupChange(group.id)}
+                  style={{
+                    flex: 1,
+                    padding: 10,
+                    backgroundColor: group.id === selectedRegexGroupId ? '#333' : theme.colors.cardBackground,
+                  }}
+                >
+                  <Text style={{
+                    color: group.id === selectedRegexGroupId ? theme.colors.primary : theme.colors.text
+                  }}>
+                    {group.name} ({group.scripts.length})
+                  </Text>
+                </TouchableOpacity>
+                {/* 重命名按钮 */}
+                <TouchableOpacity
+                  onPress={() => handleRenameTemplate('preset', group.id, group.name)}
+                  style={{ padding: 6 }}
+                >
+                  <Ionicons name="pencil-outline" size={18} color={theme.colors.primary} />
+                </TouchableOpacity>
+                {/* 绑定按钮 */}
+                {renderBindButtons(group)}
+              </View>
+            ))}
+            {regexScriptGroups.length === 0 && (
+              <Text style={{ padding: 10, color: '#888', textAlign: 'center' }}>
+                尚无可用脚本组
+              </Text>
+            )}
+          </ScrollView>
+        </View>
+      )}
+    </View>
+  );
+
+  // ======= 保存 =======
+  const handleSave = async () => {
+    setIsSaving(true);
+    try {
+      // 合并 FIXED 条目
+      const mergedPresetEntries = ensureFixedPresetEntries(presetEntries);
+      const promptOrder = buildPromptOrderFromEntries(mergedPresetEntries);
+      const normalizedPresetJson = {
+        prompts: presetEntryUIToPrompts(mergedPresetEntries),
+        prompt_order: [promptOrder]
+      };
+
+      // 更新当前模板内容
+      setGlobalPresetList(list =>
+        list.map(tpl =>
+          tpl.id === selectedPresetId
+            ? { ...tpl, presetJson: normalizedPresetJson }
+            : tpl
+        )
+      );
+      setGlobalWorldbookList(list =>
+        list.map(tpl =>
+          tpl.id === selectedWorldbookId
+            ? { ...tpl, worldbookJson: worldbookConfig.worldbookJson }
+            : tpl
+        )
+      );
+
+      // 保存所有模板和当前选中id
+      const { StorageAdapter } = await import('@/NodeST/nodest/utils/storage-adapter');
+      await StorageAdapter.saveGlobalPresetList?.(globalPresetList);
+      await StorageAdapter.saveSelectedGlobalPresetId?.(selectedPresetId);
+      await StorageAdapter.saveGlobalWorldbookList?.(globalWorldbookList);
+      await StorageAdapter.saveSelectedGlobalWorldbookId?.(selectedWorldbookId);
+      // === 关键：保存正则脚本组时带上bindType/bindCharacterId ===
+      await StorageAdapter.saveGlobalRegexScriptGroups?.(
+        regexScriptGroups.map(g => ({
+          ...g,
+          bindType: g.bindType,
+          bindCharacterId: g.bindCharacterId
+        }))
+      );
+      await StorageAdapter.saveSelectedGlobalRegexGroupId?.(selectedRegexGroupId);
+
+      // 持久化开关状态
+      await AsyncStorage.setItem('nodest_global_preset_enabled', presetConfig.enabled ? 'true' : 'false');
+      await AsyncStorage.setItem('nodest_global_worldbook_enabled', worldbookConfig.enabled ? 'true' : 'false');
+      await AsyncStorage.setItem('nodest_global_regex_enabled', regexEnabled ? 'true' : 'false');
+
+      // 联动后端
+      if (NodeSTCore) {
+        const core = new NodeSTCore('');
+        if (presetConfig.enabled) {
+          await core.setGlobalPreset('开启', JSON.stringify(normalizedPresetJson));
+        }
+        if (!presetConfig.enabled) {
+          await core.setGlobalPreset('关闭', '');
+        }
+        if (worldbookConfig.enabled) {
+          await core.setGlobalWorldbook('开启', worldbookConfig.priority, JSON.stringify(worldbookConfig.worldbookJson));
+        }
+        if (!worldbookConfig.enabled) {
+          await core.setGlobalWorldbook('关闭', worldbookConfig.priority, '');
+        }
+      }
+      Alert.alert('保存成功');
+    } catch (e) {
+      Alert.alert('保存失败', String(e));
+    } finally {
+      setIsSaving(false);
+    }
+  };
+  const renderCompactWorldbookEntry = (key: string, entry: WorldBookEntry, idx: number) => (
+    <View key={key} style={styles.compactCard}>
+      <TouchableOpacity
+        style={styles.compactName}
+        onPress={() => handleWorldbookEntryClick(key, entry)}
+      >
+        <Text style={styles.compactNameText} numberOfLines={1}>{entry.comment || '未命名'}</Text>
+      </TouchableOpacity>
+      <TouchableOpacity
+        style={styles.compactSwitch}
+        onPress={() => handleToggleWorldbookDisable(key)}
+      >
+        <Ionicons
+          name={entry.disable ? 'close-circle' : 'checkmark-circle'}
+          size={22}
+          color={entry.disable ? '#888' : theme.colors.primary}
+        />
+      </TouchableOpacity>
+    </View>
+  );
+
   return (
     <View style={{ flex: 1, backgroundColor: theme.colors.background }}>
       {/* 顶部导航栏 */}
@@ -1479,8 +1849,8 @@ const handleRegexScriptClick = (script: GlobalRegexScript, idx: number) => {
                 thumbColor={worldbookConfig.enabled ? theme.colors.primary : '#eee'}
               />
             </View>
-                     {/* 全局预设补充说明 */}
-                     <Text style={{ color: '#c77c00', fontSize: 13, marginBottom: 8 }}>
+            {/* 全局预设补充说明 */}
+            <Text style={{ color: '#c77c00', fontSize: 13, marginBottom: 8 }}>
               关闭全局预设后，需在角色卡详情页面重新设置和保存单角色的预设。
             </Text>
             {/* 预设下拉选择器 - 使用新的renderDropdown组件 */}
@@ -1496,7 +1866,7 @@ const handleRegexScriptClick = (script: GlobalRegexScript, idx: number) => {
               },
               'preset'
             )}
-            
+
             <View style={styles.sectionHeader}>
               <Text style={styles.sectionHeaderText}>预设条目</Text>
               <View style={{ flexDirection: 'row', alignItems: 'center' }}>
@@ -1552,85 +1922,85 @@ const handleRegexScriptClick = (script: GlobalRegexScript, idx: number) => {
             {/* 条目列表 */}
             {presetViewMode === 'compact'
               ? presetEntries
-                  .filter(entry => showDisabledPreset || entry.enable)
-                  .map((entry, idx) => renderCompactPresetEntry(entry, idx))
+                .filter(entry => showDisabledPreset || entry.enable)
+                .map((entry, idx) => renderCompactPresetEntry(entry, idx))
               : presetEntries
-                  .filter(entry => showDisabledPreset || entry.enable)
-                  .map((entry, idx) => (
-                    <TouchableOpacity 
-                      key={entry.id} 
-                      style={styles.promptCard}
-                      onPress={() => handlePresetEntryClick(entry, idx)}
-                      activeOpacity={0.7}
-                    >
-                      <View style={{ flexDirection: 'row', alignItems: 'center' }}>
-                        {/* 管理模式下显示多选框 */}
-                        {presetManaging && (
-                          <TouchableOpacity
-                            onPress={() => togglePresetSelect(idx)}
-                            style={{
-                              marginRight: 10,
-                              width: 22,
-                              height: 22,
-                              borderRadius: 11,
-                              borderWidth: 2,
-                              borderColor: theme.colors.primary,
-                              backgroundColor: presetSelectedIndexes.includes(idx) ? theme.colors.primary : '#fff',
-                              alignItems: 'center',
-                              justifyContent: 'center',
-                            }}
-                          >
-                            {presetSelectedIndexes.includes(idx) && (
-                              <Ionicons name="checkmark" size={14} color="#fff" />
-                            )}
-                          </TouchableOpacity>
-                        )}
-                        <View style={{ flex: 1 }}>
-                          <View style={styles.promptRow}>
-                            <Text style={styles.promptLabel}>名称</Text>
-                            <Text style={styles.promptValue}>{entry.name}</Text>
-                          </View>
-                          <View style={styles.promptRow}>
-                            <Text style={styles.promptLabel}>启用</Text>
-                            <Ionicons name={entry.enable !== false ? 'checkmark-circle' : 'close-circle'} size={18} color={entry.enable !== false ? theme.colors.primary : '#ccc'} />
-                          </View>
-                          <View style={styles.promptRow}>
-                            <Text style={styles.promptLabel}>角色</Text>
-                            <Text style={styles.promptValue}>{entry.role}</Text>
-                          </View>
-                          <View style={styles.promptRow}>
-                            <Text style={styles.promptLabel}>插入类型</Text>
-                            <Text style={styles.promptValue}>{entry.insertType === 'chat' ? '对话式' : '相对位置'}</Text>
-                          </View>
-                          {entry.insertType === 'chat' && (
-                            <View style={styles.promptRow}>
-                              <Text style={styles.promptLabel}>深度</Text>
-                              <Text style={styles.promptValue}>{entry.depth}</Text>
-                            </View>
+                .filter(entry => showDisabledPreset || entry.enable)
+                .map((entry, idx) => (
+                  <TouchableOpacity
+                    key={entry.id}
+                    style={styles.promptCard}
+                    onPress={() => handlePresetEntryClick(entry, idx)}
+                    activeOpacity={0.7}
+                  >
+                    <View style={{ flexDirection: 'row', alignItems: 'center' }}>
+                      {/* 管理模式下显示多选框 */}
+                      {presetManaging && (
+                        <TouchableOpacity
+                          onPress={() => togglePresetSelect(idx)}
+                          style={{
+                            marginRight: 10,
+                            width: 22,
+                            height: 22,
+                            borderRadius: 11,
+                            borderWidth: 2,
+                            borderColor: theme.colors.primary,
+                            backgroundColor: presetSelectedIndexes.includes(idx) ? theme.colors.primary : '#fff',
+                            alignItems: 'center',
+                            justifyContent: 'center',
+                          }}
+                        >
+                          {presetSelectedIndexes.includes(idx) && (
+                            <Ionicons name="checkmark" size={14} color="#fff" />
                           )}
+                        </TouchableOpacity>
+                      )}
+                      <View style={{ flex: 1 }}>
+                        <View style={styles.promptRow}>
+                          <Text style={styles.promptLabel}>名称</Text>
+                          <Text style={styles.promptValue}>{entry.name}</Text>
                         </View>
-                        {/* 排序按钮 */}
-                        {!presetManaging && (
-                          <View style={{ flexDirection: 'column', marginLeft: 8 }}>
-                            <TouchableOpacity
-                              onPress={() => movePresetEntry(idx, idx - 1)}
-                              disabled={idx === 0}
-                              style={{ opacity: idx === 0 ? 0.3 : 1, padding: 2 }}
-                            >
-                              <Ionicons name="arrow-up" size={18} color={theme.colors.primary} />
-                            </TouchableOpacity>
-                            <TouchableOpacity
-                              onPress={() => movePresetEntry(idx, idx + 1)}
-                              disabled={idx === presetEntries.length - 1}
-                              style={{ opacity: idx === presetEntries.length - 1 ? 0.3 : 1, padding: 2 }}
-                            >
-                              <Ionicons name="arrow-down" size={18} color={theme.colors.primary} />
-                            </TouchableOpacity>
+                        <View style={styles.promptRow}>
+                          <Text style={styles.promptLabel}>启用</Text>
+                          <Ionicons name={entry.enable !== false ? 'checkmark-circle' : 'close-circle'} size={18} color={entry.enable !== false ? theme.colors.primary : '#ccc'} />
+                        </View>
+                        <View style={styles.promptRow}>
+                          <Text style={styles.promptLabel}>角色</Text>
+                          <Text style={styles.promptValue}>{entry.role}</Text>
+                        </View>
+                        <View style={styles.promptRow}>
+                          <Text style={styles.promptLabel}>插入类型</Text>
+                          <Text style={styles.promptValue}>{entry.insertType === 'chat' ? '对话式' : '相对位置'}</Text>
+                        </View>
+                        {entry.insertType === 'chat' && (
+                          <View style={styles.promptRow}>
+                            <Text style={styles.promptLabel}>深度</Text>
+                            <Text style={styles.promptValue}>{entry.depth}</Text>
                           </View>
                         )}
                       </View>
-                    </TouchableOpacity>
-                  ))
+                      {/* 排序按钮 */}
+                      {!presetManaging && (
+                        <View style={{ flexDirection: 'column', marginLeft: 8 }}>
+                          <TouchableOpacity
+                            onPress={() => movePresetEntry(idx, idx - 1)}
+                            disabled={idx === 0}
+                            style={{ opacity: idx === 0 ? 0.3 : 1, padding: 2 }}
+                          >
+                            <Ionicons name="arrow-up" size={18} color={theme.colors.primary} />
+                          </TouchableOpacity>
+                          <TouchableOpacity
+                            onPress={() => movePresetEntry(idx, idx + 1)}
+                            disabled={idx === presetEntries.length - 1}
+                            style={{ opacity: idx === presetEntries.length - 1 ? 0.3 : 1, padding: 2 }}
+                          >
+                            <Ionicons name="arrow-down" size={18} color={theme.colors.primary} />
+                          </TouchableOpacity>
+                        </View>
+                      )}
+                    </View>
+                  </TouchableOpacity>
+                ))
             }
             {/* 管理模式下显示删除按钮 */}
             {presetManaging && (
@@ -1662,7 +2032,7 @@ const handleRegexScriptClick = (script: GlobalRegexScript, idx: number) => {
                 thumbColor={presetConfig.enabled ? theme.colors.primary : '#eee'}
               />
             </View>
-            
+
             {/* 世界书下拉选择器 - 使用新的renderDropdown组件 */}
             {renderDropdown(
               globalWorldbookList,
@@ -1676,7 +2046,7 @@ const handleRegexScriptClick = (script: GlobalRegexScript, idx: number) => {
               },
               'worldbook'
             )}
-            
+
             <View style={styles.row}>
               <Text style={styles.label}>优先级</Text>
               <TouchableOpacity
@@ -1741,11 +2111,11 @@ const handleRegexScriptClick = (script: GlobalRegexScript, idx: number) => {
                 </TouchableOpacity>
                 <TouchableOpacity onPress={handleCreateWorldbookTemplate} style={{ marginRight: 8 }}>
                   <Ionicons name="duplicate-outline" size={22} color={theme.colors.primary} />
-                 </TouchableOpacity>
-                               {/* 新增：导入按钮 */}
-              <TouchableOpacity onPress={handleImportWorldbook} style={{ marginRight: 8 }}>
-                <Ionicons name="download-outline" size={22} color={theme.colors.primary} />
-              </TouchableOpacity>
+                </TouchableOpacity>
+                {/* 新增：导入按钮 */}
+                <TouchableOpacity onPress={handleImportWorldbook} style={{ marginRight: 8 }}>
+                  <Ionicons name="download-outline" size={22} color={theme.colors.primary} />
+                </TouchableOpacity>
                 <TouchableOpacity onPress={handleAddWorldbookEntry}>
                   <Ionicons name="add-circle-outline" size={22} color={theme.colors.primary} />
                 </TouchableOpacity>
@@ -1754,95 +2124,95 @@ const handleRegexScriptClick = (script: GlobalRegexScript, idx: number) => {
             {/* 条目列表 */}
             {worldbookViewMode === 'compact'
               ? worldbookEntryOrder
-                  .filter(key => {
-                    const entry = worldbookConfig.worldbookJson?.entries?.[key];
-                    return showDisabledWorldbook || !entry?.disable;
-                  })
-                  .map((key, idx) => {
-                    const entry = worldbookConfig.worldbookJson?.entries?.[key];
-                    if (!entry) return null;
-                    return renderCompactWorldbookEntry(key, entry, idx);
-                  })
+                .filter(key => {
+                  const entry = worldbookConfig.worldbookJson?.entries?.[key];
+                  return showDisabledWorldbook || !entry?.disable;
+                })
+                .map((key, idx) => {
+                  const entry = worldbookConfig.worldbookJson?.entries?.[key];
+                  if (!entry) return null;
+                  return renderCompactWorldbookEntry(key, entry, idx);
+                })
               : worldbookEntryOrder
-                  .filter(key => {
-                    const entry = worldbookConfig.worldbookJson?.entries?.[key];
-                    return showDisabledWorldbook || !entry?.disable;
-                  })
-                  .map((key, idx) => {
-                    const entry = worldbookConfig.worldbookJson?.entries?.[key];
-                    if (!entry) return null;
-                    return (
-                      <TouchableOpacity 
-                        key={key} 
-                        style={styles.promptCard}
-                        onPress={() => handleWorldbookEntryClick(key, entry)}
-                        activeOpacity={0.7}
-                      >
-                        <View style={{ flexDirection: 'row', alignItems: 'center' }}>
-                          {worldbookManaging && (
-                            <TouchableOpacity
-                              onPress={() => toggleWorldbookSelect(idx)}
-                              style={{
-                                marginRight: 10,
-                                width: 22,
-                                height: 22,
-                                borderRadius: 11,
-                                borderWidth: 2,
-                                borderColor: theme.colors.primary,
-                                backgroundColor: worldbookSelectedIndexes.includes(idx) ? theme.colors.primary : '#fff',
-                                alignItems: 'center',
-                                justifyContent: 'center',
-                              }}
-                            >
-                              {worldbookSelectedIndexes.includes(idx) && (
-                                <Ionicons name="checkmark" size={14} color="#fff" />
-                              )}
-                            </TouchableOpacity>
-                          )}
-                          <View style={{ flex: 1 }}>
-                            <View style={styles.promptRow}>
-                              <Text style={styles.promptLabel}>名称</Text>
-                              <Text style={styles.promptValue}>{entry.comment}</Text>
-                            </View>
-                            <View style={styles.promptRow}>
-                              <Text style={styles.promptLabel}>禁用</Text>
-                              <Ionicons name={entry.disable ? 'close-circle' : 'checkmark-circle'} size={18} color={entry.disable ? '#ccc' : theme.colors.primary} />
-                            </View>
-                            <View style={styles.promptRow}>
-                              <Text style={styles.promptLabel}>常量</Text>
-                              <Ionicons name={entry.constant ? 'checkmark-circle' : 'close-circle'} size={18} color={entry.constant ? theme.colors.primary : '#ccc'} />
-                            </View>
-                            <View style={styles.promptRow}>
-                              <Text style={styles.promptLabel}>位置</Text>
-                              <Text style={styles.promptValue}>{entry.position}</Text>
-                            </View>
-                            <View style={styles.promptRow}>
-                              <Text style={styles.promptLabel}>深度</Text>
-                              <Text style={styles.promptValue}>{entry.depth}</Text>
-                            </View>
+                .filter(key => {
+                  const entry = worldbookConfig.worldbookJson?.entries?.[key];
+                  return showDisabledWorldbook || !entry?.disable;
+                })
+                .map((key, idx) => {
+                  const entry = worldbookConfig.worldbookJson?.entries?.[key];
+                  if (!entry) return null;
+                  return (
+                    <TouchableOpacity
+                      key={key}
+                      style={styles.promptCard}
+                      onPress={() => handleWorldbookEntryClick(key, entry)}
+                      activeOpacity={0.7}
+                    >
+                      <View style={{ flexDirection: 'row', alignItems: 'center' }}>
+                        {worldbookManaging && (
+                          <TouchableOpacity
+                            onPress={() => toggleWorldbookSelect(idx)}
+                            style={{
+                              marginRight: 10,
+                              width: 22,
+                              height: 22,
+                              borderRadius: 11,
+                              borderWidth: 2,
+                              borderColor: theme.colors.primary,
+                              backgroundColor: worldbookSelectedIndexes.includes(idx) ? theme.colors.primary : '#fff',
+                              alignItems: 'center',
+                              justifyContent: 'center',
+                            }}
+                          >
+                            {worldbookSelectedIndexes.includes(idx) && (
+                              <Ionicons name="checkmark" size={14} color="#fff" />
+                            )}
+                          </TouchableOpacity>
+                        )}
+                        <View style={{ flex: 1 }}>
+                          <View style={styles.promptRow}>
+                            <Text style={styles.promptLabel}>名称</Text>
+                            <Text style={styles.promptValue}>{entry.comment}</Text>
                           </View>
-                          {!worldbookManaging && (
-                            <View style={{ flexDirection: 'column', marginLeft: 8 }}>
-                              <TouchableOpacity
-                                onPress={() => moveWorldbookEntry(idx, idx - 1)}
-                                disabled={idx === 0}
-                                style={{ opacity: idx === 0 ? 0.3 : 1, padding: 2 }}
-                              >
-                                <Ionicons name="arrow-up" size={18} color={theme.colors.primary} />
-                              </TouchableOpacity>
-                              <TouchableOpacity
-                                onPress={() => moveWorldbookEntry(idx, idx + 1)}
-                                disabled={idx === worldbookEntryOrder.length - 1}
-                                style={{ opacity: idx === worldbookEntryOrder.length - 1 ? 0.3 : 1, padding: 2 }}
-                              >
-                                <Ionicons name="arrow-down" size={18} color={theme.colors.primary} />
-                              </TouchableOpacity>
-                            </View>
-                          )}
+                          <View style={styles.promptRow}>
+                            <Text style={styles.promptLabel}>禁用</Text>
+                            <Ionicons name={entry.disable ? 'close-circle' : 'checkmark-circle'} size={18} color={entry.disable ? '#ccc' : theme.colors.primary} />
+                          </View>
+                          <View style={styles.promptRow}>
+                            <Text style={styles.promptLabel}>常量</Text>
+                            <Ionicons name={entry.constant ? 'checkmark-circle' : 'close-circle'} size={18} color={entry.constant ? theme.colors.primary : '#ccc'} />
+                          </View>
+                          <View style={styles.promptRow}>
+                            <Text style={styles.promptLabel}>位置</Text>
+                            <Text style={styles.promptValue}>{entry.position}</Text>
+                          </View>
+                          <View style={styles.promptRow}>
+                            <Text style={styles.promptLabel}>深度</Text>
+                            <Text style={styles.promptValue}>{entry.depth}</Text>
+                          </View>
                         </View>
-                      </TouchableOpacity>
-                    );
-                  })
+                        {!worldbookManaging && (
+                          <View style={{ flexDirection: 'column', marginLeft: 8 }}>
+                            <TouchableOpacity
+                              onPress={() => moveWorldbookEntry(idx, idx - 1)}
+                              disabled={idx === 0}
+                              style={{ opacity: idx === 0 ? 0.3 : 1, padding: 2 }}
+                            >
+                              <Ionicons name="arrow-up" size={18} color={theme.colors.primary} />
+                            </TouchableOpacity>
+                            <TouchableOpacity
+                              onPress={() => moveWorldbookEntry(idx, idx + 1)}
+                              disabled={idx === worldbookEntryOrder.length - 1}
+                              style={{ opacity: idx === worldbookEntryOrder.length - 1 ? 0.3 : 1, padding: 2 }}
+                            >
+                              <Ionicons name="arrow-down" size={18} color={theme.colors.primary} />
+                            </TouchableOpacity>
+                          </View>
+                        )}
+                      </View>
+                    </TouchableOpacity>
+                  );
+                })
             }
             {worldbookManaging && (
               <View style={{ marginTop: 12, alignItems: 'flex-end' }}>
@@ -1873,18 +2243,10 @@ const handleRegexScriptClick = (script: GlobalRegexScript, idx: number) => {
                 thumbColor={regexEnabled ? theme.colors.primary : '#eee'}
               />
             </View>
-            {/* 正则脚本下拉选择器 */}
-            {renderDropdown(
-              regexScriptList.map(script => ({ id: script.id, name: script.scriptName })),
-              selectedRegexScriptId,
-              handleRegexDropdownChange,
-              '选择正则脚本',
-              showRegexDropdown,
-              () => {
-                setShowRegexDropdown(!showRegexDropdown);
-              },
-              'preset' // 类型无实际影响
-            )}
+
+            {/* 正则脚本组下拉选择器 */}
+            {renderRegexGroupDropdown()}
+
             <View style={styles.sectionHeader}>
               <Text style={styles.sectionHeaderText}>正则脚本列表</Text>
               <View style={{ flexDirection: 'row', alignItems: 'center' }}>
@@ -1907,15 +2269,19 @@ const handleRegexScriptClick = (script: GlobalRegexScript, idx: number) => {
                     color={regexManaging ? theme.colors.primary : '#888'}
                   />
                 </TouchableOpacity>
-                {/* 删除按钮 */}
+                {/* 删除按钮 - 删除当前组 */}
                 <TouchableOpacity
-                  onPress={handleDeleteCurrentRegexScript}
+                  onPress={handleDeleteCurrentRegexGroup}
                   style={{ marginRight: 8 }}
-                  disabled={!selectedRegexScriptId}
+                  disabled={!selectedRegexGroupId}
                 >
-                  <Ionicons name="trash-outline" size={22} color={selectedRegexScriptId ? theme.colors.danger : '#ccc'} />
+                  <Ionicons name="trash-outline" size={22} color={selectedRegexGroupId ? theme.colors.danger : '#ccc'} />
                 </TouchableOpacity>
-                {/* 新建按钮 */}
+                {/* 新建组按钮 */}
+                <TouchableOpacity onPress={handleCreateRegexGroup} style={{ marginRight: 8 }}>
+                  <Ionicons name="folder-outline" size={22} color={theme.colors.primary} />
+                </TouchableOpacity>
+                {/* 新建脚本按钮 */}
                 <TouchableOpacity onPress={handleCreateRegexScript} style={{ marginRight: 8 }}>
                   <Ionicons name="duplicate-outline" size={22} color={theme.colors.primary} />
                 </TouchableOpacity>
@@ -1929,79 +2295,125 @@ const handleRegexScriptClick = (script: GlobalRegexScript, idx: number) => {
                 </TouchableOpacity>
               </View>
             </View>
+
             {/* 正则脚本列表 */}
             {regexViewMode === 'compact'
-              ? regexScriptList.map((script, idx) => renderCompactRegexScript(script, idx))
-              : regexScriptList.map((script, idx) => (
-                  <TouchableOpacity
-                    key={script.id}
-                    style={styles.promptCard}
-                    onPress={() => handleRegexScriptClick(script, idx)}
-                    activeOpacity={0.7}
-                  >
-                    <View style={{ flexDirection: 'row', alignItems: 'center' }}>
-                      {regexManaging && (
-                        <TouchableOpacity
-                          onPress={() => toggleRegexSelect(idx)}
-                          style={{
-                            marginRight: 10,
-                            width: 22,
-                            height: 22,
-                            borderRadius: 11,
-                            borderWidth: 2,
-                            borderColor: theme.colors.primary,
-                            backgroundColor: regexSelectedIndexes.includes(idx) ? theme.colors.primary : '#fff',
-                            alignItems: 'center',
-                            justifyContent: 'center',
-                          }}
-                        >
-                          {regexSelectedIndexes.includes(idx) && (
-                            <Ionicons name="checkmark" size={14} color="#fff" />
-                          )}
-                        </TouchableOpacity>
-                      )}
-                      <View style={{ flex: 1 }}>
-                        <View style={styles.promptRow}>
-                          <Text style={styles.promptLabel}>名称</Text>
-                          <Text style={styles.promptValue}>{script.scriptName}</Text>
-                        </View>
-                        <View style={styles.promptRow}>
-                          <Text style={styles.promptLabel}>启用</Text>
-                          <Ionicons name={!script.disabled ? 'checkmark-circle' : 'close-circle'} size={18} color={!script.disabled ? theme.colors.primary : '#ccc'} />
-                        </View>
-                        <View style={styles.promptRow}>
-                          <Text style={styles.promptLabel}>正则</Text>
-                          <Text style={styles.promptValue} numberOfLines={1}>{script.findRegex}</Text>
-                        </View>
-                        <View style={styles.promptRow}>
-                          <Text style={styles.promptLabel}>替换</Text>
-                          <Text style={styles.promptValue} numberOfLines={1}>{script.replaceString}</Text>
-                        </View>
-                        <View style={styles.promptRow}>
-                          <Text style={styles.promptLabel}>作用域</Text>
-                          <Text style={styles.promptValue}>
-                            {script.placement?.includes(1) && '用户 '}
-                            {script.placement?.includes(2) && 'AI'}
-                          </Text>
-                        </View>
-                      </View>
-                      {/* 启用/禁用按钮 */}
+              ? getCurrentGroupScripts().map((script, idx) => renderCompactRegexScript(script, idx))
+              : getCurrentGroupScripts().map((script, idx) => (
+                <TouchableOpacity
+                  key={script.id}
+                  style={styles.promptCard}
+                  onPress={() => handleRegexScriptClick(script, idx)}
+                  activeOpacity={0.7}
+                >
+                  <View style={{ flexDirection: 'row', alignItems: 'center' }}>
+                    {regexManaging && (
                       <TouchableOpacity
-                        style={{ marginLeft: 8 }}
-                        onPress={() => handleToggleRegexEnable(idx)}
+                        onPress={() => toggleRegexSelect(idx)}
+                        style={{
+                          marginRight: 10,
+                          width: 22,
+                          height: 22,
+                          borderRadius: 11,
+                          borderWidth: 2,
+                          borderColor: theme.colors.primary,
+                          backgroundColor: regexSelectedIndexes.includes(idx) ? theme.colors.primary : '#fff',
+                          alignItems: 'center',
+                          justifyContent: 'center',
+                        }}
                       >
-                        <Ionicons
-                          name={!script.disabled ? 'checkmark-circle' : 'close-circle'}
-                          size={22}
-                          color={!script.disabled ? theme.colors.primary : '#888'}
-                        />
+                        {regexSelectedIndexes.includes(idx) && (
+                          <Ionicons name="checkmark" size={14} color="#fff" />
+                        )}
                       </TouchableOpacity>
+                    )}
+                    <View style={{ flex: 1 }}>
+                      <View style={styles.promptRow}>
+                        <Text style={styles.promptLabel}>名称</Text>
+                        <Text style={styles.promptValue}>{script.scriptName}</Text>
+                      </View>
+                      <View style={styles.promptRow}>
+                        <Text style={styles.promptLabel}>启用</Text>
+                        <Ionicons name={!script.disabled ? 'checkmark-circle' : 'close-circle'} size={18} color={!script.disabled ? theme.colors.primary : '#ccc'} />
+                      </View>
+                      <View style={styles.promptRow}>
+                        <Text style={styles.promptLabel}>正则</Text>
+                        <Text style={styles.promptValue} numberOfLines={1}>{script.findRegex}</Text>
+                      </View>
+                      <View style={styles.promptRow}>
+                        <Text style={styles.promptLabel}>替换</Text>
+                        <Text style={styles.promptValue} numberOfLines={1}>{script.replaceString}</Text>
+                      </View>
+                      <View style={styles.promptRow}>
+                        <Text style={styles.promptLabel}>作用域</Text>
+                        <Text style={styles.promptValue}>
+                          {script.placement?.includes(1) && '用户 '}
+                          {script.placement?.includes(2) && 'AI'}
+                        </Text>
+                      </View>
                     </View>
-                  </TouchableOpacity>
-                ))
+                    {/* 启用/禁用按钮 */}
+                    <TouchableOpacity
+                      style={{ marginLeft: 8 }}
+                      onPress={() => handleToggleRegexEnable(idx)}
+                    >
+                      <Ionicons
+                        name={!script.disabled ? 'checkmark-circle' : 'close-circle'}
+                        size={22}
+                        color={!script.disabled ? theme.colors.primary : '#888'}
+                      />
+                    </TouchableOpacity>
+                  </View>
+                </TouchableOpacity>
+              ))
             }
+
+            {/* 当前组没有脚本时显示提示 */}
+            {getCurrentGroupScripts().length === 0 && selectedRegexGroupId && (
+              <View style={{ padding: 20, alignItems: 'center' }}>
+                <Ionicons name="document-text-outline" size={40} color="#666" />
+                <Text style={{ color: '#666', marginTop: 10, textAlign: 'center' }}>
+                  当前脚本组没有脚本
+                </Text>
+                <TouchableOpacity
+                  style={{
+                    marginTop: 16,
+                    backgroundColor: theme.colors.primary,
+                    paddingHorizontal: 16,
+                    paddingVertical: 8,
+                    borderRadius: 8
+                  }}
+                  onPress={handleCreateRegexScript}
+                >
+                  <Text style={{ color: 'black', fontWeight: '500' }}>创建新脚本</Text>
+                </TouchableOpacity>
+              </View>
+            )}
+
+            {/* 没有任何脚本组时显示提示 */}
+            {regexScriptGroups.length === 0 && (
+              <View style={{ padding: 20, alignItems: 'center' }}>
+                <Ionicons name="folder-open-outline" size={40} color="#666" />
+                <Text style={{ color: '#666', marginTop: 10, textAlign: 'center' }}>
+                  请先创建一个脚本组
+                </Text>
+                <TouchableOpacity
+                  style={{
+                    marginTop: 16,
+                    backgroundColor: theme.colors.primary,
+                    paddingHorizontal: 16,
+                    paddingVertical: 8,
+                    borderRadius: 8
+                  }}
+                  onPress={handleCreateRegexGroup}
+                >
+                  <Text style={{ color: 'black', fontWeight: '500' }}>创建脚本组</Text>
+                </TouchableOpacity>
+              </View>
+            )}
+
             {/* 管理模式下显示删除按钮 */}
-            {regexManaging && (
+            {regexManaging && getCurrentGroupScripts().length > 0 && (
               <View style={{ marginTop: 12, alignItems: 'flex-end' }}>
                 <TouchableOpacity
                   style={{
@@ -2225,6 +2637,42 @@ const handleRegexScriptClick = (script: GlobalRegexScript, idx: number) => {
         </View>
       </Modal>
 
+      {/* 新建脚本组模态框 */}
+      <Modal
+        visible={newRegexGroupModal.visible}
+        transparent={true}
+        animationType="fade"
+      >
+        <View style={styles.modalOverlay}>
+          <View style={styles.modalContent}>
+            <Text style={styles.modalTitle}>新建正则脚本组</Text>
+            <Text style={styles.modalLabel}>组名称</Text>
+            <TextInput
+              style={styles.modalInput}
+              value={newRegexGroupModal.name}
+              onChangeText={text => setNewRegexGroupModal({ ...newRegexGroupModal, name: text })}
+              placeholder="请输入脚本组名称"
+              placeholderTextColor="#999"
+              autoFocus
+            />
+            <View style={styles.modalActions}>
+              <TouchableOpacity
+                style={[styles.modalButton, styles.modalButtonCancel]}
+                onPress={() => setNewRegexGroupModal({ ...newRegexGroupModal, visible: false })}
+              >
+                <Text style={styles.modalButtonText}>取消</Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={[styles.modalButton, styles.modalButtonConfirm]}
+                onPress={handleConfirmCreateRegexGroup}
+              >
+                <Text style={styles.modalButtonTextConfirm}>确认</Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+        </View>
+      </Modal>
+
       {/* 新增：全局详情侧边栏 */}
       <GlobalDetailSidebar
         isVisible={detailSidebar.isVisible}
@@ -2235,154 +2683,207 @@ const handleRegexScriptClick = (script: GlobalRegexScript, idx: number) => {
         entryOptions={detailSidebar.entryOptions}
         name={detailSidebar.name}
         onContentChange={
-          detailSidebar.entryType === 'preset' 
-            ? handlePresetContentChange 
+          detailSidebar.entryType === 'preset'
+            ? handlePresetContentChange
             : handleWorldbookContentChange
         }
         onNameChange={
-          detailSidebar.entryType === 'preset' 
-            ? handlePresetNameChange 
+          detailSidebar.entryType === 'preset'
+            ? handlePresetNameChange
             : handleWorldbookNameChange
         }
         onOptionsChange={
-          detailSidebar.entryType === 'preset' 
-            ? handlePresetOptionsChange 
+          detailSidebar.entryType === 'preset'
+            ? handlePresetOptionsChange
             : handleWorldbookOptionsChange
         }
         onDelete={
-          detailSidebar.entryType === 'preset' 
-            ? handleDeletePresetEntry 
+          detailSidebar.entryType === 'preset'
+            ? handleDeletePresetEntry
             : handleDeleteWorldbookEntry
         }
       />
 
-{/* 正则脚本编辑侧边栏 */}
-        <GlobalDetailSidebar
-          isVisible={regexDetailSidebar.isVisible}
-          onClose={handleCloseRegexSidebar}
-          title="编辑正则脚本"
-          // 这里用 regexScriptList[regexDetailSidebar.index]，而不是 regexDetailSidebar.script
-          content={
-            typeof regexDetailSidebar.index === 'number' && regexScriptList[regexDetailSidebar.index]
-              ? regexScriptList[regexDetailSidebar.index].findRegex || ''
-              : ''
-          }
-          entryType="regex"
-          entryOptions={
-            typeof regexDetailSidebar.index === 'number' && regexScriptList[regexDetailSidebar.index]
-              ? regexScriptList[regexDetailSidebar.index]
-              : undefined
-          }
-          name={
-            typeof regexDetailSidebar.index === 'number' && regexScriptList[regexDetailSidebar.index]
-              ? regexScriptList[regexDetailSidebar.index].scriptName
-              : undefined
-          }
-          // 新增：传递 flags 字段
-          flags={
-            typeof regexDetailSidebar.index === 'number' && regexScriptList[regexDetailSidebar.index]
-              ? regexScriptList[regexDetailSidebar.index].flags ?? 'g'
-              : 'g'
-          }
-            // 新增：flags 变更回调
-            onFlagsChange={async (text: string) => {
-            if (
-              typeof regexDetailSidebar.index !== 'number' ||
-              regexDetailSidebar.index < 0 ||
-              regexDetailSidebar.index >= regexScriptList.length
-            ) return;
-            setRegexScriptList((list: GlobalRegexScript[]) => {
-              const arr = [...list]; 
-              // flags 为空时自动赋值为 'g'
-              arr[regexDetailSidebar.index!] = { ...arr[regexDetailSidebar.index!], flags: text.trim() || 'g' };
-              // 持久化保存
-              (async () => {
-              try {
-                const { StorageAdapter } = await import('@/NodeST/nodest/utils/storage-adapter');
-                await StorageAdapter.saveGlobalRegexScriptList?.(arr);
-              } catch (e) {}
-              })();
-              return arr;
-            });
-            }}
-            onContentChange={async (text: string) => {
-            if (
-              typeof regexDetailSidebar.index !== 'number' ||
-              regexDetailSidebar.index < 0 ||
-              regexDetailSidebar.index >= regexScriptList.length
-            ) return;
-            setRegexScriptList(list => {
-              const arr = [...list];
-              arr[regexDetailSidebar.index!] = { ...arr[regexDetailSidebar.index!], findRegex: text };
-              // 持久化保存
-              (async () => {
-                try {
-                  const { StorageAdapter } = await import('@/NodeST/nodest/utils/storage-adapter');
-                  await StorageAdapter.saveGlobalRegexScriptList?.(arr);
-                } catch (e) {}
-              })();
-              return arr;
-            });
-          }}
-          onNameChange={async text => {
-            if (
-              typeof regexDetailSidebar.index !== 'number' ||
-              regexDetailSidebar.index < 0 ||
-              regexDetailSidebar.index >= regexScriptList.length
-            ) return;
-            setRegexScriptList(list => {
-              const arr = [...list];
-              arr[regexDetailSidebar.index!] = { ...arr[regexDetailSidebar.index!], scriptName: text };
-              // 持久化保存
-              (async () => {
-                try {
-                  const { StorageAdapter } = await import('@/NodeST/nodest/utils/storage-adapter');
-                  await StorageAdapter.saveGlobalRegexScriptList?.(arr);
-                } catch (e) {}
-              })();
-              return arr;
-            });
-          }}
-          onOptionsChange={async opts => {
-            if (
-              typeof regexDetailSidebar.index !== 'number' ||
-              regexDetailSidebar.index < 0 ||
-              regexDetailSidebar.index >= regexScriptList.length
-            ) return;
-            setRegexScriptList(list => {
-              const arr = [...list];
-              // flags 为空时自动赋值为 'g'
-              arr[regexDetailSidebar.index!] = { ...arr[regexDetailSidebar.index!], ...opts, flags: (opts.flags ?? arr[regexDetailSidebar.index!].flags ?? 'g') || 'g' };
-              // 持久化保存
-              (async () => {
-                try {
-                  const { StorageAdapter } = await import('@/NodeST/nodest/utils/storage-adapter');
-                  await StorageAdapter.saveGlobalRegexScriptList?.(arr);
-                } catch (e) {}
-              })();
-              return arr;
-            });
-          }}
-          onDelete={async () => {
-            if (
-              typeof regexDetailSidebar.index !== 'number' ||
-              regexDetailSidebar.index < 0 ||
-              regexDetailSidebar.index >= regexScriptList.length
-            ) return;
-            setRegexScriptList(list => {
-              const arr = list.filter((_, idx) => idx !== regexDetailSidebar.index);
-              // 持久化保存
-              (async () => {
-                try {
-                  const { StorageAdapter } = await import('@/NodeST/nodest/utils/storage-adapter');
-                  await StorageAdapter.saveGlobalRegexScriptList?.(arr);
-                } catch (e) {}
-              })();
-              return arr;
-            });
-            handleCloseRegexSidebar();
-          }}
-        />  
+      {/* 正则脚本编辑侧边栏 */}
+      <GlobalDetailSidebar
+        isVisible={regexDetailSidebar.isVisible}
+        onClose={handleCloseRegexSidebar}
+        title="编辑正则脚本"
+        content={
+          typeof regexDetailSidebar.index === 'number'
+            ? getCurrentGroupScripts()[regexDetailSidebar.index]?.findRegex || ''
+            : ''
+        }
+        entryType="regex"
+        entryOptions={
+          typeof regexDetailSidebar.index === 'number'
+            ? getCurrentGroupScripts()[regexDetailSidebar.index]
+            : undefined
+        }
+        name={
+          typeof regexDetailSidebar.index === 'number'
+            ? getCurrentGroupScripts()[regexDetailSidebar.index]?.scriptName
+            : undefined
+        }
+        flags={
+          typeof regexDetailSidebar.index === 'number'
+            ? getCurrentGroupScripts()[regexDetailSidebar.index]?.flags ?? 'g'
+            : 'g'
+        }
+        onFlagsChange={async (text: string) => {
+          if (
+            typeof regexDetailSidebar.index !== 'number' ||
+            regexDetailSidebar.index < 0 ||
+            !selectedRegexGroupId
+          ) return;
+
+          setRegexScriptGroups(groups =>
+            groups.map(group => {
+              if (group.id === selectedRegexGroupId) {
+                const updatedScripts = [...group.scripts];
+                if (regexDetailSidebar.index! < updatedScripts.length) {
+                  updatedScripts[regexDetailSidebar.index!] = {
+                    ...updatedScripts[regexDetailSidebar.index!],
+                    flags: text.trim() || 'g'
+                  };
+                }
+                return { ...group, scripts: updatedScripts };
+              }
+              return group;
+            })
+          );
+
+          // 持久化保存
+          try {
+            const { StorageAdapter } = await import('@/NodeST/nodest/utils/storage-adapter');
+            await StorageAdapter.saveGlobalRegexScriptGroups?.(regexScriptGroups);
+          } catch (e) { }
+        }}
+        onContentChange={async (text: string) => {
+          if (
+            typeof regexDetailSidebar.index !== 'number' ||
+            regexDetailSidebar.index < 0 ||
+            !selectedRegexGroupId
+          ) return;
+
+          setRegexScriptGroups(groups =>
+            groups.map(group => {
+              if (group.id === selectedRegexGroupId) {
+                const updatedScripts = [...group.scripts];
+                if (regexDetailSidebar.index! < updatedScripts.length) {
+                  updatedScripts[regexDetailSidebar.index!] = {
+                    ...updatedScripts[regexDetailSidebar.index!],
+                    findRegex: text
+                  };
+                }
+                return { ...group, scripts: updatedScripts };
+              }
+              return group;
+            })
+          );
+
+          // 持久化保存
+          try {
+            const { StorageAdapter } = await import('@/NodeST/nodest/utils/storage-adapter');
+            await StorageAdapter.saveGlobalRegexScriptGroups?.(regexScriptGroups);
+          } catch (e) { }
+        }}
+        onNameChange={async text => {
+          if (
+            typeof regexDetailSidebar.index !== 'number' ||
+            regexDetailSidebar.index < 0 ||
+            !selectedRegexGroupId
+          ) return;
+
+          setRegexScriptGroups(groups =>
+            groups.map(group => {
+              if (group.id === selectedRegexGroupId) {
+                const updatedScripts = [...group.scripts];
+                if (regexDetailSidebar.index! < updatedScripts.length) {
+                  updatedScripts[regexDetailSidebar.index!] = {
+                    ...updatedScripts[regexDetailSidebar.index!],
+                    scriptName: text
+                  };
+                }
+                return { ...group, scripts: updatedScripts };
+              }
+              return group;
+            })
+          );
+
+          // 持久化保存
+          try {
+            const { StorageAdapter } = await import('@/NodeST/nodest/utils/storage-adapter');
+            await StorageAdapter.saveGlobalRegexScriptGroups?.(regexScriptGroups);
+          } catch (e) { }
+        }}
+        onOptionsChange={async opts => {
+          if (
+            typeof regexDetailSidebar.index !== 'number' ||
+            regexDetailSidebar.index < 0 ||
+            !selectedRegexGroupId
+          ) return;
+
+          setRegexScriptGroups(groups =>
+            groups.map(group => {
+              if (group.id === selectedRegexGroupId) {
+                const updatedScripts = [...group.scripts];
+                if (regexDetailSidebar.index! < updatedScripts.length) {
+                  updatedScripts[regexDetailSidebar.index!] = {
+                    ...updatedScripts[regexDetailSidebar.index!],
+                    ...opts,
+                    flags: (opts.flags ?? updatedScripts[regexDetailSidebar.index!].flags ?? 'g') || 'g'
+                  };
+                }
+                return { ...group, scripts: updatedScripts };
+              }
+              return group;
+            })
+          );
+
+          // 持久化保存
+          try {
+            const { StorageAdapter } = await import('@/NodeST/nodest/utils/storage-adapter');
+            await StorageAdapter.saveGlobalRegexScriptGroups?.(regexScriptGroups);
+          } catch (e) { }
+        }}
+        onDelete={async () => {
+          if (
+            typeof regexDetailSidebar.index !== 'number' ||
+            regexDetailSidebar.index < 0 ||
+            !selectedRegexGroupId
+          ) return;
+
+          Alert.alert("删除确认", "确定要删除此正则脚本吗？", [
+            { text: "取消", style: "cancel" },
+            {
+              text: "删除",
+              style: "destructive",
+              onPress: () => {
+                setRegexScriptGroups(groups =>
+                  groups.map(group => {
+                    if (group.id === selectedRegexGroupId) {
+                      const updatedScripts = group.scripts.filter((_, idx) => idx !== regexDetailSidebar.index);
+                      return { ...group, scripts: updatedScripts };
+                    }
+                    return group;
+                  })
+                );
+
+                // 持久化保存
+                (async () => {
+                  try {
+                    const { StorageAdapter } = await import('@/NodeST/nodest/utils/storage-adapter');
+                    await StorageAdapter.saveGlobalRegexScriptGroups?.(regexScriptGroups);
+                  } catch (e) { }
+                })();
+
+                handleCloseRegexSidebar();
+              }
+            }
+          ]);
+        }}
+      />
     </View>
   );
 }
@@ -2608,7 +3109,6 @@ const styles = StyleSheet.create({
   },
 });
 
-
 // 新增：导出全局设置的加载和保存函数
 export async function loadGlobalSettingsState() {
   try {
@@ -2621,9 +3121,31 @@ export async function loadGlobalSettingsState() {
     const selectedWorldbook = worldbookList.find(t => t.id === (selectedWorldbookId || worldbookList[0]?.id));
     const presetEnabled = await AsyncStorage.getItem('nodest_global_preset_enabled');
     const worldbookEnabled = await AsyncStorage.getItem('nodest_global_worldbook_enabled');
-    const regexList: GlobalRegexScript[] = await StorageAdapter.loadGlobalRegexScriptList?.() || [];
-    const selectedRegexId = await StorageAdapter.loadSelectedGlobalRegexScriptId?.();
+    const loadedGroups = await StorageAdapter.loadGlobalRegexScriptGroups?.() || [];
+    const regexGroups: GlobalRegexScriptGroup[] = loadedGroups.map(group => ({
+      ...group,
+      bindType: group.bindType === 'character' || group.bindType === 'all' ? group.bindType : undefined,
+      scripts: group.scripts || []
+    }));
+
+    // 如果没有脚本组但有旧格式的脚本列表，进行迁移
+    let migratedRegexGroups = regexGroups;
+    if (regexGroups.length === 0) {
+      const oldRegexList: GlobalRegexScript[] = await StorageAdapter.loadGlobalRegexScriptList?.() || [];
+      if (oldRegexList.length > 0) {
+        migratedRegexGroups = [{
+          id: `group_${Date.now()}`,
+          name: '默认脚本组',
+          scripts: oldRegexList
+        }];
+        // 保存迁移后的数据
+        await StorageAdapter.saveGlobalRegexScriptGroups?.(migratedRegexGroups);
+      }
+    }
+
+    const selectedRegexGroupId = await StorageAdapter.loadSelectedGlobalRegexGroupId?.() || (migratedRegexGroups[0]?.id ?? '');
     const regexEnabledVal = await AsyncStorage.getItem('nodest_global_regex_enabled');
+
     return {
       globalPresetList: presetList,
       selectedPresetId: selectedPresetId || (presetList[0]?.id ?? ''),
@@ -2639,8 +3161,8 @@ export async function loadGlobalSettingsState() {
         priority: '全局优先',
         worldbookJson: selectedWorldbook?.worldbookJson || defaultWorldBook,
       },
-      regexScriptList: regexList,
-      selectedRegexScriptId: selectedRegexId || (regexList[0]?.id ?? ''),
+      regexScriptGroups: migratedRegexGroups,
+      selectedRegexGroupId,
       regexEnabled: regexEnabledVal === 'true',
     };
   } catch (e) {
@@ -2653,8 +3175,8 @@ export async function saveGlobalSettingsState({
   selectedPresetId,
   globalWorldbookList,
   selectedWorldbookId,
-  regexScriptList,
-  selectedRegexScriptId,
+  regexScriptGroups,
+  selectedRegexGroupId,
   presetConfig,
   worldbookConfig,
   regexEnabled,
@@ -2665,8 +3187,8 @@ export async function saveGlobalSettingsState({
     await StorageAdapter.saveSelectedGlobalPresetId?.(selectedPresetId);
     await StorageAdapter.saveGlobalWorldbookList?.(globalWorldbookList);
     await StorageAdapter.saveSelectedGlobalWorldbookId?.(selectedWorldbookId);
-    await StorageAdapter.saveGlobalRegexScriptList?.(regexScriptList);
-    await StorageAdapter.saveSelectedGlobalRegexScriptId?.(selectedRegexScriptId);
+    await StorageAdapter.saveGlobalRegexScriptGroups?.(regexScriptGroups);
+    await StorageAdapter.saveSelectedGlobalRegexGroupId?.(selectedRegexGroupId);
     await AsyncStorage.setItem('nodest_global_preset_enabled', presetConfig.enabled ? 'true' : 'false');
     await AsyncStorage.setItem('nodest_global_worldbook_enabled', worldbookConfig.enabled ? 'true' : 'false');
     await AsyncStorage.setItem('nodest_global_regex_enabled', regexEnabled ? 'true' : 'false');

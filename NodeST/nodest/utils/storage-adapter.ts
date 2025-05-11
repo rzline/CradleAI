@@ -677,24 +677,81 @@ export class StorageAdapter {
   // ========== 全局正则脚本功能 ==========
 
   /**
-   * 保存全局正则脚本列表
+   * 保存全局正则脚本组列表（支持绑定字段）
+   */
+  static async saveGlobalRegexScriptGroups(groups: Array<{id: string; name: string; scripts: any[]; bindType?: string; bindCharacterId?: string}>): Promise<void> {
+    try {
+      await AsyncStorage.setItem('nodest_global_regex_groups', JSON.stringify(groups));
+    } catch (e) {
+      // ignore
+    }
+  }
+
+  /**
+   * 读取全局正则脚本组列表（支持绑定字段）
+   */
+  static async loadGlobalRegexScriptGroups(): Promise<Array<{id: string; name: string; scripts: any[]; bindType?: string; bindCharacterId?: string}>> {
+    try {
+      const str = await AsyncStorage.getItem('nodest_global_regex_groups');
+      if (!str) return [];
+      return JSON.parse(str);
+    } catch (e) {
+      return [];
+    }
+  }
+
+  /**
+   * 保存当前选中的全局正则脚本组ID
+   */
+  static async saveSelectedGlobalRegexGroupId(id: string): Promise<void> {
+    await AsyncStorage.setItem('nodest_selected_global_regex_group_id', id);
+  }
+
+  /**
+   * 读取当前选中的全局正则脚本组ID
+   */
+  static async loadSelectedGlobalRegexGroupId(): Promise<string | null> {
+    return await AsyncStorage.getItem('nodest_selected_global_regex_group_id');
+  }
+
+  /**
+   * 兼容旧接口：保存全局正则脚本列表（仅保存第一个组的脚本）
    */
   static async saveGlobalRegexScriptList(list: Array<any>): Promise<void> {
-    // 调试日志，确认 findRegex 是否被保存
-    // console.log('[StorageAdapter] saveGlobalRegexScriptList:', list.map(s => s.findRegex));
-    await AsyncStorage.setItem('nodest_global_regex_script_list', JSON.stringify(list));
+    // 兼容旧接口，仅保存第一个组
+    const groups = await this.loadGlobalRegexScriptGroups();
+    if (groups.length > 0) {
+      groups[0].scripts = list;
+      await this.saveGlobalRegexScriptGroups(groups);
+    } else {
+      await this.saveGlobalRegexScriptGroups([{ id: `group_${Date.now()}`, name: '默认脚本组', scripts: list }]);
+    }
   }
 
   /**
-   * 读取全局正则脚本列表
+   * 兼容旧接口：读取全局正则脚本列表（读取第一个组的脚本）
    */
   static async loadGlobalRegexScriptList(): Promise<Array<any>> {
-    const data = await AsyncStorage.getItem('nodest_global_regex_script_list');
-    return data ? JSON.parse(data) : [];
+    const groups = await this.loadGlobalRegexScriptGroups();
+    return groups.length > 0 ? groups[0].scripts : [];
   }
 
   /**
-   * 保存当前选中的全局正则脚本ID
+   * 获取所有启用的全局正则脚本（所有组合并，过滤disabled）
+   */
+  static async getAllEnabledGlobalRegexScripts(): Promise<Array<any>> {
+    const groups = await this.loadGlobalRegexScriptGroups();
+    const enabled: any[] = [];
+    groups.forEach(group => {
+      if (Array.isArray(group.scripts)) {
+        enabled.push(...group.scripts.filter(s => !s.disabled));
+      }
+    });
+    return enabled;
+  }
+
+  /**
+   * 保存当前选中的全局正则脚本ID（兼容组模式，实际仅用于单脚本操作）
    */
   static async saveSelectedGlobalRegexScriptId(id: string): Promise<void> {
     await AsyncStorage.setItem('nodest_selected_global_regex_script_id', id);

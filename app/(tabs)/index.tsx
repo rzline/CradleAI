@@ -455,9 +455,12 @@ const App = () => {
       await resetDefaultCharacterImported();
       Alert.alert('已重置', '下次启动将重新导入默认角色');
     };
+
     const [defaultCharacterNavigated, setDefaultCharacterNavigated] = useState(false);
     const characterToUse = fallbackCharacter || selectedCharacter;
     const { mode, setMode } = useDialogMode();
+
+
   // Add state for default character import loading
   const [isInitializing, setIsInitializing] = useState(true);
   // 自动初始化默认角色（仅首次）
@@ -1737,7 +1740,7 @@ const getBackgroundImage = () => {
       }
       // 立即设置 firstMesSentRef，防止 useEffect 再次自动触发
       firstMesSentRef.current[selectedConversationId] = true;
-      setTimeout(() => {
+      setTimeout(async () => {
         if (characterToUse?.jsonData) {
           // 新增：发送前再次检查界面messages是否为空
           if (messages.length > 0) {
@@ -1745,11 +1748,58 @@ const getBackgroundImage = () => {
           } else {
             try {
               const characterData = JSON.parse(characterToUse.jsonData);
-              if (characterData.roleCard?.first_mes) {
-                console.log(`[first_mes] [reset] 发送first_mes到${selectedConversationId}:`, characterData.roleCard.first_mes);
+              let firstMes = characterData.roleCard?.first_mes;
+
+              // === 新实现：应用新版全局正则脚本组 ===
+              try {
+                const globalSettings = typeof window !== 'undefined' && window.__globalSettingsCache
+                  ? window.__globalSettingsCache
+                  : await loadGlobalSettingsState();
+                if (
+                  globalSettings &&
+                  globalSettings.regexEnabled &&
+                  Array.isArray(globalSettings.regexScriptGroups) &&
+                  globalSettings.regexScriptGroups.length > 0
+                ) {
+                  // 1. 找到所有绑定到当前角色id的组和全部绑定的组
+                  const matchedGroups = globalSettings.regexScriptGroups.filter(
+                    (g: any) =>
+                      (g.bindType === 'all') ||
+                      (g.bindType === 'character' && g.bindCharacterId === selectedConversationId)
+                  );
+                  // 2. 合并所有启用的正则脚本
+                  const enabledScripts: any[] = [];
+                  matchedGroups.forEach((group: any) => {
+                    if (Array.isArray(group.scripts)) {
+                      group.scripts.forEach((s: any) => {
+                        if (!s.disabled) enabledScripts.push(s);
+                      });
+                    }
+                  });
+                  // 3. 动态导入 NodeSTCore 并应用正则
+                  if (enabledScripts.length > 0) {
+                    let NodeSTCoreClass = null;
+                    try {
+                      NodeSTCoreClass = (await import('@/NodeST/nodest/core/node-st-core')).NodeSTCore;
+                    } catch (e) {}
+                    if (NodeSTCoreClass && typeof NodeSTCoreClass.applyGlobalRegexScripts === 'function') {
+                      // placement=2 表示AI输出
+                      firstMes = NodeSTCoreClass.applyGlobalRegexScripts(
+                        firstMes,
+                        enabledScripts,
+                        2
+                      );
+                    }
+                  }
+                }
+              } catch (e) {
+                // ignore
+              }
+              if (firstMes) {
+                console.log(`[first_mes] [reset] 发送first_mes到${selectedConversationId}:`, firstMes);
                 addMessage(selectedConversationId, {
                   id: `first-reset-${Date.now()}`,
-                  text: characterData.roleCard.first_mes,
+                  text: firstMes,
                   sender: 'bot',
                   timestamp: Date.now()
                 });
@@ -2435,9 +2485,9 @@ const getBackgroundImage = () => {
   
   // 聊天后处理主入口：监听messages变化
   useEffect(() => {
-    console.log('messages updated:', messages.map(m => ({sender: m.sender, isLoading: m.isLoading, text: m.text})));
+    // console.log('messages updated:', messages.map(m => ({sender: m.sender, isLoading: m.isLoading, text: m.text})));
     if (!characterToUse) {
-      console.log('[后处理] 不触发：characterToUse 不存在');
+      // console.log('[后处理] 不触发：characterToUse 不存在');
       return;
     }
     if (!characterToUse.enableAutoExtraBackground) {
@@ -2562,8 +2612,6 @@ const getBackgroundImage = () => {
       
       <StatusBar translucent backgroundColor="transparent" />
 
-
-            {/* 新增：WebView测试按钮 */}
       <TouchableOpacity
         style={{
           position: 'absolute',
@@ -2583,6 +2631,7 @@ const getBackgroundImage = () => {
       >
         <Text style={{ color: '#fff', fontWeight: 'bold', fontSize: 22 }}>Web</Text>
       </TouchableOpacity>
+
             {/* 新增：初始化加载蒙层 */}
             {isInitializing && (
         <View style={styles.initializingOverlay}>
@@ -2597,7 +2646,7 @@ const getBackgroundImage = () => {
           </ImageBackground>
         </View>
       )}
-             
+            
 
 {/* /* 
         <TouchableOpacity
@@ -2826,6 +2875,7 @@ const getBackgroundImage = () => {
                 isEmpty={!isGroupMode && (!characterToUse || messages.length === 0)}
                 // 新增：群聊设置按钮事件
                 onGroupSettingsPress={toggleGroupSettingsSidebar}
+                
               />
 
               <SafeAreaView style={[
@@ -3223,7 +3273,28 @@ const styles = StyleSheet.create({
     borderRadius: 16,
     padding: 24,
   },
-  
+    floatingLogButton: {
+    position: 'absolute',
+    bottom: 32,
+    right: 24,
+    zIndex: 99999,
+    backgroundColor: '#4a6fa5',
+    borderRadius: 28,
+    width: 56,
+    height: 56,
+    justifyContent: 'center',
+    alignItems: 'center',
+    elevation: 10,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.25,
+    shadowRadius: 4,
+  },
+  floatingLogButtonText: {
+    color: '#fff',
+    fontWeight: 'bold',
+    fontSize: 28,
+  },
 });
 
 export default App;

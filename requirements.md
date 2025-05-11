@@ -6,6 +6,11 @@
 
 ---
 
+### 前置功能：
+
+
+node-st-core需要暴露一种方法，为输入内容包裹preset_json和worldbook_json
+
 ### 一、 核心模块与文件结构概览 (服务器端)
 
 ```

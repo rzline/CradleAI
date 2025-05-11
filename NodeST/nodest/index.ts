@@ -41,6 +41,14 @@ export interface ProcessChatRequest {
     };
 }
 
+// 新增：请求日志接口
+export interface RequestLogData {
+    request: any;
+    response?: string;
+    timestamp: number;
+    adapter: string;
+}
+
 export class NodeST {
     private nodeSTCore: NodeSTCore | null = null;
     private circleManager: CircleManager;
@@ -919,5 +927,13 @@ export class NodeST {
         } catch (error) {
             return { success: false, error: error instanceof Error ? error.message : '未知错误' };
         }
+    }
+
+    /**
+     * 获取最新的API请求和响应数据
+     * @returns 最新的请求/响应数据，如果没有则返回null
+     */
+    getLatestApiRequestLog(): RequestLogData | null {
+        return NodeSTCore.getLatestRequestData();
     }
 }

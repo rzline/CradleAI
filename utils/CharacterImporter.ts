@@ -54,6 +54,7 @@ export class CharacterImporter {
     extractedName: string;
     backgroundImage?: string; // Add backgroundImage field to return PNG data
     alternateGreetings?: string[]; // 新增
+    regexScripts?: any[]; // 新增：返回regexScripts
   }> {
     const data = await PNGParser.readPNGChunks(filePath);
     
@@ -147,12 +148,28 @@ export class CharacterImporter {
     console.log('[Character Import] Final alternateGreetings:', 
       alternateGreetings ? `(${alternateGreetings.length} items)` : 'undefined');
 
+    // 新增：读取regex_scripts
+    let regexScripts: any[] | undefined = undefined;
+    try {
+      if (
+        Array.isArray(data.chara?.data?.extensions?.regex_scripts)
+      ) {
+        regexScripts = data.chara.data.extensions.regex_scripts;
+        console.log(`[CharacterImporter] 已读取regex_scripts，数量: ${regexScripts?.length ?? 0}，字段路径: data.chara.data.extensions.regex_scripts`);
+      } else {
+        console.log('[CharacterImporter] 未找到regex_scripts字段，字段路径: data.chara.data.extensions.regex_scripts');
+      }
+    } catch (e) {
+      console.warn('[CharacterImporter] 读取regex_scripts时出错:', e);
+    }
+
     return { 
       roleCard, 
       worldBook, 
       extractedName,
       backgroundImage,  // Return the background image data
-      alternateGreetings // 新增
+      alternateGreetings, // 新增
+      regexScripts // 新增
     };
   }
 

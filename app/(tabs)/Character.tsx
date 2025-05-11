@@ -62,6 +62,7 @@ const COLOR_BACKGROUND = '#282828';
 const COLOR_CARD_BG = '#333333';
 const COLOR_BUTTON = 'rgb(255, 224, 195)';
 const COLOR_TEXT = '#FFFFFF';
+const TEMP_IMPORT_DATA_FILE = FileSystem.cacheDirectory + 'temp_import_data.json';
 
 const HEADER_HEIGHT = Platform.OS === 'ios' ? 90 : (StatusBar.currentHeight || 0) + 56;
 
@@ -252,6 +253,13 @@ const CharactersScreen: React.FC = () => {
       // 头像路径
       const avatarUri = isPng ? fileUri : undefined;
 
+      // 新增：日志输出regexScripts
+      if (Array.isArray(importedData.regexScripts)) {
+        console.log(`[Character] 已读取regexScripts，数量: ${importedData.regexScripts.length}，字段路径: importedData.regexScripts`);
+      } else {
+        console.log('[Character] 未读取到regexScripts字段，字段路径: importedData.regexScripts');
+      }
+
       // 是否导入预设
       if (importWithPreset && isPng) {
         // 仅PNG时才弹出预设选择
@@ -271,14 +279,18 @@ const CharactersScreen: React.FC = () => {
                   alternateGreetings: importedData.alternateGreetings || [],
                   data: {
                     alternate_greetings: importedData.alternateGreetings || []
-                  }
+                  },
+                  // 新增：保存regexScripts
+                  regexScripts: importedData.regexScripts || []
                 };
-                console.log('[Character] 写入导入数据到temp_import_data, alternateGreetings:', 
-                  completeData.alternateGreetings && Array.isArray(completeData.alternateGreetings) 
-                    ? `(${completeData.alternateGreetings.length} items)` 
-                    : 'undefined');
-                
-                await AsyncStorage.setItem('temp_import_data', JSON.stringify(completeData));
+                console.log('[Character] 写入导入数据到temp_import_data, alternateGreetings:',
+                  completeData.alternateGreetings && Array.isArray(completeData.alternateGreetings)
+                    ? `(${completeData.alternateGreetings.length} items)`
+                    : 'undefined',
+                  'regexScripts:', Array.isArray(completeData.regexScripts) ? `(${completeData.regexScripts.length} items)` : 'undefined'
+                );
+
+                await FileSystem.writeAsStringAsync(TEMP_IMPORT_DATA_FILE, JSON.stringify(completeData), { encoding: FileSystem.EncodingType.UTF8 });
                 setCreationType('import');
                 setShowCreationModal(true);
                 setImportLoading(false);
@@ -302,15 +314,18 @@ const CharactersScreen: React.FC = () => {
                       alternateGreetings: importedData.alternateGreetings || [],
                       data: {
                         alternate_greetings: importedData.alternateGreetings || []
-                      }
+                      },
+                      // 新增：保存regexScripts
+                      regexScripts: importedData.regexScripts || []
                     };
-                    
-                    console.log('[Character] 写入导入数据到temp_import_data(取消预设导入), alternateGreetings:', 
-                      completeData.alternateGreetings && Array.isArray(completeData.alternateGreetings) 
-                        ? `(${completeData.alternateGreetings.length} items)` 
-                        : 'undefined');
-                    
-                    await AsyncStorage.setItem('temp_import_data', JSON.stringify(completeData));
+                    console.log('[Character] 写入导入数据到temp_import_data(取消预设导入), alternateGreetings:',
+                      completeData.alternateGreetings && Array.isArray(completeData.alternateGreetings)
+                        ? `(${completeData.alternateGreetings.length} items)`
+                        : 'undefined',
+                      'regexScripts:', Array.isArray(completeData.regexScripts) ? `(${completeData.regexScripts.length} items)` : 'undefined'
+                    );
+
+                    await FileSystem.writeAsStringAsync(TEMP_IMPORT_DATA_FILE, JSON.stringify(completeData), { encoding: FileSystem.EncodingType.UTF8 });
                     setCreationType('import');
                     setShowCreationModal(true);
                     setImportLoading(false);
@@ -330,15 +345,18 @@ const CharactersScreen: React.FC = () => {
                     alternateGreetings: importedData.alternateGreetings || [],
                     data: {
                       alternate_greetings: importedData.alternateGreetings || []
-                    }
+                    },
+                    // 新增：保存regexScripts
+                    regexScripts: importedData.regexScripts || []
                   };
-                  
-                  console.log('[Character] 写入导入数据到temp_import_data(含预设), alternateGreetings:', 
-                    completeData.alternateGreetings && Array.isArray(completeData.alternateGreetings) 
-                      ? `(${completeData.alternateGreetings.length} items)` 
-                      : 'undefined');
-                  
-                  await AsyncStorage.setItem('temp_import_data', JSON.stringify(completeData));
+                  console.log('[Character] 写入导入数据到temp_import_data(含预设), alternateGreetings:',
+                    completeData.alternateGreetings && Array.isArray(completeData.alternateGreetings)
+                      ? `(${completeData.alternateGreetings.length} items)`
+                      : 'undefined',
+                    'regexScripts:', Array.isArray(completeData.regexScripts) ? `(${completeData.regexScripts.length} items)` : 'undefined'
+                  );
+
+                  await FileSystem.writeAsStringAsync(TEMP_IMPORT_DATA_FILE, JSON.stringify(completeData), { encoding: FileSystem.EncodingType.UTF8 });
                   setCreationType('import');
                   setShowCreationModal(true);
                   setImportLoading(false);
@@ -354,15 +372,18 @@ const CharactersScreen: React.FC = () => {
                     alternateGreetings: importedData.alternateGreetings || [],
                     data: {
                       alternate_greetings: importedData.alternateGreetings || []
-                    }
+                    },
+                    // 新增：保存regexScripts
+                    regexScripts: importedData.regexScripts || []
                   };
-                  
-                  console.log('[Character] 写入导入数据到temp_import_data(预设导入失败), alternateGreetings:', 
-                    completeData.alternateGreetings && Array.isArray(completeData.alternateGreetings) 
-                      ? `(${completeData.alternateGreetings.length} items)` 
-                      : 'undefined');
-                  
-                  await AsyncStorage.setItem('temp_import_data', JSON.stringify(completeData));
+                  console.log('[Character] 写入导入数据到temp_import_data(预设导入失败), alternateGreetings:',
+                    completeData.alternateGreetings && Array.isArray(completeData.alternateGreetings)
+                      ? `(${completeData.alternateGreetings.length} items)`
+                      : 'undefined',
+                    'regexScripts:', Array.isArray(completeData.regexScripts) ? `(${completeData.regexScripts.length} items)` : 'undefined'
+                  );
+
+                  await FileSystem.writeAsStringAsync(TEMP_IMPORT_DATA_FILE, JSON.stringify(completeData), { encoding: FileSystem.EncodingType.UTF8 });
                   setCreationType('import');
                   setShowCreationModal(true);
                   setImportLoading(false);
@@ -382,15 +403,18 @@ const CharactersScreen: React.FC = () => {
           alternateGreetings: importedData.alternateGreetings || [],
           data: {
             alternate_greetings: importedData.alternateGreetings || []
-          }
+          },
+          // 新增：保存regexScripts
+          regexScripts: importedData.regexScripts || []
         };
-        
-        console.log('[Character] 写入导入数据到temp_import_data(直接JSON), alternateGreetings:', 
-          completeData.alternateGreetings && Array.isArray(completeData.alternateGreetings) 
-            ? `(${completeData.alternateGreetings.length} items)` 
-            : 'undefined');
-        
-        await AsyncStorage.setItem('temp_import_data', JSON.stringify(completeData));
+        console.log('[Character] 写入导入数据到temp_import_data(直接JSON), alternateGreetings:',
+          completeData.alternateGreetings && Array.isArray(completeData.alternateGreetings)
+            ? `(${completeData.alternateGreetings.length} items)`
+            : 'undefined',
+          'regexScripts:', Array.isArray(completeData.regexScripts) ? `(${completeData.regexScripts.length} items)` : 'undefined'
+        );
+
+        await FileSystem.writeAsStringAsync(TEMP_IMPORT_DATA_FILE, JSON.stringify(completeData), { encoding: FileSystem.EncodingType.UTF8 });
         setCreationType('import');
         setShowCreationModal(true);
         setImportLoading(false);

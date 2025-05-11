@@ -106,6 +106,9 @@ const INSERT_TYPE_OPTIONS = {
   CHAT: 'chat'
 } as const;
 
+// 新增：定义临时导入数据文件路径
+const TEMP_IMPORT_DATA_FILE = FileSystem.cacheDirectory + 'temp_import_data.json';
+
 interface CreateCharProps {
   activeTab?: 'basic' | 'advanced' | 'voice';
   creationMode?: 'manual' | 'auto' | 'import';
@@ -266,6 +269,8 @@ const CreateChar: React.FC<CreateCharProps> = ({
   const [alternateGreetings, setAlternateGreetings] = useState<string[]>([]);
   const [selectedGreetingIndex, setSelectedGreetingIndex] = useState<number>(0);
 
+  // 新增：用于存储regexScripts（不渲染到UI，仅存储和日志）
+  const [importedRegexScripts, setImportedRegexScripts] = useState<any[] | undefined>(undefined);
 
   // 新增：添加/删除开场白功能
   const handleAddGreeting = () => {
@@ -274,7 +279,6 @@ const CreateChar: React.FC<CreateCharProps> = ({
     setRoleCard(prev => ({ ...prev, first_mes: '' }));
     setHasUnsavedChanges(true);
   };
-
 
   const handleDeleteGreeting = () => {
     if (alternateGreetings.length <= 1) return;
@@ -811,6 +815,45 @@ const CreateChar: React.FC<CreateCharProps> = ({
       // 设置为当前会话
       await AsyncStorage.setItem('lastConversationId', characterId);
       
+      // === 新增：自动导入 regexScripts 到 global-settings 的正则脚本组 ===
+      if (Array.isArray(importedRegexScripts) && importedRegexScripts.length > 0 && roleCard.name?.trim()) {
+        try {
+          // 动态导入 global-settings 的 load/save
+          const { loadGlobalSettingsState, saveGlobalSettingsState } = await import('./global-settings');
+          const globalState = await loadGlobalSettingsState?.();
+          if (globalState) {
+            // 生成新脚本组
+            const timestamp = Date.now();
+            const newGroupId = `group_${timestamp}`;
+            const newGroup = {
+              id: newGroupId,
+              name: roleCard.name.trim(),
+              scripts: importedRegexScripts.map((script, idx) => ({
+                ...script,
+                id: script.id || `regex_${timestamp}_${idx}`,
+                scriptName: script.scriptName || `正则脚本_${idx + 1}`,
+                flags: script.flags ?? 'g'
+              })),
+              // 不设置 bindType/bindCharacterId
+            };
+            // 合并到现有组
+            const newGroups = Array.isArray(globalState.regexScriptGroups)
+              ? [...globalState.regexScriptGroups, newGroup]
+              : [newGroup];
+            // 保存
+            await saveGlobalSettingsState?.({
+              ...globalState,
+              regexScriptGroups: newGroups,
+              selectedRegexGroupId: newGroupId,
+            });
+          }
+        } catch (e) {
+          console.warn('[CreateChar] 自动导入正则脚本到全局失败:', e);
+        }
+        // 清空 importedRegexScripts，避免重复导入
+        setImportedRegexScripts(undefined);
+      }
+      
       // Reset states before navigation
       setIsSaving(false);
       setHasUnsavedChanges(false);
@@ -964,8 +1007,13 @@ const CreateChar: React.FC<CreateCharProps> = ({
     const loadImportedData = async () => {
       try {
         console.log('[CreateChar] Attempting to load imported data...');
-        const importData = await AsyncStorage.getItem('temp_import_data');
-        
+        // 替换为文件读取
+        let importData: string | null = null;
+        try {
+          importData = await FileSystem.readAsStringAsync(TEMP_IMPORT_DATA_FILE, { encoding: FileSystem.EncodingType.UTF8 });
+        } catch (e) {
+          importData = null;
+        }
         if (importData) {
           console.log('[CreateChar] Found imported data, parsing...');
           const data = JSON.parse(importData);
@@ -1085,10 +1133,19 @@ const CreateChar: React.FC<CreateCharProps> = ({
             }, 100);
           }
 
+          // 新增：捕获regexScripts字段
+          if (Array.isArray(data.regexScripts)) {
+            setImportedRegexScripts(data.regexScripts);
+            console.log(`[CreateChar] 已捕获regexScripts，数量: ${data.regexScripts.length}，字段路径: data.regexScripts`);
+          } else {
+            setImportedRegexScripts(undefined);
+            console.log('[CreateChar] 未捕获到regexScripts字段，字段路径: data.regexScripts');
+          }
+
           // Only clear temporarily stored import data after successful load
           // Wait a bit before clearing to ensure all state updates have processed
           setTimeout(() => {
-            AsyncStorage.removeItem('temp_import_data')
+            FileSystem.deleteAsync(TEMP_IMPORT_DATA_FILE, { idempotent: true })
               .then(() => console.log('[CreateChar] Cleared temporary import data'))
               .catch(err => console.error('[CreateChar] Error clearing temp data:', err));
           }, 1000);

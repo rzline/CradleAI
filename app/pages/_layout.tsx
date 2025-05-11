@@ -55,7 +55,16 @@ export default function PagesLayout() {
           headerShown: false,
         }}
       />
+
+                        <Stack.Screen
+        name="log"
+        options={{
+          presentation: 'modal',
+          headerShown: false,
+        }}
+      />
     </Stack>
+    
     
   );
 }

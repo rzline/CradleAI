@@ -11,7 +11,6 @@ import {
   Animated,
   Alert,
 } from 'react-native';
-import AsyncStorage from '@react-native-async-storage/async-storage';
 import { Ionicons, MaterialCommunityIcons } from '@expo/vector-icons';
 import { Character } from '@/shared/types';
 import { BlurView } from 'expo-blur';
@@ -22,7 +21,6 @@ import { useRouter } from 'expo-router';
 import { Group } from '@/src/group/group-types';
 import { GroupAvatar } from './GroupAvatar';
 import { CharacterLoader } from '@/src/utils/character-loader';
-import { GroupScheduler } from '@/src/group/group-scheduler';
 
 interface GroupChatSettings {
   dailyMessageLimit: number;
@@ -64,9 +62,6 @@ const TopBarWithBackground: React.FC<TopBarWithBackgroundProps> = ({
   onSaveManagerPress,
   showBackground = true,
   isGroupMode = false,
-  onGroupSettingsChange,
-  currentUser,
-  onGroupDisbanded,
   isEmpty = false, // Default to false for backward compatibility
   onGroupSettingsPress, // New prop for group settings sidebar
 }) => {
@@ -116,10 +111,6 @@ const TopBarWithBackground: React.FC<TopBarWithBackgroundProps> = ({
     }
   }, []);
 
-  const handleMemoryControlPress = () => {
-    setIsMemoryControlVisible(true);
-    console.log('[TopBar] Opening memory control panel');
-  };
 
   return (
     <>
@@ -257,7 +248,7 @@ const TopBarWithBackground: React.FC<TopBarWithBackgroundProps> = ({
             {!isEmpty && (
               <TouchableOpacity
                 style={styles.actionButton}
-                onPress={() => router.push('/pages/global-settings')}
+                onPress={() => router.push({ pathname: '/pages/global-settings', params: { characterId: selectedCharacter?.id,charactername:selectedCharacter?.name } })}
                 hitSlop={ACTION_BUTTON_HIT_SLOP}
               >
                 <Ionicons name="earth-outline" size={BUTTON_SIZE} color="#fff" />

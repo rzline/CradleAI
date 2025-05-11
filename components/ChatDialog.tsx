@@ -37,6 +37,8 @@ import { GestureResponderEvent } from 'react-native';
 import Markdown from 'react-native-markdown-display';
 import TextEditorModal from './common/TextEditorModal';
 import Slider from '@react-native-community/slider';
+import type { RenderFunction, ASTNode } from 'react-native-markdown-display';
+import { useRouter } from 'expo-router';
 
 interface ExtendedChatDialogProps extends ChatDialogProps {
   messageMemoryState?: Record<string, string>;
@@ -101,6 +103,7 @@ const KNOWN_TAGS = [
   'table', 'tr', 'td', 'th', 'thead', 'tbody', 'blockquote',
   'pre', 'code', 'mark', 'figure', 'figcaption', 'video', 'audio',
   'source', 'section', 'article', 'aside', 'nav', 'header', 'footer'
+  ,'style', 'script', 'html', 'body', 'head', 'meta', 'link', 'title','doctype' 
 ];
 
 // 移除未知标签，仅保留内容
@@ -126,9 +129,70 @@ function stripUnknownTags(html: string): string {
   return result;
 }
 
-// Add check for WebView content - starts with <!DOCTYPE html> or <html>
+// 新增：检测是否包含结构性标签但不是完整HTML页面
+const STRUCTURAL_TAGS = [
+  'source', 'section', 'article', 'aside', 'nav', 'header', 'footer',
+  'style', 'script', 'html', 'body', 'head', 'meta', 'link', 'title', 'doctype'
+];
+
+// 检查文本是否包含结构性标签
+function containsStructuralTags(text: string): boolean {
+  return STRUCTURAL_TAGS.some(tag => {
+    // 检查开头或结尾有这些标签，或中间有这些标签
+    const regex = new RegExp(`<${tag}[\\s>]|</${tag}>|<!DOCTYPE`, 'i');
+    return regex.test(text);
+  });
+}
+
+// 检查是否为完整HTML页面
+function isFullHtmlPage(text: string): boolean {
+  return /^\s*(<!DOCTYPE\s+html|<html)/i.test(text);
+}
+
+// 自动补全为完整HTML结构
+function autoWrapHtmlIfNeeded(text: string): string {
+  if (isFullHtmlPage(text)) return text;
+  if (containsStructuralTags(text)) {
+    // 包裹为完整HTML页面
+    return `<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1">
+  <title>内容预览</title>
+  <style>
+    body { background: #222; color: #f8f8f2; font-family: 'Helvetica', 'Arial', sans-serif; margin: 0; padding: 1em; }
+    img, video { max-width: 100%; border-radius: 5px; }
+    pre, code { background: #111; color: #fff; border-radius: 4px; padding: 0.2em 0.4em; }
+  </style>
+</head>
+<body>
+${text}
+</body>
+</html>`;
+  }
+  return text;
+}
+
+// 修改 isWebViewContent 检查，增强判断，检查三重反引号中的HTML内容或结构性标签
 const isWebViewContent = (text: string): boolean => {
-  return /^\s*(?:<!DOCTYPE\s+html|<html)/i.test(text);
+  // 检查直接以 <!DOCTYPE html> 或 <html 开头的内容
+  if (isFullHtmlPage(text)) {
+    return true;
+  }
+  // 检查是否有包含在三重反引号中的HTML内容
+  const codeBlockMatch = text.match(/```(?:html)?\s*([\s\S]*?)```/);
+  if (codeBlockMatch && isFullHtmlPage(codeBlockMatch[1])) {
+    return true;
+  }
+  // 检查是否包含结构性标签
+  if (containsStructuralTags(text)) {
+    return true;
+  }
+  if (codeBlockMatch && containsStructuralTags(codeBlockMatch[1])) {
+    return true;
+  }
+  return false;
 };
 
 // 修改 extractMarkdownBlocks，支持完整 HTML 页面代码块识别
@@ -186,6 +250,13 @@ const generateMarkdownCss = () => {
       border-radius: 5px;
       overflow-x: auto;
     }
+    .markdown-content pre code {
+      background: transparent;
+      padding: 0;
+      white-space: pre-wrap;
+      word-break: keep-all;
+      overflow-wrap: normal;
+    }
     .markdown-content blockquote {
       border-left: 4px solid #ff79c6;
       padding-left: 1em;
@@ -202,13 +273,25 @@ const generateMarkdownCss = () => {
   `;
 };
 
-// 修改 enhanceHtmlWithMarkdown，遇到完整 HTML 页面直接返回
+// 修改 enhanceHtmlWithMarkdown，遇到结构性标签但不是完整HTML页面时自动补全
 const enhanceHtmlWithMarkdown = (html: string): string => {
+  // 先检查是否有完整HTML代码块
+  const htmlCodeBlockMatch = html.match(/```(?:html)?\s*(<!DOCTYPE\s+html[\s\S]*?|<html[\s\S]*?)```/i);
+  if (htmlCodeBlockMatch) {
+    // 提取HTML内容并直接返回
+    return autoWrapHtmlIfNeeded(htmlCodeBlockMatch[1].trim());
+  }
+
+  // 检查整体内容是否需要补全
+  if (containsStructuralTags(html) && !isFullHtmlPage(html)) {
+    return autoWrapHtmlIfNeeded(html);
+  }
+
+  // 继续使用现有逻辑处理其他情况
   const { markdown, processed, htmlPage } = extractMarkdownBlocks(html);
 
-  // 如果有完整 HTML 页面代码块，直接返回该 HTML 内容
   if (htmlPage) {
-    return htmlPage;
+    return autoWrapHtmlIfNeeded(htmlPage);
   }
 
   if (markdown.length === 0) {
@@ -283,6 +366,7 @@ const ChatDialog: React.FC<ExtendedChatDialogProps> = ({
   onEditMessage,
   onDeleteMessage,
 }) => {
+    const router = useRouter();
   const flatListRef = useRef<FlatList<Message>>(null);
   const fadeAnim = useSharedValue(0);
   const translateAnim = useSharedValue(0);
@@ -300,6 +384,11 @@ const ChatDialog: React.FC<ExtendedChatDialogProps> = ({
   const { mode, visualNovelSettings, updateVisualNovelSettings, isHistoryModalVisible: contextHistoryModalVisible, setHistoryModalVisible: contextSetHistoryModalVisible } = useDialogMode();
   const isAutoScrollingRef = useRef(false);
 
+  // 判断是否为最后一条消息
+  const isLastMessage = (index: number) => {
+    const visibleMessages = getVisibleMessages();
+    return index === visibleMessages.length - 1;
+  };
   // 新增：视觉小说展开/收起状态和背景透明度
   const [vnExpanded, setVnExpanded] = useState(false);
   const [vnBgAlpha, setVnBgAlpha] = useState(() => {
@@ -358,13 +447,7 @@ const ChatDialog: React.FC<ExtendedChatDialogProps> = ({
     updateVisualNovelSettings({ backgroundColor: newColor });
   };
 
-  const handleLongPressOutside = () => {
-    if (flatListRef.current) {
-      try {
-        flatListRef.current.scrollToEnd({ animated: true });
-      } catch (e) {}
-    }
-  };
+
 
   useEffect(() => {
     const checkTtsEnhancerStatus = () => {
@@ -595,25 +678,33 @@ const ChatDialog: React.FC<ExtendedChatDialogProps> = ({
       );
     }
 
+    // Enhanced check for Markdown code blocks with triple backticks
+    const codeBlockPattern = /```([a-zA-Z0-9]*)\n([\s\S]*?)```/g;
+    const hasCodeBlock = codeBlockPattern.test(text);
+    
     const markdownPattern = /(^|\n)(\s{0,3}#|```|>\s|[*+-]\s|\d+\.\s|\|.*\|)/;
-    if (markdownPattern.test(text)) {
+    if (hasCodeBlock || markdownPattern.test(text)) {
       return (
         <View style={{ width: '100%' }}>
           <Markdown
             style={{
               body: isUser ? styles.userMessageText : styles.botMessageText,
               text: isUser ? styles.userMessageText : styles.botMessageText,
+              // Enhanced code block styling
               code_block: { 
                 backgroundColor: '#111', // 修改为黑色
                 color: '#fff', 
                 borderRadius: 6, 
-                padding: 8, 
-                fontSize: 14 
+                padding: 12, 
+                fontSize: 14,
+                fontFamily: Platform.OS === 'ios' ? 'Menlo' : 'monospace',
+                marginVertical: 10,
               },
               code_block_text: {
-                backgroundColor: '#111', // 关键：同步设置
+                backgroundColor: 'transparent', // 改为透明，防止重叠底色
                 color: '#fff',
                 fontSize: 14,
+                fontFamily: Platform.OS === 'ios' ? 'Menlo' : 'monospace',
               },
               code_inline: { 
                 backgroundColor: '#111', // 修改为黑色
@@ -639,6 +730,27 @@ const ChatDialog: React.FC<ExtendedChatDialogProps> = ({
               hr: { borderBottomWidth: 1, borderColor: '#aaa', marginVertical: 8 },
               link: { color: '#3498db', textDecorationLine: 'underline' },
               image: { width: 220, height: 160, borderRadius: 8, marginVertical: 8, alignSelf: 'center' },
+              fence_code: { // 改进fence_code样式 (用于```包裹的代码块)
+                backgroundColor: '#111',
+                color: '#fff',
+                borderRadius: 6,
+                padding: 12,
+                fontSize: 14,
+                marginVertical: 10,
+                fontFamily: Platform.OS === 'ios' ? 'Menlo' : 'monospace',
+                width: '100%',
+              },
+              fence_code_text: { // 添加特定文本样式
+                backgroundColor: 'transparent',
+                color: '#fff',
+                fontSize: 14,
+                fontFamily: Platform.OS === 'ios' ? 'Menlo' : 'monospace',
+                padding: 0,
+              },
+              fence: { // 添加fence样式
+                marginVertical: 10,
+                width: '100%',
+              }
             }}
             onLinkPress={(url: string) => {
               if (url.startsWith('http://') || url.startsWith('https://') || url.startsWith('mailto:')) {
@@ -650,6 +762,22 @@ const ChatDialog: React.FC<ExtendedChatDialogProps> = ({
                 return true;
               }
               return false;
+            }}
+            rules={{
+              fence: (
+                node: ASTNode,
+                children: React.ReactNode[],
+                parent: ASTNode[],
+                styles: any
+              ) => {
+                return (
+                  <View key={node.key} style={styles.codeBlock}>
+                    <Text style={styles.codeText}>
+                      {node.content || ''}
+                    </Text>
+                  </View>
+                );
+              }
             }}
           >
             {text}
@@ -1084,6 +1212,19 @@ const ChatDialog: React.FC<ExtendedChatDialogProps> = ({
               </TouchableOpacity>
             </>
           )}
+          {/* 新增：最后一条消息显示log跳转按钮 */}
+          {isLastMessage(index) && (
+            <TouchableOpacity
+              style={[
+                styles.actionCircleButton,
+                { width: BUTTON_SIZE, height: BUTTON_SIZE, marginLeft: BUTTON_MARGIN }
+              ]}
+              onPress={() => router.push('/pages/log')}
+              accessibilityLabel="查看请求日志"
+            >
+              <Ionicons name="document-text-outline" size={BUTTON_ICON_SIZE} color="#4a6fa5" />
+            </TouchableOpacity>
+          )}
         </View>
       </View>
     );
@@ -1167,8 +1308,12 @@ const ChatDialog: React.FC<ExtendedChatDialogProps> = ({
     const isUser = showUserMessage;
     const isRegenerating = regeneratingMessageId === lastMessage.id;
 
-    // Check if content should be rendered as WebView
-    const shouldRenderAsWebView = !isUser && !lastMessage.isLoading && isWebViewContent(displayText);
+  // 增强 shouldRenderAsWebView 判断
+  const shouldRenderAsWebView = !isUser && !lastMessage.isLoading && (
+    isWebViewContent(displayText) || 
+    displayText.match(/```(?:html)?\s*<!DOCTYPE\s+html[\s\S]*?```/i) ||
+    displayText.match(/```(?:html)?\s*<html[\s\S]*?```/i)
+  );
 
     // 判断是否first_mes
     let isFirstMes = false;
@@ -1286,39 +1431,41 @@ const ChatDialog: React.FC<ExtendedChatDialogProps> = ({
           )}
           
           {/* WebView content replaces ScrollView when appropriate */}
-          {shouldRenderAsWebView ? (
-            <View style={[
-              styles.visualNovelWebViewContainer,
-              { 
-                maxHeight: getVNTextMaxHeight(),
-                marginTop: vnExpanded ? 8 : 0,
-              }
-            ]}>
-              <WebView
-                style={styles.visualNovelWebView}
-                originWhitelist={['*']}
-                source={{ html: enhanceHtmlWithMarkdown(displayText) }} // Use our enhanced version
-                javaScriptEnabled={true}
-                domStorageEnabled={true}
-                startInLoadingState={true}
-                scalesPageToFit={false}
-                injectedJavaScript={`
-                  // Make content fit mobile viewport
-                  document.querySelector('meta[name="viewport"]')?.remove();
-                  var meta = document.createElement('meta');
-                  meta.name = 'viewport';
-                  meta.content = 'width=device-width, initial-scale=1, maximum-scale=1';
-                  document.getElementsByTagName('head')[0].appendChild(meta);
-                  true;
-                `}
-                renderLoading={() => (
-                  <View style={styles.webViewLoading}>
-                    <ActivityIndicator size="small" color="#fff" />
-                    <Text style={styles.webViewLoadingText}>加载中...</Text>
-                  </View>
-                )}
-              />
-            </View>
+  {shouldRenderAsWebView ? (
+    <View style={[
+      styles.visualNovelWebViewContainer,
+      { 
+        maxHeight: getVNTextMaxHeight(),
+        marginTop: vnExpanded ? 8 : 0,
+      }
+    ]}>
+      <WebView
+        style={styles.visualNovelWebView}
+        originWhitelist={['*']}
+        source={{ 
+          html: enhanceHtmlWithMarkdown(displayText) // 使用增强后的处理函数
+        }}
+        javaScriptEnabled={true}
+        domStorageEnabled={true}
+        startInLoadingState={true}
+        scalesPageToFit={false}
+        injectedJavaScript={`
+          // Make content fit mobile viewport
+          document.querySelector('meta[name="viewport"]')?.remove();
+          var meta = document.createElement('meta');
+          meta.name = 'viewport';
+          meta.content = 'width=device-width, initial-scale=1, maximum-scale=1';
+          document.getElementsByTagName('head')[0].appendChild(meta);
+          true;
+        `}
+        renderLoading={() => (
+          <View style={styles.webViewLoading}>
+            <ActivityIndicator size="small" color="#fff" />
+            <Text style={styles.webViewLoadingText}>加载中...</Text>
+          </View>
+        )}
+      />
+    </View>
           ) : (
             <ScrollView
               style={[
@@ -1388,7 +1535,6 @@ const ChatDialog: React.FC<ExtendedChatDialogProps> = ({
                     { width: BUTTON_SIZE, height: BUTTON_SIZE, backgroundColor: 'transparent', marginLeft: 8 }
                   ]}
                   onPress={() => {
-                    // 修复：弹出编辑框而不是直接调用onEditMessage
                     setEditModalText(lastMessage.text);
                     setEditTargetMsgId(lastMessage.id);
                     setEditTargetAiIndex(aiIndex);
@@ -1442,8 +1588,32 @@ const ChatDialog: React.FC<ExtendedChatDialogProps> = ({
                     />
                   )}
                 </TouchableOpacity>
+                {/* 新增：视觉小说模式下的log跳转按钮 */}
+                <TouchableOpacity
+                  style={[
+                    styles.actionCircleButton,
+                    { width: BUTTON_SIZE, height: BUTTON_SIZE, backgroundColor: 'transparent', marginLeft: 8 }
+                  ]}
+                  onPress={() => router.push('/pages/log')}
+                  accessibilityLabel="查看请求日志"
+                >
+                  <Ionicons name="document-text-outline" size={BUTTON_ICON_SIZE} color="#4a6fa5" />
+                </TouchableOpacity>
               </View>
             )}
+            {/* 非AI消息时也显示log按钮（如用户消息） */}
+            {((isUser || lastMessage.isLoading) && (
+              <TouchableOpacity
+                style={[
+                  styles.actionCircleButton,
+                  { width: BUTTON_SIZE, height: BUTTON_SIZE, backgroundColor: 'transparent', marginLeft: 8 }
+                ]}
+                onPress={() => router.push('/pages/log')}
+                accessibilityLabel="查看请求日志"
+              >
+                <Ionicons name="document-text-outline" size={BUTTON_ICON_SIZE} color="#4a6fa5" />
+              </TouchableOpacity>
+            ))}
           </View>
         </View>
       </>
@@ -2275,6 +2445,19 @@ const styles = StyleSheet.create({
     marginTop: 10,
     color: '#fff',
     fontSize: 14,
+  },
+    // Add or update code block related styles
+  codeBlock: {
+    backgroundColor: '#111',
+    padding: 10,
+    borderRadius: 6,
+    marginVertical: 8,
+    width: '100%',
+  },
+  codeText: {
+    color: '#fff',
+    fontSize: 14,
+    fontFamily: Platform.OS === 'ios' ? 'Menlo' : 'monospace',
   },
 });
 
