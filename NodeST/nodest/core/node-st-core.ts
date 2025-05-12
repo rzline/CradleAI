@@ -1145,16 +1145,16 @@ export class NodeSTCore {
                 }
             }
 
-            console.log('[NodeSTCore] D-entries for chat:', {
-                totalEntries: dEntries.length,
-                entriesByType: {
-                    position4: dEntries.filter(d => d.position === 4).length,
-                    authorNote: dEntries.filter(d => d.is_author_note).length,
-                    position2: dEntries.filter(d => d.position === 2).length,
-                    position3: dEntries.filter(d => d.position === 3).length,
-                    customSetting: dEntries.filter(d => d.name === "自设" || d.name?.includes("自设")).length
-                }
-            });
+            // console.log('[NodeSTCore] D-entries for chat:', {
+            //     totalEntries: dEntries.length,
+            //     entriesByType: {
+            //         position4: dEntries.filter(d => d.position === 4).length,
+            //         authorNote: dEntries.filter(d => d.is_author_note).length,
+            //         position2: dEntries.filter(d => d.position === 2).length,
+            //         position3: dEntries.filter(d => d.position === 3).length,
+            //         customSetting: dEntries.filter(d => d.name === "自设" || d.name?.includes("自设")).length
+            //     }
+            // });
 
             // 记忆搜索功能，在消息发送前尝试检索相关记忆
             let memorySearchResults = null;
@@ -2727,14 +2727,48 @@ export class NodeSTCore {
                 undefined,
                 characterId // Pass characterId to processChat
             );
-            
+
+            // === 新增：对AI响应应用全局正则脚本（placement=2，支持全部绑定和当前角色绑定的组） ===
+            let processedResponse = response;
+            try {
+                // 读取所有正则脚本组，筛选全部绑定和当前角色绑定的组
+                let globalRegexScripts: any[] = [];
+                let globalRegexEnabled = false;
+                const regexGroups = await StorageAdapter.loadGlobalRegexScriptGroups?.() || [];
+                if (regexGroups.length > 0) {
+                    globalRegexScripts = regexGroups
+                        .filter(g =>
+                            g.bindType === 'all' ||
+                            (g.bindType === 'character' && g.bindCharacterId && characterId && g.bindCharacterId === characterId)
+                        )
+                        .flatMap(g => Array.isArray(g.scripts) ? g.scripts : []);
+                } else {
+                    // 兼容旧格式
+                    globalRegexScripts = await StorageAdapter.loadGlobalRegexScriptList?.() || [];
+                }
+                const regexEnabledVal = await (await import('@react-native-async-storage/async-storage')).default.getItem('nodest_global_regex_enabled');
+                globalRegexEnabled = regexEnabledVal === 'true';
+
+                if (globalRegexEnabled && globalRegexScripts.length > 0 && typeof response === 'string') {
+                    const before = response;
+                    processedResponse = NodeSTCore.applyGlobalRegexScripts(response, globalRegexScripts, 2);
+                    if (processedResponse !== before) {
+                        console.log(`[全局正则][regenerateFromMessage] 已对AI响应应用正则处理，原文: ${before}，结果: ${processedResponse}`);
+                    } else {
+                        console.log('[全局正则][regenerateFromMessage] AI响应未被正则脚本修改。');
+                    }
+                }
+            } catch (e) {
+                console.warn('[NodeSTCore][regenerateFromMessage][GlobalRegex] 正则脚本处理异常:', e);
+            }
+
             // If we got a response, add it to history
-            if (response) {
+            if (processedResponse) {
                 // Use updateChatHistory method to add the AI response
                 const updatedHistory = this.updateChatHistory(
                     truncatedHistory,
                     userMessageText,
-                    response,
+                    processedResponse,
                     dEntries
                 );
                 
@@ -2746,11 +2780,11 @@ export class NodeSTCore {
                 
                 console.log('[NodeSTCore] Regeneration complete, saved updated history:', {
                     totalMessages: updatedHistory.parts.length,
-                    response: response.substring(0, 50) + '...'
+                    response: processedResponse.substring(0, 50) + '...'
                 });
             }
             
-            return response;
+            return processedResponse;
         } catch (error) {
             console.error('[NodeSTCore] Error in regenerateFromMessage:', error);
             return null;
