@@ -146,7 +146,7 @@ function containsStructuralTags(text: string): boolean {
 
 // 检查是否为完整HTML页面
 function isFullHtmlPage(text: string): boolean {
-  return /^\s*(<!DOCTYPE\s+html|<html)/i.test(text);
+  return /^\s*(<!DOCTYPE html|<html)/i.test(text);
 }
 
 // 自动补全为完整HTML结构
@@ -353,16 +353,12 @@ const ChatDialog: React.FC<ExtendedChatDialogProps> = ({
   messages,
   style,
   selectedCharacter,
-  onRateMessage,
   onRegenerateMessage,
-  savedScrollPosition,
   onScrollPositionChange,
-  messageMemoryState = {},
   regeneratingMessageId = null,
   user = null,
   isHistoryModalVisible = false,
   setHistoryModalVisible,
-  onShowFullHistory,
   onEditMessage,
   onDeleteMessage,
 }) => {
@@ -382,7 +378,7 @@ const ChatDialog: React.FC<ExtendedChatDialogProps> = ({
   const [audioStates, setAudioStates] = useState<Record<string, AudioState>>({});
   const [ttsEnhancerEnabled, setTtsEnhancerEnabled] = useState(false);
   const { mode, visualNovelSettings, updateVisualNovelSettings, isHistoryModalVisible: contextHistoryModalVisible, setHistoryModalVisible: contextSetHistoryModalVisible } = useDialogMode();
-  const isAutoScrollingRef = useRef(false);
+
 
   // 判断是否为最后一条消息
   const isLastMessage = (index: number) => {
@@ -656,322 +652,331 @@ const ChatDialog: React.FC<ExtendedChatDialogProps> = ({
     return /(<\s*(thinking|think|status|mem|websearch|char-think|StatusBlock|statusblock|font)[^>]*>[\s\S]*?<\/\s*(thinking|think|status|mem|websearch|char-think|StatusBlock|statusblock|font)\s*>)/i.test(text);
   };
 
-  const processMessageContent = (text: string, isUser: boolean) => {
-    if (!text || text.trim() === '') {
-      return (
-        <Text style={isUser ? styles.userMessageText : styles.botMessageText}>
-          (Empty message)
-        </Text>
-      );
-    }
-
-    if (containsCustomTags(text) || /<\/?[a-z][^>]*>/i.test(text)) {
-      // 渲染前先移除未知标签
-      const cleanedText = stripUnknownTags(text);
-      return (
-        <RichTextRenderer
-          html={optimizeHtmlForRendering(cleanedText)}
-          baseStyle={isUser ? styles.userMessageText : styles.botMessageText}
-          onImagePress={(url) => setFullscreenImage(url)}
-          maxImageHeight={MAX_IMAGE_HEIGHT}
-        />
-      );
-    }
-
-    // Enhanced check for Markdown code blocks with triple backticks
-    const codeBlockPattern = /```([a-zA-Z0-9]*)\n([\s\S]*?)```/g;
-    const hasCodeBlock = codeBlockPattern.test(text);
-    
-    const markdownPattern = /(^|\n)(\s{0,3}#|```|>\s|[*+-]\s|\d+\.\s|\|.*\|)/;
-    if (hasCodeBlock || markdownPattern.test(text)) {
-      return (
-        <View style={{ width: '100%' }}>
-          <Markdown
-            style={{
-              body: isUser ? styles.userMessageText : styles.botMessageText,
-              text: isUser ? styles.userMessageText : styles.botMessageText,
-              // Enhanced code block styling
-              code_block: { 
-                backgroundColor: '#111', // 修改为黑色
-                color: '#fff', 
-                borderRadius: 6, 
-                padding: 12, 
-                fontSize: 14,
-                fontFamily: Platform.OS === 'ios' ? 'Menlo' : 'monospace',
-                marginVertical: 10,
-              },
-              code_block_text: {
-                backgroundColor: 'transparent', // 改为透明，防止重叠底色
-                color: '#fff',
-                fontSize: 14,
-                fontFamily: Platform.OS === 'ios' ? 'Menlo' : 'monospace',
-              },
-              code_inline: { 
-                backgroundColor: '#111', // 修改为黑色
-                color: '#fff', 
-                borderRadius: 4, 
-                padding: 2, 
-                fontSize: 14 
-              },
-              heading1: { fontSize: 24, fontWeight: 'bold', marginVertical: 10 },
-              heading2: { fontSize: 22, fontWeight: 'bold', marginVertical: 8 },
-              heading3: { fontSize: 20, fontWeight: 'bold', marginVertical: 6 },
-              heading4: { fontSize: 18, fontWeight: 'bold', marginVertical: 5 },
-              heading5: { fontSize: 16, fontWeight: 'bold', marginVertical: 4 },
-              heading6: { fontSize: 14, fontWeight: 'bold', marginVertical: 3 },
-              bullet_list: { marginVertical: 6 },
-              ordered_list: { marginVertical: 6 },
-              list_item: { flexDirection: 'row', alignItems: 'flex-start', marginVertical: 2 },
-              blockquote: { backgroundColor: '#111', borderLeftWidth: 4, borderLeftColor: '#aaa', padding: 8, marginVertical: 6 },
-              table: { borderWidth: 1, borderColor: '#666', marginVertical: 8 },
-              th: { backgroundColor: '#444', color: '#fff', fontWeight: 'bold', padding: 6 },
-              tr: { borderBottomWidth: 1, borderColor: '#666' },
-              td: { padding: 6, color: '#fff' },
-              hr: { borderBottomWidth: 1, borderColor: '#aaa', marginVertical: 8 },
-              link: { color: '#3498db', textDecorationLine: 'underline' },
-              image: { width: 220, height: 160, borderRadius: 8, marginVertical: 8, alignSelf: 'center' },
-              fence_code: { // 改进fence_code样式 (用于```包裹的代码块)
-                backgroundColor: '#111',
-                color: '#fff',
-                borderRadius: 6,
-                padding: 12,
-                fontSize: 14,
-                marginVertical: 10,
-                fontFamily: Platform.OS === 'ios' ? 'Menlo' : 'monospace',
-                width: '100%',
-              },
-              fence_code_text: { // 添加特定文本样式
-                backgroundColor: 'transparent',
-                color: '#fff',
-                fontSize: 14,
-                fontFamily: Platform.OS === 'ios' ? 'Menlo' : 'monospace',
-                padding: 0,
-              },
-              fence: { // 添加fence样式
-                marginVertical: 10,
-                width: '100%',
-              }
-            }}
-            onLinkPress={(url: string) => {
-              if (url.startsWith('http://') || url.startsWith('https://') || url.startsWith('mailto:')) {
-                if (typeof window !== 'undefined') {
-                  window.open(url, '_blank');
-                } else {
-                  setFullscreenImage(url);
-                }
-                return true;
-              }
-              return false;
-            }}
-            rules={{
-              fence: (
-                node: ASTNode,
-                children: React.ReactNode[],
-                parent: ASTNode[],
-                styles: any
-              ) => {
-                return (
-                  <View key={node.key} style={styles.codeBlock}>
-                    <Text style={styles.codeText}>
-                      {node.content || ''}
-                    </Text>
-                  </View>
-                );
-              }
-            }}
-          >
-            {text}
-          </Markdown>
-        </View>
-      );
-    }
-
-    const rawImageMarkdownRegex = /^!\[(.*?)\]\(image:([a-f0-9]+)\)$/;
-    const rawImageMatch = text.trim().match(rawImageMarkdownRegex);
-
-    if (rawImageMatch) {
-      const alt = rawImageMatch[1] || "图片";
-      const imageId = rawImageMatch[2];
-
-      const imageInfo = ImageManager.getImageInfo(imageId);
-      const imageStyle = getImageDisplayStyle(imageInfo);
-
-      if (imageInfo) {
-        return (
-          <View style={styles.imageWrapper}>
-            <TouchableOpacity
-              style={styles.imageContainer}
-              onPress={() => handleOpenFullscreenImage(imageId)}
-            >
-              <Image
-                source={{ uri: imageInfo.originalPath }}
-                style={imageStyle}
-                resizeMode="contain"
-                onError={(e) => console.error(`Error loading image: ${e.nativeEvent.error}`, imageInfo.originalPath)}
-              />
-            </TouchableOpacity>
-            <Text style={styles.imageCaption}>{alt}</Text>
-          </View>
-        );
-      } else {
-        console.error(`No image info found for ID: ${imageId}`);
-        return (
-          <View style={styles.imageError}>
-            <Ionicons name="alert-circle" size={36} color="#e74c3c" />
-            <Text style={styles.imageErrorText}>图片无法加载 (ID: {imageId.substring(0, 8)}...)</Text>
-          </View>
-        );
-      }
-    }
-
-    const hasCustomTags = (
-      /<\s*(thinking|think|status|mem|websearch)[^>]*>([\s\S]*?)<\/\s*(thinking|think|status|mem|websearch)\s*>/i.test(text) || 
-      /<\s*char\s+think\s*>([\s\S]*?)<\/\s*char\s+think\s*>/i.test(text)
+const processMessageContent = (text: string, isUser: boolean, opts?: { isHtmlPagePlaceholder?: boolean }) => {
+  // 新增：如果是HTML页面占位，直接显示占位文本
+  if (opts?.isHtmlPagePlaceholder) {
+    return (
+      <Text style={isUser ? styles.userMessageText : styles.botMessageText}>
+        [页面消息]
+      </Text>
     );
+  }
 
-    const hasMarkdown = /```[\w]*\s*([\s\S]*?)```/.test(text) || 
-                       /!\[[\s\S]*?\]\([\s\S]*?\)/.test(text) ||
-                       /\*\*([\s\S]*?)\*\*/.test(text) ||
-                       /\*([\s\S]*?)\*/.test(text);
+  if (!text || text.trim() === '') {
+    return (
+      <Text style={isUser ? styles.userMessageText : styles.botMessageText}>
+        (Empty message)
+      </Text>
+    );
+  }
 
-    const hasHtml = /<\/?[a-z][^>]*>/i.test(text);
+  if (containsCustomTags(text) || /<\/?[a-z][^>]*>/i.test(text)) {
+    // 渲染前先移除未知标签
+    const cleanedText = stripUnknownTags(text);
+    return (
+      <RichTextRenderer
+        html={optimizeHtmlForRendering(cleanedText)}
+        baseStyle={isUser ? styles.userMessageText : styles.botMessageText}
+        onImagePress={(url) => setFullscreenImage(url)}
+        maxImageHeight={MAX_IMAGE_HEIGHT}
+      />
+    );
+  }
 
-    const imageIdRegex = /!\[(.*?)\]\(image:([^\s)]+)\)/g;
-    let match: RegExpExecArray | null;
-    const matches: { alt: string, id: string }[] = [];
-
-    while ((match = imageIdRegex.exec(text)) !== null) {
-      matches.push({
-        alt: match[1] || "图片",
-        id: match[2]
-      });
-    }
-
-    if (matches.length > 0) {
-      return (
-        <View>
-          {matches.map((img, idx) => {
-            const imageInfo = ImageManager.getImageInfo(img.id);
-            const imageStyle = getImageDisplayStyle(imageInfo);
-            if (imageInfo) {
+  // Enhanced check for Markdown code blocks with triple backticks
+  const codeBlockPattern = /```([a-zA-Z0-9]*)\n([\s\S]*?)```/g;
+  const hasCodeBlock = codeBlockPattern.test(text);
+  
+  const markdownPattern = /(^|\n)(\s{0,3}#|```|>\s|[*+-]\s|\d+\.\s|\|.*\|)/;
+  if (hasCodeBlock || markdownPattern.test(text)) {
+    return (
+      <View style={{ width: '100%' }}>
+        <Markdown
+          style={{
+            body: isUser ? styles.userMessageText : styles.botMessageText,
+            text: isUser ? styles.userMessageText : styles.botMessageText,
+            // Enhanced code block styling
+            code_block: { 
+              backgroundColor: '#111', // 修改为黑色
+              color: '#fff', 
+              borderRadius: 6, 
+              padding: 12, 
+              fontSize: 14,
+              fontFamily: Platform.OS === 'ios' ? 'Menlo' : 'monospace',
+              marginVertical: 10,
+            },
+            code_block_text: {
+              backgroundColor: 'transparent', // 改为透明，防止重叠底色
+              color: '#fff',
+              fontSize: 14,
+              fontFamily: Platform.OS === 'ios' ? 'Menlo' : 'monospace',
+            },
+            code_inline: { 
+              backgroundColor: '#111', // 修改为黑色
+              color: '#fff', 
+              borderRadius: 4, 
+              padding: 2, 
+              fontSize: 14 
+            },
+            heading1: { fontSize: 24, fontWeight: 'bold', marginVertical: 10 },
+            heading2: { fontSize: 22, fontWeight: 'bold', marginVertical: 8 },
+            heading3: { fontSize: 20, fontWeight: 'bold', marginVertical: 6 },
+            heading4: { fontSize: 18, fontWeight: 'bold', marginVertical: 5 },
+            heading5: { fontSize: 16, fontWeight: 'bold', marginVertical: 4 },
+            heading6: { fontSize: 14, fontWeight: 'bold', marginVertical: 3 },
+            bullet_list: { marginVertical: 6 },
+            ordered_list: { marginVertical: 6 },
+            list_item: { flexDirection: 'row', alignItems: 'flex-start', marginVertical: 2 },
+            blockquote: { backgroundColor: '#111', borderLeftWidth: 4, borderLeftColor: '#aaa', padding: 8, marginVertical: 6 },
+            table: { borderWidth: 1, borderColor: '#666', marginVertical: 8 },
+            th: { backgroundColor: '#444', color: '#fff', fontWeight: 'bold', padding: 6 },
+            tr: { borderBottomWidth: 1, borderColor: '#666' },
+            td: { padding: 6, color: '#fff' },
+            hr: { borderBottomWidth: 1, borderColor: '#aaa', marginVertical: 8 },
+            link: { color: '#3498db', textDecorationLine: 'underline' },
+            image: { width: 220, height: 160, borderRadius: 8, marginVertical: 8, alignSelf: 'center' },
+            fence_code: { // 改进fence_code样式 (用于```包裹的代码块)
+              backgroundColor: '#111',
+              color: '#fff',
+              borderRadius: 6,
+              padding: 12,
+              fontSize: 14,
+              marginVertical: 10,
+              fontFamily: Platform.OS === 'ios' ? 'Menlo' : 'monospace',
+              width: '100%',
+            },
+            fence_code_text: { // 添加特定文本样式
+              backgroundColor: 'transparent',
+              color: '#fff',
+              fontSize: 14,
+              fontFamily: Platform.OS === 'ios' ? 'Menlo' : 'monospace',
+              padding: 0,
+            },
+            fence: { // 添加fence样式
+              marginVertical: 10,
+              width: '100%',
+            }
+          }}
+          onLinkPress={(url: string) => {
+            if (url.startsWith('http://') || url.startsWith('https://') || url.startsWith('mailto:')) {
+              if (typeof window !== 'undefined') {
+                window.open(url, '_blank');
+              } else {
+                setFullscreenImage(url);
+              }
+              return true;
+            }
+            return false;
+          }}
+          rules={{
+            fence: (
+              node: ASTNode,
+              children: React.ReactNode[],
+              parent: ASTNode[],
+              styles: any
+            ) => {
               return (
-                <TouchableOpacity 
-                  key={img.id + '-' + idx}
-                  style={styles.imageWrapper}
-                  onPress={() => handleOpenFullscreenImage(img.id)}
-                >
-                  <Image
-                    source={{ uri: imageInfo.originalPath }}
-                    style={imageStyle}
-                    resizeMode="contain"
-                    onError={(e) => console.error(`Error loading image: ${e.nativeEvent.error}`, imageInfo.originalPath)}
-                  />
-                  <Text style={styles.imageCaption}>{img.alt}</Text>
-                </TouchableOpacity>
-              );
-            } else {
-              return (
-                <View key={idx} style={styles.imageError}>
-                  <Ionicons name="alert-circle" size={36} color="#e74c3c" />
-                  <Text style={styles.imageErrorText}>图片无法加载 (ID: {img.id.substring(0, 8)}...)</Text>
+                <View key={node.key} style={styles.codeBlock}>
+                  <Text style={styles.codeText}>
+                    {node.content || ''}
+                  </Text>
                 </View>
               );
             }
-          })}
+          }}
+        >
+          {text}
+        </Markdown>
+      </View>
+    );
+  }
+
+  const rawImageMarkdownRegex = /^!\[(.*?)\]\(image:([a-f0-9]+)\)$/;
+  const rawImageMatch = text.trim().match(rawImageMarkdownRegex);
+
+  if (rawImageMatch) {
+    const alt = rawImageMatch[1] || "图片";
+    const imageId = rawImageMatch[2];
+
+    const imageInfo = ImageManager.getImageInfo(imageId);
+    const imageStyle = getImageDisplayStyle(imageInfo);
+
+    if (imageInfo) {
+      return (
+        <View style={styles.imageWrapper}>
+          <TouchableOpacity
+            style={styles.imageContainer}
+            onPress={() => handleOpenFullscreenImage(imageId)}
+          >
+            <Image
+              source={{ uri: imageInfo.originalPath }}
+              style={imageStyle}
+              resizeMode="contain"
+              onError={(e) => console.error(`Error loading image: ${e.nativeEvent.error}`, imageInfo.originalPath)}
+            />
+          </TouchableOpacity>
+          <Text style={styles.imageCaption}>{alt}</Text>
+        </View>
+      );
+    } else {
+      console.error(`No image info found for ID: ${imageId}`);
+      return (
+        <View style={styles.imageError}>
+          <Ionicons name="alert-circle" size={36} color="#e74c3c" />
+          <Text style={styles.imageErrorText}>图片无法加载 (ID: {imageId.substring(0, 8)}...)</Text>
         </View>
       );
     }
+  }
 
-    const imageMarkdownRegex = /!\[(.*?)\]\((https?:\/\/[^\s)]+|data:image\/[^\s)]+)\)/g;
-    let urlMatches: { alt: string, url: string }[] = [];
+  const hasCustomTags = (
+    /<\s*(thinking|think|status|mem|websearch)[^>]*>([\s\S]*?)<\/\s*(thinking|think|status|mem|websearch)\s*>/i.test(text) || 
+    /<\s*char\s+think\s*>([\s\S]*?)<\/\s*char\s+think\s*>/i.test(text)
+  );
 
-    imageMarkdownRegex.lastIndex = 0;
+  const hasMarkdown = /```[\w]*\s*([\s\S]*?)```/.test(text) || 
+                     /!\[[\s\S]*?\]\([\s\S]*?\)/.test(text) ||
+                     /\*\*([\s\S]*?)\*\*/.test(text) ||
+                     /\*([\s\S]*?)\*/.test(text);
 
-    while ((match = imageMarkdownRegex.exec(text)) !== null) {
-      urlMatches.push({
-        alt: match[1] || "图片",
-        url: match[2]
-      });
-    }
+  const hasHtml = /<\/?[a-z][^>]*>/i.test(text);
 
-    if (urlMatches.length > 0) {
-      return (
-        <View>
-          {urlMatches.map((img, idx) => {
-            const isDataUrl = img.url.startsWith('data:');
-            const isLargeDataUrl = isDataUrl && img.url.length > 100000;
+  const imageIdRegex = /!\[(.*?)\]\(image:([^\s)]+)\)/g;
+  let match: RegExpExecArray | null;
+  const matches: { alt: string, id: string }[] = [];
 
-            if (isLargeDataUrl) {
-              return (
-                <View key={idx} style={styles.imageWrapper}>
-                  <TouchableOpacity
-                    style={styles.imageDataUrlWarning}
-                    onPress={() => setFullscreenImage(img.url)}
-                  >
-                    <Ionicons name="image" size={36} color="#999" />
-                    <Text style={styles.imageDataUrlWarningText}>
-                      {img.alt} (点击查看)
-                    </Text>
-                  </TouchableOpacity>
-                </View>
-              );
-            }
+  while ((match = imageIdRegex.exec(text)) !== null) {
+    matches.push({
+      alt: match[1] || "图片",
+      id: match[2]
+    });
+  }
 
+  if (matches.length > 0) {
+    return (
+      <View>
+        {matches.map((img, idx) => {
+          const imageInfo = ImageManager.getImageInfo(img.id);
+          const imageStyle = getImageDisplayStyle(imageInfo);
+          if (imageInfo) {
             return (
               <TouchableOpacity 
-                key={idx}
+                key={img.id + '-' + idx}
                 style={styles.imageWrapper}
-                onPress={() => setFullscreenImage(img.url)}
+                onPress={() => handleOpenFullscreenImage(img.id)}
               >
                 <Image
-                  source={{ uri: img.url }}
-                  style={styles.messageImage}
+                  source={{ uri: imageInfo.originalPath }}
+                  style={imageStyle}
                   resizeMode="contain"
-                  onError={(e) => console.error(`Error loading image URL: ${e.nativeEvent.error}`)}
+                  onError={(e) => console.error(`Error loading image: ${e.nativeEvent.error}`, imageInfo.originalPath)}
                 />
                 <Text style={styles.imageCaption}>{img.alt}</Text>
               </TouchableOpacity>
             );
-          })}
-        </View>
-      );
-    }
+          } else {
+            return (
+              <View key={idx} style={styles.imageError}>
+                <Ionicons name="alert-circle" size={36} color="#e74c3c" />
+                <Text style={styles.imageErrorText}>图片无法加载 (ID: {img.id.substring(0, 8)}...)</Text>
+              </View>
+            );
+          }
+        })}
+      </View>
+    );
+  }
 
-    const linkRegex = /\[(.*?)\]\((https?:\/\/[^\s)]+|data:image\/[^\s)]+)\)/g;
-    let linkMatches: { text: string, url: string }[] = [];
+  const imageMarkdownRegex = /!\[(.*?)\]\((https?:\/\/[^\s)]+|data:image\/[^\s)]+)\)/g;
+  let urlMatches: { alt: string, url: string }[] = [];
 
-    while ((match = linkRegex.exec(text)) !== null) {
-      linkMatches.push({
-        text: match[1],
-        url: match[2]
-      });
-    }
+  imageMarkdownRegex.lastIndex = 0;
 
-    if (linkMatches.length > 0) {
-      return (
-        <View>
-          {linkMatches.map((link, idx) => (
-            <TouchableOpacity
+  while ((match = imageMarkdownRegex.exec(text)) !== null) {
+    urlMatches.push({
+      alt: match[1] || "图片",
+      url: match[2]
+    });
+  }
+
+  if (urlMatches.length > 0) {
+    return (
+      <View>
+        {urlMatches.map((img, idx) => {
+          const isDataUrl = img.url.startsWith('data:');
+          const isLargeDataUrl = isDataUrl && img.url.length > 100000;
+
+          if (isLargeDataUrl) {
+            return (
+              <View key={idx} style={styles.imageWrapper}>
+                <TouchableOpacity
+                  style={styles.imageDataUrlWarning}
+                  onPress={() => setFullscreenImage(img.url)}
+                >
+                  <Ionicons name="image" size={36} color="#999" />
+                  <Text style={styles.imageDataUrlWarningText}>
+                    {img.alt} (点击查看)
+                  </Text>
+                </TouchableOpacity>
+              </View>
+            );
+          }
+
+          return (
+            <TouchableOpacity 
               key={idx}
-              style={styles.linkButton}
-              onPress={() => {
-                if (typeof window !== 'undefined') {
-                  window.open(link.url, '_blank');
-                } else {
-                  setFullscreenImage(link.url);
-                }
-              }}
+              style={styles.imageWrapper}
+              onPress={() => setFullscreenImage(img.url)}
             >
-              <Ionicons name="link" size={16} color="#3498db" style={styles.linkIcon} />
-              <Text style={styles.linkText}>{link.text}</Text>
+              <Image
+                source={{ uri: img.url }}
+                style={styles.messageImage}
+                resizeMode="contain"
+                onError={(e) => console.error(`Error loading image URL: ${e.nativeEvent.error}`)}
+              />
+              <Text style={styles.imageCaption}>{img.alt}</Text>
             </TouchableOpacity>
-          ))}
-        </View>
-      );
-    }
+          );
+        })}
+      </View>
+    );
+  }
 
-    return renderMessageText(text, isUser);
-  };
+  const linkRegex = /\[(.*?)\]\((https?:\/\/[^\s)]+|data:image\/[^\s)]+)\)/g;
+  let linkMatches: { text: string, url: string }[] = [];
+
+  while ((match = linkRegex.exec(text)) !== null) {
+    linkMatches.push({
+      text: match[1],
+      url: match[2]
+    });
+  }
+
+  if (linkMatches.length > 0) {
+    return (
+      <View>
+        {linkMatches.map((link, idx) => (
+          <TouchableOpacity
+            key={idx}
+            style={styles.linkButton}
+            onPress={() => {
+              if (typeof window !== 'undefined') {
+                window.open(link.url, '_blank');
+              } else {
+                setFullscreenImage(link.url);
+              }
+            }}
+          >
+            <Ionicons name="link" size={16} color="#3498db" style={styles.linkIcon} />
+            <Text style={styles.linkText}>{link.text}</Text>
+          </TouchableOpacity>
+        ))}
+      </View>
+    );
+  }
+
+  return renderMessageText(text, isUser);
+};
 
   const renderMessageText = (text: string, isUser: boolean) => {
     const segments = parseHtmlText(text);
@@ -1083,7 +1088,10 @@ const ChatDialog: React.FC<ExtendedChatDialogProps> = ({
     );
   };
 
-  const renderMessageContent = (message: Message, isUser: boolean, index: number) => {
+const renderMessageContent = (message: Message, isUser: boolean, index: number) => {
+  // 新增：常规/背景强调模式下，遇到完整HTML页面只显示占位
+  const isHtmlPage = isWebViewContent(message.text);
+  if ((mode !== 'visual-novel') && isHtmlPage) {
     return (
       <View style={[
         styles.messageContent,
@@ -1100,39 +1108,62 @@ const ChatDialog: React.FC<ExtendedChatDialogProps> = ({
             style={[styles.messageAvatar, { width: AVATAR_SIZE, height: AVATAR_SIZE, borderRadius: AVATAR_SIZE / 2 }]}
           />
         )}
-        {isUser ? (
-          <View style={[styles.userMessageWrapper, {maxWidth: MAX_WIDTH}]}>
-            {user?.avatar && (
-              <Image
-                source={{ uri: String(user.avatar) }}
-                style={[styles.userMessageAvatar, { width: AVATAR_SIZE, height: AVATAR_SIZE, borderRadius: AVATAR_SIZE / 2 }]}
-              />
-            )}
-            <LinearGradient
-              colors={['rgba(255, 224, 195, 0.95)', 'rgba(255, 200, 170, 0.95)']}
-              style={[styles.userGradient, {borderRadius: 18, borderTopRightRadius: 4}]}
-            >
-              {processMessageContent(message.text, true)}
-            </LinearGradient>
-          </View>
-        ) : (
-          <View style={[styles.botMessageTextContainer, {maxWidth: MAX_WIDTH}]}>
-            {message.isLoading ? (
-              <View style={styles.loadingContainer}>
-                <Animated.View style={[styles.loadingDot, dot1Style]} />
-                <Animated.View style={[styles.loadingDot, dot2Style]} />
-                <Animated.View style={[styles.loadingDot, dot3Style]} />
-              </View>
-            ) : (
-              processMessageContent(message.text, false)
-            )
-            }
-            {!message.isLoading && !isUser && renderMessageActions(message, index)}
-          </View>
-        )}
+        <View style={isUser ? styles.userMessageWrapper : styles.botMessageTextContainer}>
+          {processMessageContent(message.text, isUser, { isHtmlPagePlaceholder: true })}
+        </View>
       </View>
     );
-  };
+  }
+
+  return (
+    <View style={[
+      styles.messageContent,
+      isUser ? styles.userMessageContent : styles.botMessageContent,
+      message.isLoading && styles.loadingMessage
+    ]}>
+      {!isUser && (
+        <Image
+          source={
+            selectedCharacter?.avatar
+              ? { uri: String(selectedCharacter.avatar) }
+              : require('@/assets/images/default-avatar.png')
+          }
+          style={[styles.messageAvatar, { width: AVATAR_SIZE, height: AVATAR_SIZE, borderRadius: AVATAR_SIZE / 2 }]}
+        />
+      )}
+      {isUser ? (
+        <View style={[styles.userMessageWrapper, {maxWidth: MAX_WIDTH}]}>
+          {user?.avatar && (
+            <Image
+              source={{ uri: String(user.avatar) }}
+              style={[styles.userMessageAvatar, { width: AVATAR_SIZE, height: AVATAR_SIZE, borderRadius: AVATAR_SIZE / 2 }]}
+            />
+          )}
+          <LinearGradient
+            colors={['rgba(255, 224, 195, 0.95)', 'rgba(255, 200, 170, 0.95)']}
+            style={[styles.userGradient, {borderRadius: 18, borderTopRightRadius: 4}]}
+          >
+            {processMessageContent(message.text, true)}
+          </LinearGradient>
+        </View>
+      ) : (
+        <View style={[styles.botMessageTextContainer, {maxWidth: MAX_WIDTH}]}>
+          {message.isLoading ? (
+            <View style={styles.loadingContainer}>
+              <Animated.View style={[styles.loadingDot, dot1Style]} />
+              <Animated.View style={[styles.loadingDot, dot2Style]} />
+              <Animated.View style={[styles.loadingDot, dot3Style]} />
+            </View>
+          ) : (
+            processMessageContent(message.text, false)
+          )
+          }
+          {!message.isLoading && !isUser && renderMessageActions(message, index)}
+        </View>
+      )}
+    </View>
+  );
+};
 
   const renderMessageActions = (message: Message, index: number) => {
     if (message.isLoading) return null;

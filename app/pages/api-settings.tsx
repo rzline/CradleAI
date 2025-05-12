@@ -93,10 +93,10 @@ const ApiSettings = () => {
     user?.settings?.chat?.useGeminiKeyRotation || false
   );
   const [geminiPrimaryModel, setGeminiPrimaryModel] = useState(
-    user?.settings?.chat?.geminiPrimaryModel || 'gemini-2.5-pro-exp-03-25'
+    user?.settings?.chat?.geminiPrimaryModel
   );
   const [geminiBackupModel, setGeminiBackupModel] = useState(
-    user?.settings?.chat?.geminiBackupModel || 'gemini-2.0-flash-exp'
+    user?.settings?.chat?.geminiBackupModel
   );
   const [retryDelay, setRetryDelay] = useState(
     user?.settings?.chat?.retryDelay || 5000

@@ -1308,33 +1308,35 @@ useEffect(() => {
         return;
       }
   
-      // 只统计真实AI消息（非 loading、非 error、非 first_mes）
-      const botMessages = messages.filter(msg =>
-        msg.sender === 'bot' &&
-        !msg.isLoading &&
-        !msg.metadata?.isErrorMessage &&
-        !msg.metadata?.error &&
-        (firstMesText ? msg.text !== firstMesText : true) &&
-        !msg.metadata?.isFirstMes
-      );
-  
-      // 找到目标消息在真实AI消息中的索引（aiIndex）
-      const targetMsg = messages[targetMsgIndex];
-      let aiIndex = -1;
-      if (targetMsg) {
-        aiIndex = botMessages.findIndex(m => m.id === targetMsg.id);
+    // === 修正点：只排除first_mes，不排除html页面 ===
+    const botMessages = messages.filter(msg =>
+      msg.sender === 'bot' &&
+      !msg.isLoading &&
+      !msg.metadata?.isErrorMessage &&
+      !msg.metadata?.error &&
+      (firstMesText ? msg.text !== firstMesText : true) &&
+      !msg.metadata?.isFirstMes
+      // 不再排除 isWebViewContent(msg.text)
+    );
+
+
+    // 找到目标消息在真实AI消息中的索引（aiIndex）
+    const targetMsg = messages[targetMsgIndex];
+    let aiIndex = -1;
+    if (targetMsg) {
+      aiIndex = botMessages.findIndex(m => m.id === targetMsg.id);
+    }
+
+    if (aiIndex === -1) {
+      // 兼容极端情况：如果是first_mes，aiIndex=0
+      if (firstMesText && targetMsg?.text === firstMesText) {
+        aiIndex = 0;
+      } else {
+        console.warn('Target message not found in filtered botMessages:', messageId);
+        setRegeneratingMessageId(null);
+        return;
       }
-  
-      if (aiIndex === -1) {
-        // 兼容极端情况：如果是first_mes，aiIndex=0
-        if (firstMesText && targetMsg?.text === firstMesText) {
-          aiIndex = 0;
-        } else {
-          console.warn('Target message not found in filtered botMessages:', messageId);
-          setRegeneratingMessageId(null);
-          return;
-        }
-      }
+    }
   
       // 创建一个只包含目标消息之前的消息列表(包含目标消息的上一条用户消息)
       let messagesToKeep = messages.slice(0, targetMsgIndex);
@@ -1920,7 +1922,31 @@ const getBackgroundImage = () => {
     
     console.log(`[App] Auto message timer set for ${autoMessageIntervalRef.current} minutes`);
   }, [characterToUse, selectedConversationId, autoMessageEnabled, user?.settings, messages]);
-
+// === 新增：isWebViewContent 工具函数（与 ChatDialog 保持一致） ===
+function isWebViewContent(text: string): boolean {
+  if (!text) return false;
+  // 检查直接以 <!DOCTYPE html> 或 <html 开头的内容
+  if (/^\s*(<!DOCTYPE html|<html)/i.test(text)) {
+    return true;
+  }
+  // 检查是否有包含在三重反引号中的HTML内容
+  const codeBlockMatch = text.match(/```(?:html)?\s*([\s\S]*?)```/);
+  if (codeBlockMatch && /^\s*(<!DOCTYPE html|<html)/i.test(codeBlockMatch[1])) {
+    return true;
+  }
+  // 检查是否包含结构性标签
+  const STRUCTURAL_TAGS = [
+    'source', 'section', 'article', 'aside', 'nav', 'header', 'footer',
+    'style', 'script', 'html', 'body', 'head', 'meta', 'link', 'title', 'doctype'
+  ];
+  if (STRUCTURAL_TAGS.some(tag => new RegExp(`<${tag}[\\s>]|</${tag}>|<!DOCTYPE`, 'i').test(text))) {
+    return true;
+  }
+  if (codeBlockMatch && STRUCTURAL_TAGS.some(tag => new RegExp(`<${tag}[\\s>]|</${tag}>|<!DOCTYPE`, 'i').test(codeBlockMatch[1]))) {
+    return true;
+  }
+  return false;
+}
   // Update handleAutoMessageSettings function to properly handle state changes
   useEffect(() => {
     // Initialize auto message interval from character settings if available

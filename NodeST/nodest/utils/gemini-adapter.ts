@@ -47,28 +47,29 @@ export class GeminiAdapter {
     private apiKeys: string[] = []; // Array to store multiple API keys
     private currentKeyIndex: number = 0; // Index of the currently used API key
     
-    // Model configuration with more available models
-    private availableModels = [
-        "gemini-2.5-pro-exp-03-25", // Default primary model
-        "gemini-2.0-flash-exp",     // Default backup model
-        "gemini-2.5-flash-preview-04-17", // 新增，确保支持
-        "gemini-2.0-pro-exp-02-05",
-        "gemini-exp-1206",
-        "gemini-2.0-flash-thinking-exp-1219",
-        "gemini-exp-1121",
-        "gemini-exp-1114",
-        "gemini-1.5-pro-exp-0827",
-        "gemini-1.5-pro-exp-0801",
-        "gemini-1.5-flash-8b-exp-0924",
-        "gemini-1.5-flash-8b-exp-0827"
-    ];
+  // Model configuration: 始终从 settings-helper 读取
+    private get primaryModel(): string {
+        const apiSettings = getApiSettings();
+        return apiSettings.geminiPrimaryModel || "gemini-2.0-flash-exp";
+    }
+    private get backupModel(): string {
+        const apiSettings = getApiSettings();
+        return apiSettings.geminiBackupModel || "gemini-2.0-flash-exp";
+    }
+    private get useModelLoadBalancing(): boolean {
+        const apiSettings = getApiSettings();
+        return !!apiSettings.useGeminiModelLoadBalancing;
+    }
+    private get useKeyRotation(): boolean {
+        const apiSettings = getApiSettings();
+        return !!apiSettings.useGeminiKeyRotation;
+    }
+    private get retryDelay(): number {
+        const apiSettings = getApiSettings();
+        return typeof apiSettings.retryDelay === 'number' ? apiSettings.retryDelay : 5000;
+    }
     
-    // Model configuration
-    private primaryModel: string = "gemini-2.5-pro-exp-03-25"; // Primary model for text requests
-    private backupModel: string = "gemini-2.0-flash-exp";      // Backup model for text & primary for images
-    private useModelLoadBalancing: boolean = false;            // Whether to enable model load balancing
-    private useKeyRotation: boolean = false;                   // Whether to rotate between multiple API keys
-    private retryDelay: number = 5000;                         // Delay before trying backup model (ms)
+
     
     private readonly headers = {
         "Content-Type": "application/json"
@@ -98,22 +99,7 @@ export class GeminiAdapter {
             console.log(`[Gemini适配器] 未配置API密钥，将使用云服务`);
         }
         
-        // Set configuration options
-        this.useModelLoadBalancing = options?.useModelLoadBalancing || false;
-        this.useKeyRotation = options?.useKeyRotation || false;
-        
-        // Set custom models if provided
-        if (options?.primaryModel && this.isValidModel(options.primaryModel)) {
-            this.primaryModel = options.primaryModel;
-        }
-        if (options?.backupModel && this.isValidModel(options.backupModel)) {
-            this.backupModel = options.backupModel;
-        }
-        // Set retry delay if provided
-        if (options?.retryDelay && typeof options.retryDelay === 'number') {
-            this.retryDelay = options.retryDelay;
-        }
-        
+      
         console.log(`[Gemini适配器] 初始化完成，配置了 ${this.apiKeys.length} 个API密钥`);
         console.log(`[Gemini适配器] API密钥轮换: ${this.useKeyRotation ? '已启用' : '未启用'}`);
         console.log(`[Gemini适配器] 模型负载均衡: ${this.useModelLoadBalancing ? '已启用' : '未启用'}`);
@@ -128,32 +114,7 @@ export class GeminiAdapter {
         });
     }
     
-    /**
-     * Validate if a model string is in the available models list
-     */
-    private isValidModel(modelName: string): boolean {
-        return this.availableModels.includes(modelName);
-    }
     
-    /**
-     * Gets the current active API key or rotates to next key if key rotation is enabled
-     * Returns null if no API keys are configured
-     */
-    private getApiKeyForRequest(): string | null {
-        if (this.apiKeys.length === 0) {
-            return null;
-        }
-        
-        if (!this.useKeyRotation || this.apiKeys.length <= 1) {
-            // If key rotation is disabled or we only have one key, return the first key
-            return this.apiKeys[0];
-        }
-        
-        // Otherwise rotate to the next key
-        this.currentKeyIndex = (this.currentKeyIndex + 1) % this.apiKeys.length;
-        console.log(`[Gemini适配器] 已轮换到API密钥 ${this.currentKeyIndex + 1}/${this.apiKeys.length}`);
-        return this.apiKeys[this.currentKeyIndex];
-    }
     
     /**
      * Update API keys and load balancing settings - useful when settings change
@@ -174,29 +135,6 @@ export class GeminiAdapter {
             this.currentKeyIndex = 0; // Reset to first key
         }
         
-        // Update load balancing settings if provided
-        if (options.useModelLoadBalancing !== undefined) {
-            this.useModelLoadBalancing = options.useModelLoadBalancing;
-        }
-        
-        // Update key rotation setting if provided
-        if (options.useKeyRotation !== undefined) {
-            this.useKeyRotation = options.useKeyRotation;
-        }
-        
-        // Update model settings if provided
-        if (options.primaryModel && this.isValidModel(options.primaryModel)) {
-            this.primaryModel = options.primaryModel;
-        }
-        
-        if (options.backupModel && this.isValidModel(options.backupModel)) {
-            this.backupModel = options.backupModel;
-        }
-        
-        // Update retry delay if provided
-        if (options.retryDelay && typeof options.retryDelay === 'number') {
-            this.retryDelay = options.retryDelay;
-        }
         
         console.log(`[Gemini适配器] 设置已更新，共 ${this.apiKeys.length} 个密钥`);
         console.log(`[Gemini适配器] API密钥轮换: ${this.useKeyRotation ? '已启用' : '未启用'}`);
@@ -271,7 +209,6 @@ export class GeminiAdapter {
      * Set model load balancing configuration
      */
     public setModelLoadBalancing(enabled: boolean) {
-        this.useModelLoadBalancing = enabled;
         console.log(`[Gemini适配器] 模型负载均衡已${enabled ? '启用' : '禁用'}`);
     }
     
@@ -279,21 +216,10 @@ export class GeminiAdapter {
      * Update model configuration
      */
     public setModelConfiguration(primaryModel: string, backupModel: string) {
-        if (this.isValidModel(primaryModel)) {
-            this.primaryModel = primaryModel;
-        }
-        if (this.isValidModel(backupModel)) {
-            this.backupModel = backupModel;
-        }
         console.log(`[Gemini适配器] 模型配置已更新 - 主模型: ${this.primaryModel}, 备用模型: ${this.backupModel}`);
     }
     
-    /**
-     * Get available models list
-     */
-    public getAvailableModels(): string[] {
-        return [...this.availableModels];
-    }
+
     
     /**
      * Determine which model to use based on the request type and load balancing settings
