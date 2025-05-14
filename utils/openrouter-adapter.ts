@@ -135,42 +135,6 @@ export class OpenRouterAdapter {
     return this.apiKeys[this.currentKeyIndex];
   }
   
-  /**
-   * 轮换到下一个API密钥
-   */
-  private rotateApiKey(): boolean {
-    if (this.apiKeys.length <= 1 || !this.useKeyRotation) {
-      return false;
-    }
-    
-    const previousKeyIndex = this.currentKeyIndex;
-    this.currentKeyIndex = (this.currentKeyIndex + 1) % this.apiKeys.length;
-    
-    if (this.currentKeyIndex === previousKeyIndex) {
-      console.log(`【OpenRouterAdapter】已尝试所有可用API密钥`);
-      return false;
-    }
-    
-    console.log(`【OpenRouterAdapter】已切换到下一个API密钥，当前位置: ${this.currentKeyIndex + 1}/${this.apiKeys.length}`);
-    return true;
-  }
-  
-  /**
-   * 获取用于请求的API密钥
-   */
-  private getApiKeyForRequest(): string | null {
-    if (this.apiKeys.length === 0) {
-      return null;
-    }
-    
-    if (!this.useKeyRotation || this.apiKeys.length <= 1) {
-      return this.apiKeys[0];
-    }
-    
-    this.currentKeyIndex = (this.currentKeyIndex + 1) % this.apiKeys.length;
-    console.log(`【OpenRouterAdapter】已轮换到API密钥 ${this.currentKeyIndex + 1}/${this.apiKeys.length}`);
-    return this.apiKeys[this.currentKeyIndex];
-  }
   
   /**
    * 更新API密钥
@@ -384,10 +348,10 @@ export class OpenRouterAdapter {
         
         // 创建一个新的系统消息，包含表格记忆和提示
         const tableMemoryPrompt = `${tableMemoryText}\n\n<response_guidelines>
-- 你会在回复中结合上面的表格记忆内容，表格中记录了角色相关的重要信息和事实。
-- 你会确保回复与表格中的信息保持一致，不会捏造表格中不存在的信息。
-- 你的回复会自然融入表格中的信息，不会生硬地提及"根据表格"之类的字眼。
-- 你会确保回复保持角色人设的一致性。
+- 在回复中结合上面的[角色长期记忆表格]内容，表格中记录了重要信息和事实。
+- 确保回复与[角色长期记忆表格]中的信息保持一致，不会捏造表格中不存在的信息。
+- 回复会自然融入[角色长期记忆表格]中的信息，不会生硬地提及"根据表格"之类的字眼。
+- 确保回复保持角色人设的一致性。
 </response_guidelines>`;
         
         // 保存最后一条用户消息（如果有的话）
@@ -1056,14 +1020,12 @@ export class OpenRouterAdapter {
             combinedPrompt += searchSection;
             
             combinedPrompt += `<response_guidelines>
-- 我会结合上面的记忆内容和联网搜索结果，全面回答用户的问题。
-- **首先**，我会在回复中用<mem></mem>标签包裹我对记忆内容的引用和回忆过程，例如:
-  <mem>我记得你之前提到过关于这个话题，当时我们讨论了...</mem>
-- **然后**，我会用<websearch></websearch>标签包裹我对网络搜索结果的解释和引用，例如:
+- 结合上面的记忆内容和联网搜索结果，全面回答{{user}}的问题。
+- 用<websearch></websearch>标签包裹我对网络搜索结果的解释和引用，例如:
   <websearch>根据最新的网络信息，关于这个问题的专业观点是...</websearch>
 - 确保回复能够同时**有效整合记忆和网络信息**，让内容更加全面和有用。
-- 我回复的语气和风格一定会与角色人设保持一致。
-- 我**不会在回复中使用多组<mem>或<websearch>标签，整个回复只能有一组<mem>或<websearch>标签。**
+- 回复的语气和风格一定会与角色人设保持一致。
+- 整个回复只能有一组<websearch>标签。**
 </response_guidelines>`;
             
             // 记录融合提示词的长度
@@ -1073,7 +1035,7 @@ export class OpenRouterAdapter {
             const finalPrompt: ChatMessage[] = [
               ...contents.slice(0, -1),
               {
-                role: "assistant", // OpenRouter使用assistant角色代替Gemini的model
+                role: "user", // OpenRouter使用assistant角色代替Gemini的model
                 content: combinedPrompt
               },
               contents[contents.length - 1]
@@ -1162,14 +1124,12 @@ export class OpenRouterAdapter {
       combinedPrompt += searchSection;
       
       combinedPrompt += `<response_guidelines>
-- 我会结合上面的记忆内容和联网搜索结果，全面回答用户的问题。
-- **首先**，我会在回复中用<mem></mem>标签包裹我对记忆内容的引用和回忆过程，例如:
-  <mem>我记得你之前提到过关于这个话题，当时我们讨论了...</mem>
-- **然后**，我会用<websearch></websearch>标签包裹我对网络搜索结果的解释和引用，例如:
+- 结合上面的记忆内容和联网搜索结果，全面回答用户的问题。
+- 用<websearch></websearch>标签包裹我对网络搜索结果的解释和引用，例如:
   <websearch>根据最新的网络信息，关于这个问题的专业观点是...</websearch>
 - 确保回复能够同时**有效整合记忆和网络信息**，让内容更加全面和有用。
-- 我回复的语气和风格一定会与角色人设保持一致。
-- 我**不会在回复中使用多组<mem>或<websearch>标签，整个回复只能有一组<mem>标签和一组<websearch>标签。**
+- 回复的语气和风格一定会与角色人设保持一致。
+- 整个回复只能有一组<websearch>标签。**
 </response_guidelines>`;
       
       // 记录融合提示词的长度
@@ -1180,7 +1140,7 @@ export class OpenRouterAdapter {
       const finalPrompt: ChatMessage[] = [
         ...contents.slice(0, -1),
         {
-          role: "assistant", // OpenRouter使用assistant角色
+          role: "user", // OpenRouter使用assistant角色
           content: combinedPrompt
         },
         contents[contents.length - 1]
@@ -1284,12 +1244,9 @@ export class OpenRouterAdapter {
 
       // 添加响应指南
       combinedPrompt += `<response_guidelines>
-- 除了对用户消息的回应之外，我**一定** 会结合记忆内容进行回复。
-- **我会根据角色设定，聊天上下文和记忆内容**，输出我对检索记忆的回忆过程，并用<mem></mem>包裹。
-  - 示例: <mem>我想起起您上次提到过类似的问题，当时...</mem>
-- 我会确保回复保持角色人设的一致性。
-- **我不会在回复中使用多组<mem>，整个回复只能有一组<mem>标签。**
-- 我会结合表格记忆的内容回复（如果有），但我不会输出表格的具体内容，仅将表格作为内心记忆。
+- 除了对用户消息的回应之外，结合记忆内容进行回复。
+- 会确保回复保持角色人设的一致性。
+- 结合表格记忆的内容回复（如果有），但我不会输出表格的具体内容，仅将表格作为内心记忆。
 </response_guidelines>`;
 
       // Log prepared prompt

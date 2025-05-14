@@ -551,6 +551,25 @@ export default function SettingsSidebar({
     }
   };
 
+  // 新增：顶部栏显示状态（本地状态，仅用于UI同步，实际由index控制）
+  const [isTopBarVisible, setIsTopBarVisible] = useState(true);
+
+  // 新增：监听外部事件以同步顶部栏显示状态（可选，若index有全局状态）
+  useEffect(() => {
+    const listener = EventRegister.addEventListener('topBarVisibilityChanged', (visible: boolean) => {
+      setIsTopBarVisible(visible);
+    });
+    return () => {
+      EventRegister.removeEventListener(listener as string);
+    };
+  }, []);
+
+  // 新增：切换顶部栏显示
+  const handleToggleTopBar = () => {
+    const newVisible = !isTopBarVisible;
+    setIsTopBarVisible(newVisible);
+    EventRegister.emit('toggleTopBarVisibility', newVisible);
+  };
 
   const handleAutoMessageToggle = async () => {
     if (selectedCharacter) {
@@ -801,6 +820,17 @@ export default function SettingsSidebar({
           showsVerticalScrollIndicator={false}
         >
           <Text style={styles.title}>角色设置</Text>
+
+          {/* 新增：顶部栏显示开关 */}
+          <View style={styles.settingItem}>
+            <Text style={styles.settingLabel}>显示顶部栏</Text>
+            <Switch
+              value={isTopBarVisible}
+              onValueChange={handleToggleTopBar}
+              trackColor={{ false: '#767577', true: 'rgba(255, 224, 195, 0.7)' }}
+              thumbColor={isTopBarVisible ? 'rgb(255, 224, 195)' : '#f4f3f4'}
+            />
+          </View>
 
           {/* Add dialog mode settings section */}
           <View style={styles.settingSection}>

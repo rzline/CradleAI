@@ -439,8 +439,26 @@ export class StorageAdapter {
     authorNote?: any;
     chatHistory?: any;
     contents?: any;
+    originalJson?: string; // 新增
   }> {
     try {
+      // 新增：尝试读取originalJson
+      let originalJson: string | undefined;
+      try {
+        // 角色数据文件路径
+        const filePath = StorageAdapter.getCharacterDataFilePath(this.getStorageKey(conversationId, ''));
+        const fileInfo = await FileSystem.getInfoAsync(filePath);
+        if (fileInfo.exists) {
+          const content = await FileSystem.readAsStringAsync(filePath);
+          // 尝试解析是否有originalJson字段
+          const parsed = JSON.parse(content);
+          if (typeof parsed.originalJson === 'string') {
+            originalJson = parsed.originalJson;
+          }
+        }
+      } catch (e) {
+        // ignore
+      }
       const [roleCard, worldBook, preset, authorNote, chatHistory, contents] = await Promise.all([
         this.loadJson<any>(this.getStorageKey(conversationId, '_role')),
         this.loadJson<any>(this.getStorageKey(conversationId, '_world')),
@@ -458,6 +476,7 @@ export class StorageAdapter {
         authorNote: authorNote || undefined,
         chatHistory: chatHistory || undefined,
         contents: contents || undefined,
+        originalJson // 新增
       };
     } catch (error) {
       console.error('[StorageAdapter] exportCharacterData error:', error);
@@ -694,7 +713,11 @@ export class StorageAdapter {
     try {
       const str = await AsyncStorage.getItem('nodest_global_regex_groups');
       if (!str) return [];
-      return JSON.parse(str);
+      // 修正：直接返回原始对象，不做任何字段过滤
+      const groups = JSON.parse(str);
+      // 增加调试日志，确保字段完整
+      console.log('[StorageAdapter] loadGlobalRegexScriptGroups loaded:', groups);
+      return groups;
     } catch (e) {
       return [];
     }

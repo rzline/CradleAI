@@ -28,7 +28,7 @@ export const CirclePrompts = {
 【内容】${params.contentText}
 ${params.hasImages ? "【图片内容】动态中包含图片，图片是帖子的核心内容" : ""}
 ${params.context ? `【上下文】${params.context}` : ''}
-${params.conversationHistory ? `【历史对话记录】\n${params.conversationHistory}` : ''}
+${params.conversationHistory ? `【你们的历史对话记录】\n${params.conversationHistory}` : ''}
 
 请你以${params.charName ? params.charName : ''}的身份（${params.charDescription.substring(0, 50)}），考虑以下几点：
 1. 这是在私聊中用户转发给你的朋友圈，而不是你在浏览朋友圈
@@ -106,7 +106,7 @@ ${params.hasImages ? "该动态包含图片内容，请首先关注【图片描�
 
 ${params.allCommentsText ? `【评论区全部内容】\n${params.allCommentsText}\n` : ''}
 
-${params.conversationHistory ? `【历史对话记录】\n${params.conversationHistory}` : ''}
+${params.conversationHistory ? `【你们的历史对话记录】\n${params.conversationHistory}` : ''}
 
 【最新回复】${params.contentText}
 【评论回复者】${params.userIdentification || '某人'}

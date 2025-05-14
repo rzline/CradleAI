@@ -138,15 +138,20 @@ export function getApiSettings(): {
     apiKey?: string;
     model?: string;
     endpoint?: string;
+    temperature?: number;
+    max_tokens?: number;
+    stream?: boolean;
   };
   useCloudService: boolean;
   useGeminiKeyRotation?: boolean;
   useGeminiModelLoadBalancing?: boolean;
   additionalGeminiKeys?: string[];
   cloudModel?: string;
-  geminiPrimaryModel?: string; // 新增
-  geminiBackupModel?: string;  // 新增
-  retryDelay?: number;         // 新增
+  geminiPrimaryModel?: string;
+  geminiBackupModel?: string;
+  retryDelay?: number;
+  geminiTemperature?: number; // 新增
+  geminiMaxTokens?: number;   // 新增
 } {
   const settings = getUserSettingsGlobally();
   if (!settings || !settings.chat) {
@@ -165,7 +170,29 @@ export function getApiSettings(): {
   }
 
   // 互斥逻辑：只返回当前 provider 的参数
-  const { apiProvider, characterApiKey, openrouter, OpenAIcompatible, useCloudService = false, additionalGeminiKeys, useGeminiKeyRotation, useGeminiModelLoadBalancing, cloudModel, geminiPrimaryModel, geminiBackupModel, retryDelay } = settings.chat;
+  const { apiProvider, characterApiKey, openrouter, OpenAIcompatible, useCloudService = false, additionalGeminiKeys, useGeminiKeyRotation, useGeminiModelLoadBalancing, cloudModel, geminiPrimaryModel, geminiBackupModel, retryDelay, geminiTemperature, geminiMaxTokens } = settings.chat;
+
+  // --- 修正：同步OpenAIcompatible的流式参数等 ---
+  let openAICompatibleConfig: any = { enabled: false };
+  if (apiProvider === 'openai-compatible' && OpenAIcompatible?.enabled) {
+    let provider = OpenAIcompatible;
+    // 如果有多渠道，优先取selectedProviderId
+    if (OpenAIcompatible.providers && Array.isArray(OpenAIcompatible.providers) && OpenAIcompatible.selectedProviderId) {
+      const selected = OpenAIcompatible.providers.find((p: any) => p.id === OpenAIcompatible.selectedProviderId);
+      if (selected) {
+        provider = { ...selected, enabled: true };
+      }
+    }
+    openAICompatibleConfig = {
+      enabled: true,
+      apiKey: provider.apiKey,
+      model: provider.model,
+      endpoint: provider.endpoint,
+      stream: provider.stream,
+      temperature: provider.temperature,
+      max_tokens: provider.max_tokens
+    };
+  }
 
   return {
     apiKey: characterApiKey,
@@ -177,21 +204,16 @@ export function getApiSettings(): {
           model: openrouter?.model || 'openai/gpt-3.5-turbo'
         }
       : { enabled: false },
-    OpenAIcompatible: apiProvider === 'openai-compatible'
-      ? {
-          enabled: true,
-          apiKey: OpenAIcompatible?.apiKey,
-          model: OpenAIcompatible?.model,
-          endpoint: OpenAIcompatible?.endpoint
-        }
-      : { enabled: false },
+    OpenAIcompatible: openAICompatibleConfig,
     useCloudService,
     additionalGeminiKeys,
     useGeminiKeyRotation,
     useGeminiModelLoadBalancing,
     cloudModel,
-    geminiPrimaryModel, // 新增
-    geminiBackupModel,  // 新增
-    retryDelay          // 新增
+    geminiPrimaryModel,
+    geminiBackupModel,
+    retryDelay,
+    geminiTemperature, // 新增
+    geminiMaxTokens    // 新增
   };
 }

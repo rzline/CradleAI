@@ -46,11 +46,12 @@ interface TopBarWithBackgroundProps {
   onGroupSettingsPress?: () => void; // Add this for group settings sidebar
 }
 
-const HEADER_HEIGHT = 90;
+// Updated constants for smaller dimensions
+const HEADER_HEIGHT = 70; // Reduced from 90
 const { width } = Dimensions.get('window');
-const BUTTON_SIZE = Math.max(Math.min(width * 0.07, 28), 24); // Between 24-28dp depending on screen size
-const AVATAR_SIZE = Math.max(Math.min(width * 0.1, 40), 34); // Between 34-40dp depending on screen size
-const ACTION_BUTTON_HIT_SLOP = { top: 10, bottom: 10, left: 10, right: 10 }; // Larger touch area
+const BUTTON_SIZE = 22; // Match ChatInput button size
+const AVATAR_SIZE = Math.max(Math.min(width * 0.09, 36), 32); // Smaller avatar between 32-36dp
+const ACTION_BUTTON_HIT_SLOP = { top: 10, bottom: 10, left: 10, right: 10 }; // Keep larger touch area
 
 const TopBarWithBackground: React.FC<TopBarWithBackgroundProps> = ({
   selectedCharacter,
@@ -248,7 +249,11 @@ const TopBarWithBackground: React.FC<TopBarWithBackgroundProps> = ({
             {!isEmpty && (
               <TouchableOpacity
                 style={styles.actionButton}
-                onPress={() => router.push({ pathname: '/pages/global-settings', params: { characterId: selectedCharacter?.id,charactername:selectedCharacter?.name } })}
+                onPress={() => {
+                  // 打印 TopBarWithBackground 传递给 global-settings 页面的 characterId
+                  console.log('[TopBarWithBackground] global-settings characterId:', selectedCharacter?.id);
+                  router.push({ pathname: '/pages/global-settings', params: { characterId: selectedCharacter?.id,charactername:selectedCharacter?.name } });
+                }}
                 hitSlop={ACTION_BUTTON_HIT_SLOP}
               >
                 <Ionicons name="earth-outline" size={BUTTON_SIZE} color="#fff" />
@@ -286,8 +291,8 @@ const styles = StyleSheet.create({
   },
   groupTopic: {
     color: '#ccc',
-    fontSize: 12,
-    marginTop: 2,
+    fontSize: 11, // Smaller font size
+    marginTop: 1, // Reduced margin
     textShadowColor: 'rgba(0, 0, 0, 0.75)',
     textShadowOffset: { width: 1, height: 1 },
     textShadowRadius: 2,
@@ -329,7 +334,7 @@ const styles = StyleSheet.create({
     paddingHorizontal: 12,
   },
   menuButton: {
-    padding: Math.max(6, width * 0.015), // Responsive padding
+    padding: Math.max(4, width * 0.012), // Reduced padding
     justifyContent: 'center',
     alignItems: 'center',
   },
@@ -337,13 +342,13 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     flex: 1,
-    paddingHorizontal: Math.max(6, width * 0.02), // Responsive horizontal padding
+    paddingHorizontal: Math.max(4, width * 0.015), // Reduced horizontal padding
   },
   avatarContainer: {
-    marginRight: Math.max(8, width * 0.03), // Responsive margin
+    marginRight: Math.max(6, width * 0.025), // Reduced margin
   },
   avatar: {
-    borderWidth: 2,
+    borderWidth: 1.5, // Thinner border
     borderColor: 'rgb(255, 224, 195)',
   },
   nameContainer: {
@@ -352,7 +357,7 @@ const styles = StyleSheet.create({
   },
   characterName: {
     color: '#fff',
-    fontSize: Math.min(Math.max(16, width * 0.045), 18), // Responsive font size between 16-18
+    fontSize: Math.min(Math.max(15, width * 0.04), 17), // Reduced font size between 15-17
     fontWeight: '600',
     textShadowColor: 'rgba(0, 0, 0, 0.75)',
     textShadowOffset: { width: 1, height: 1 },
@@ -361,21 +366,21 @@ const styles = StyleSheet.create({
   actions: {
     flexDirection: 'row',
     alignItems: 'center',
-    marginRight: Math.max(4, width * 0.01), // Add some right margin
+    marginRight: Math.max(2, width * 0.005), // Add some right margin
   },
   actionButton: {
-    padding: Math.max(6, width * 0.015), // Responsive padding
-    marginLeft: Math.max(2, width * 0.01), // Responsive margin
+    padding: Math.max(4, width * 0.01), // Reduced padding
+    marginLeft: Math.max(2, width * 0.008), // Reduced margin
     position: 'relative',
     justifyContent: 'center',
     alignItems: 'center',
-    minWidth: BUTTON_SIZE + 12, // Ensure minimum touch target size
-    minHeight: BUTTON_SIZE + 12, // Ensure minimum touch target size
+    minWidth: BUTTON_SIZE + 8, // Reduced minimum touch target size
+    minHeight: BUTTON_SIZE + 8, // Reduced minimum touch target size
   },
   groupManageButton: {
-    borderRadius: 20,
-    padding: Math.max(6, width * 0.015), // Responsive padding
-    marginLeft: Math.max(6, width * 0.015), // Responsive margin
+    borderRadius: 16, // Smaller radius
+    padding: Math.max(4, width * 0.01), // Reduced padding
+    marginLeft: Math.max(4, width * 0.01), // Reduced margin
     zIndex: 5,
   },
   emptySpace: {

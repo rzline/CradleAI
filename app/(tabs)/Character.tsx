@@ -242,10 +242,13 @@ const CharactersScreen: React.FC = () => {
       setImportLoading(true);
 
       let importedData: any;
+      let originalJson: string | undefined;
       if (isPng) {
         importedData = await CharacterImporter.importFromPNG(fileUri);
+        originalJson = importedData.originalJson;
       } else if (isJson) {
         importedData = await CharacterImporter.importFromJson(fileUri);
+        originalJson = importedData.originalJson;
       } else {
         throw new Error('仅支持PNG图片或JSON格式角色卡文件');
       }
@@ -280,8 +283,8 @@ const CharactersScreen: React.FC = () => {
                   data: {
                     alternate_greetings: importedData.alternateGreetings || []
                   },
-                  // 新增：保存regexScripts
-                  regexScripts: importedData.regexScripts || []
+                  regexScripts: importedData.regexScripts || [],
+                  originalJson // 新增
                 };
                 console.log('[Character] 写入导入数据到temp_import_data, alternateGreetings:',
                   completeData.alternateGreetings && Array.isArray(completeData.alternateGreetings)
@@ -315,8 +318,8 @@ const CharactersScreen: React.FC = () => {
                       data: {
                         alternate_greetings: importedData.alternateGreetings || []
                       },
-                      // 新增：保存regexScripts
-                      regexScripts: importedData.regexScripts || []
+                      regexScripts: importedData.regexScripts || [],
+                      originalJson // 新增
                     };
                     console.log('[Character] 写入导入数据到temp_import_data(取消预设导入), alternateGreetings:',
                       completeData.alternateGreetings && Array.isArray(completeData.alternateGreetings)
@@ -346,8 +349,8 @@ const CharactersScreen: React.FC = () => {
                     data: {
                       alternate_greetings: importedData.alternateGreetings || []
                     },
-                    // 新增：保存regexScripts
-                    regexScripts: importedData.regexScripts || []
+                    regexScripts: importedData.regexScripts || [],
+                    originalJson // 新增
                   };
                   console.log('[Character] 写入导入数据到temp_import_data(含预设), alternateGreetings:',
                     completeData.alternateGreetings && Array.isArray(completeData.alternateGreetings)
@@ -373,8 +376,8 @@ const CharactersScreen: React.FC = () => {
                     data: {
                       alternate_greetings: importedData.alternateGreetings || []
                     },
-                    // 新增：保存regexScripts
-                    regexScripts: importedData.regexScripts || []
+                    regexScripts: importedData.regexScripts || [],
+                    originalJson // 新增
                   };
                   console.log('[Character] 写入导入数据到temp_import_data(预设导入失败), alternateGreetings:',
                     completeData.alternateGreetings && Array.isArray(completeData.alternateGreetings)
@@ -404,8 +407,8 @@ const CharactersScreen: React.FC = () => {
           data: {
             alternate_greetings: importedData.alternateGreetings || []
           },
-          // 新增：保存regexScripts
-          regexScripts: importedData.regexScripts || []
+          regexScripts: importedData.regexScripts || [],
+          originalJson // 新增
         };
         console.log('[Character] 写入导入数据到temp_import_data(直接JSON), alternateGreetings:',
           completeData.alternateGreetings && Array.isArray(completeData.alternateGreetings)
@@ -429,6 +432,14 @@ const CharactersScreen: React.FC = () => {
     setImportLoading(false);
   }, []);
 
+  const toggleSelectCharacter = useCallback((id: string) => {
+    setSelectedCharacters((prevSelected) =>
+      prevSelected.includes(id)
+        ? prevSelected.filter((charId) => charId !== id)
+        : [...prevSelected, id]
+    );
+  }, []);
+
   const handleCharacterPress = useCallback((id: string) => {
     if (!isManaging) {
       console.log('[Character] Navigating to character detail:', id);
@@ -446,14 +457,6 @@ const CharactersScreen: React.FC = () => {
   const handleCloseDiaryBook = () => {
     setShowDiaryBook(false);
     setSelectedCharacterId(null);
-  };
-
-  const toggleSelectCharacter = (id: string) => {
-    setSelectedCharacters((prevSelected) =>
-      prevSelected.includes(id)
-        ? prevSelected.filter((charId) => charId !== id)
-        : [...prevSelected, id]
-    );
   };
 
   const handleDelete = async () => {
@@ -543,6 +546,19 @@ const CharactersScreen: React.FC = () => {
       setIsLoading(true);
       // 1. 获取角色全部数据
       const exportData = await StorageAdapter.exportCharacterData(characterId);
+      // 新增：如果有originalJson字段，则直接导出原始json
+      if (exportData && exportData.originalJson) {
+        const fileName = `character_export_${character.name || characterId}.json`;
+        const fileUri = FileSystem.cacheDirectory + fileName;
+        await FileSystem.writeAsStringAsync(fileUri, exportData.originalJson, { encoding: FileSystem.EncodingType.UTF8 });
+        if (await Sharing.isAvailableAsync()) {
+          await Sharing.shareAsync(fileUri, { mimeType: 'application/json' });
+        } else {
+          Alert.alert('导出成功', `文件已保存到: ${fileUri}`);
+        }
+        setIsLoading(false);
+        return;
+      }
       // 2. 生成导出文件名
       const fileName = `character_export_${character.name || characterId}.json`;
       // 3. 写入到本地临时文件
@@ -698,8 +714,8 @@ const CharactersScreen: React.FC = () => {
     </View>
   );
 
-  const renderItem = useMemo(
-    () => ({ item }: { item: any }) => (
+  const renderItem = useCallback(
+    ({ item }: { item: any }) => (
       <CharacterCard
         item={item}
         isManaging={isManaging}
@@ -708,7 +724,6 @@ const CharactersScreen: React.FC = () => {
         onPress={handleCharacterPress}
         onOpenDiary={handleOpenDiaryBook}
         viewMode={viewMode}
-        // 新增：传递图库和图片生成入口
         onOpenGallerySidebar={handleOpenGallerySidebar}
         onOpenImageGen={handleOpenImageGen}
         onOpenEditDialog={handleOpenEditDialog}
@@ -717,7 +732,19 @@ const CharactersScreen: React.FC = () => {
     [isManaging, selectedCharacters, toggleSelectCharacter, handleCharacterPress, viewMode, handleOpenGallerySidebar, handleOpenImageGen, handleOpenEditDialog]
   );
 
-  const keyExtractor = useMemo(() => (item: any) => item.id, []);
+  const keyExtractor = useCallback((item: any) => item.id, []);
+
+  const getItemLayout = useCallback(
+    (_: any, index: number) => {
+      let itemHeight = viewMode === VIEW_MODE_LARGE
+        ? LARGE_CARD_HEIGHT + 16
+        : viewMode === VIEW_MODE_VERTICAL
+        ? VERTICAL_CARD_HEIGHT + 16
+        : CARD_HEIGHT + 16;
+      return { length: itemHeight, offset: itemHeight * index, index };
+    },
+    [viewMode]
+  );
 
   const renderAddMenu = () => {
     if (!showAddMenu) return null;
@@ -944,6 +971,11 @@ const CharactersScreen: React.FC = () => {
         contentContainerStyle={styles.listContainer}
         key={`${viewMode}-${refreshKey}`}
         extraData={[isManaging, selectedCharacters, refreshKey]}
+        getItemLayout={getItemLayout}
+        initialNumToRender={10}
+        windowSize={8}
+        removeClippedSubviews={true}
+        maxToRenderPerBatch={10}
       />
 
       {renderCreationModal()}
@@ -1052,6 +1084,16 @@ const CharactersScreen: React.FC = () => {
   );
 };
 
+// 优化：areEqual函数用于React.memo，减少不必要的渲染
+function areEqual(prev: any, next: any) {
+  return (
+    prev.item.id === next.item.id &&
+    prev.isManaging === next.isManaging &&
+    prev.isSelected === next.isSelected &&
+    prev.viewMode === next.viewMode
+  );
+}
+
 const CharacterCard: React.FC<{
   item: Character;
   isManaging: boolean;
@@ -1060,10 +1102,8 @@ const CharacterCard: React.FC<{
   onPress: (id: string) => void;
   onOpenDiary: (id: string) => void;
   viewMode: 'small' | 'large' | 'vertical';
-  // 新增props
   onOpenGallerySidebar: (character: Character) => void;
   onOpenImageGen: (character: Character) => void;
-  // 新增：编辑入口
   onOpenEditDialog?: (character: Character) => void;
 }> = React.memo(
   ({
@@ -1142,11 +1182,18 @@ const CharacterCard: React.FC<{
       };
     }, [item.id, viewMode]);
 
+    // 复选框点击事件阻止冒泡
+    const handleCheckboxPress = (e: any) => {
+      e.stopPropagation();
+      onSelect(item.id);
+    };
+
     return (
       <TouchableOpacity
         style={[styles.card, responsiveCardStyle, isManaging && styles.manageCard]}
         onPress={handleCardPress}
         onLongPress={() => onSelect(item.id)}
+        activeOpacity={0.85}
       >
         {shouldShowVideo ? (
           // Render video for all view modes
@@ -1308,19 +1355,23 @@ const CharacterCard: React.FC<{
 
         {/* Make checkbox responsive */}
         {isManaging && (
-          <View
+          <TouchableOpacity
             style={[
               styles.checkboxContainer, 
+              styles.checkboxRightTop,
               isSelected && styles.checkboxSelected,
               { width: width < 360 ? 20 : 24, height: width < 360 ? 20 : 24 }
             ]}
+            onPress={handleCheckboxPress}
+            activeOpacity={0.7}
           >
             {isSelected && <Ionicons name="checkmark" size={width < 360 ? 14 : 16} color="black" />}
-          </View>
+          </TouchableOpacity>
         )}
       </TouchableOpacity>
     );
-  }
+  },
+  areEqual
 );
 
 interface Styles {
@@ -1366,6 +1417,7 @@ interface Styles {
   topBarActions: ViewStyle;
   topBarActionButton: ViewStyle;
   topBarActiveActionButton: ViewStyle;
+  checkboxRightTop: ViewStyle;
 }
 
 const styles = StyleSheet.create<Styles>({
@@ -1456,13 +1508,12 @@ const styles = StyleSheet.create<Styles>({
   },
   checkboxContainer: {
     position: 'absolute',
-    top: 8,
-    left: 8,
+    // top/left由checkboxRightTop控制
     width: 24,
     height: 24,
     borderRadius: 12,
     borderWidth: 2,
-    borderColor: COLOR_BUTTON,
+    borderColor: '#000', // 边框色改为黑色
     backgroundColor: 'rgba(255, 255, 255, 0.9)',
     alignItems: 'center',
     justifyContent: 'center',
@@ -1472,6 +1523,11 @@ const styles = StyleSheet.create<Styles>({
     shadowRadius: 2,
     elevation: 2,
     zIndex: 10,
+  },
+  checkboxRightTop: {
+    top: 8,
+    right: 8,
+    left: undefined,
   },
   checkboxSelected: {
     backgroundColor: COLOR_BUTTON,

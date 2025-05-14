@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef, useCallback, useMemo } from 'react';
+import React, { useState, useEffect, useRef, useCallback, useMemo, Suspense, lazy } from 'react';
 import {
   View,
   StyleSheet,
@@ -16,59 +16,66 @@ import {
   Animated,
   Easing
 } from 'react-native';
-import { Video, ResizeMode, AVPlaybackStatus } from 'expo-av'; // Import Video component
+import { Video, ResizeMode, AVPlaybackStatus } from 'expo-av';
 import ChatDialog from '@/components/ChatDialog';
 import ChatInput from '@/components/ChatInput';
 import Sidebar from '@/components/Sidebar';
 import SettingsSidebar from '@/components/SettingsSidebar';
-import MemoOverlay from '@/components/MemoOverlay';  // Import for memory enhancement plugin UI
-import SaveManager from '@/components/SaveManager'; // Import the SaveManager component
-import TTSEnhancerModal from '@/components/TTSEnhancerModal'; // Import the new modal component
+import MemoOverlay from '@/components/MemoOverlay'; 
+import SaveManager from '@/components/SaveManager';
+import TTSEnhancerModal from '@/components/TTSEnhancerModal';
 import GroupDialog from '@/components/GroupDialog';
 import GroupInput from '@/components/GroupInput';
 import GroupManagementModal from '@/components/GroupManagementModal';
-import GroupSettingsSidebar from '@/components/GroupSettingsSidebar'; // 新增导入
+import GroupSettingsSidebar from '@/components/GroupSettingsSidebar';
 import { Group, GroupMessage, getUserGroups, getGroupMessages, sendGroupMessage } from '@/src/group';
 import { Message, Character, ChatSave } from '@/shared/types';
-import { useCharacters, } from '@/constants/CharactersContext';
-import { useUser } from '@/constants/UserContext'; // 添加 useUser 导入
+import { useCharacters } from '@/constants/CharactersContext';
+import { useUser } from '@/constants/UserContext';
 import { useRouter, useLocalSearchParams } from 'expo-router';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import TopBarWithBackground from '@/components/TopBarWithBackground';
-import { NodeSTManager } from '@/utils/NodeSTManager';  // 导入 NodeSTManager
+import { NodeSTManager } from '@/utils/NodeSTManager';
 import { EventRegister } from 'react-native-event-listeners';
 import { MemoryProvider } from '@/src/memory/providers/MemoryProvider';
 import Mem0Initializer from '@/src/memory/components/Mem0Initializer';
 import '@/src/memory/utils/polyfills';
-import Mem0Service from '@/src/memory/services/Mem0Service'; // 新增导入
+import Mem0Service from '@/src/memory/services/Mem0Service';
 import { ttsService } from '@/services/ttsService';
 import { useDialogMode } from '@/constants/DialogModeContext';
-import { CharacterLoader } from '@/src/utils/character-loader'; // Import CharacterLoader
-import { StorageAdapter } from '@/NodeST/nodest/utils/storage-adapter'; // 新增
-import { GeminiAdapter } from '@/NodeST/nodest/utils/gemini-adapter'; // 新增
-import { DEFAULT_NEGATIVE_PROMPTS, DEFAULT_POSITIVE_PROMPTS } from '@/constants/defaultPrompts'; // 新增
-import NovelAIService from '@/components/NovelAIService'; // 新增
+import { CharacterLoader } from '@/src/utils/character-loader';
+import { StorageAdapter } from '@/NodeST/nodest/utils/storage-adapter';
+import { GeminiAdapter } from '@/NodeST/nodest/utils/gemini-adapter';
+import { DEFAULT_NEGATIVE_PROMPTS, DEFAULT_POSITIVE_PROMPTS } from '@/constants/defaultPrompts';
+import NovelAIService from '@/components/NovelAIService';
 import { CloudServiceProvider } from '@/services/cloud-service-provider';
-import type  CloudServiceProviderClass  from '@/services/cloud-service-provider';
-import * as FileSystem from 'expo-file-system'; // 新增导入
+import type CloudServiceProviderClass from '@/services/cloud-service-provider';
+import * as FileSystem from 'expo-file-system';
 import { importDefaultCharactersIfNeeded, resetDefaultCharacterImported } from '@/components/DefaultCharacterImporter';
-import { loadGlobalSettingsState } from '@/app/pages/global-settings' ;
-import { getApiSettings } from '@/utils/settings-helper'; 
+import { loadGlobalSettingsState } from '@/app/pages/global-settings';
+import { getApiSettings } from '@/utils/settings-helper';
 import { OpenRouterAdapter } from '@/NodeST/nodest/utils/openrouter-adapter';
 import { isTableMemoryEnabled, setTableMemoryEnabled } from '@/src/memory/integration/table-memory-integration';
-import { getWebViewExampleHtml } from '@/utils/webViewExample'; // 导入 WebView 示例
+import { getWebViewExampleHtml } from '@/utils/webViewExample';
+import { Ionicons } from '@expo/vector-icons';
+import { DeviceEventEmitter } from 'react-native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
+// Lazy load non-critical components to improve initial load time
+const NovelAITestModal = lazy(() => import('@/components/NovelAITestModal'));
 
-
-
-// Create a stable memory configuration outside the component
-// 新增：全局缓存对象
+// Global cache objects
 declare global {
   interface Window { __globalSettingsCache?: any }
 }
+
 if (typeof window !== 'undefined' && !window.__globalSettingsCache) {
   window.__globalSettingsCache = {};
 }
 
+// Character view mode cache
+export let characterViewModeCache: string | null = null;
+
+// Memory configuration type
 type MemoryConfig = {
   embedder: {
     provider: string;
@@ -101,13 +108,13 @@ type MemoryConfig = {
   };
 };
 
+// Create a stable memory configuration function
 interface CreateConfigFunction {
   (user: any): MemoryConfig;
   config?: MemoryConfig;
 }
 
 const createStableMemoryConfig: CreateConfigFunction = (user: any): MemoryConfig => {
-  // Create config only once and memoize it
   if (!createStableMemoryConfig.config) {
     createStableMemoryConfig.config = {
       embedder: {
@@ -145,286 +152,34 @@ const createStableMemoryConfig: CreateConfigFunction = (user: any): MemoryConfig
   return createStableMemoryConfig.config;
 };
 
-// 新增：全局变量用于缓存character视图模式
-export let characterViewModeCache: string | null = null;
+// Helper functions for performance optimization
 
 const App = () => {
-    // 新增：测试 WebView 示例按钮
-  const [isWebViewTestVisible, setIsWebViewTestVisible] = useState(false);
-    // 新增：应用启动时预加载全局设置状态
-    useEffect(() => {
-      (async () => {
-        const globalSettings = await loadGlobalSettingsState();
-        if (globalSettings && typeof window !== 'undefined') {
-          window.__globalSettingsCache = globalSettings;
-        }
-      })();
-    }, []);
-
-
-  useEffect(() => {
-    try {
-      const enabled = isTableMemoryEnabled();
-      setTableMemoryEnabled(enabled);
-      console.log('[index] 同步表格记忆插件开关:', enabled);
-    } catch (e) {
-      console.warn('[index] 同步表格记忆插件开关失败:', e);
-    }
-  }, []);
-
-
-    // 新增：处理 WebView 测试按钮点击
-  const handleWebViewTest = async () => {
-    try {
-      const webViewHtml = await getWebViewExampleHtml();
-      
-      // 如果没有选择的对话，先提示用户
-      if (!selectedConversationId) {
-        Alert.alert('提示', '请先选择一个角色开始对话');
-        return;
-      }
-      
-      // 如果当前不是视觉小说模式，提示用户切换
-      if (mode !== 'visual-novel') {
-        Alert.alert(
-          '切换到视觉小说模式',
-          '需要在视觉小说模式下才能测试WebView功能，是否切换？',
-          [
-            { text: '取消', style: 'cancel' },
-            { 
-              text: '切换', 
-              onPress: () => {
-                setMode('visual-novel');
-                // 延迟发送，等待模式切换完成
-                setTimeout(() => {
-                  handleSendMessage(webViewHtml, 'bot');
-                }, 300);
-              }
-            }
-          ]
-        );
-        return;
-      }
-      
-      // 发送 WebView HTML 作为机器人消息
-      handleSendMessage(webViewHtml, 'bot');
-    } catch (error) {
-      console.error('Failed to load WebView example:', error);
-      Alert.alert('错误', '加载WebView示例失败');
-    }
-  };
-    // 新增：AI消息编辑
-    const handleEditAiMessage = async (messageId: string, aiIndex: number, newContent: string) => {
-      if (!selectedConversationId) return;
-      try {
-        // 调用 NodeSTManager
-        const result = await NodeSTManager.editAiMessageByIndex({
-          conversationId: selectedConversationId,
-          messageIndex: aiIndex + 1,
-          newContent
-        });
-        if (result.success) {
-          // --- 核心修复：彻底同步消息流 ---
-          // 1. 清空本地和context消息
-          await clearMessages(selectedConversationId);
-
-          // 2. 从NodeST历史读取最新消息流
-          // 读取NodeST历史
-          let latestHistory: any = null;
-          try {
-            // NodeST历史存储路径
-            const historyKey = `nodest_${selectedConversationId}_history`;
-            // 兼容 FileSystem/AsyncStorage
-            let historyStr = null;
-            if (typeof FileSystem !== 'undefined' && FileSystem.documentDirectory) {
-              // expo-file-system
-              const filePath = FileSystem.documentDirectory + 'nodest_characters/' + historyKey + '.json';
-              const fileInfo = await FileSystem.getInfoAsync(filePath);
-              if (fileInfo.exists) {
-                historyStr = await FileSystem.readAsStringAsync(filePath);
-              }
-            }
-            if (!historyStr && typeof AsyncStorage !== 'undefined') {
-              historyStr = await AsyncStorage.getItem(historyKey);
-            }
-            if (historyStr) {
-              latestHistory = JSON.parse(historyStr);
-            }
-          } catch (e) {
-            latestHistory = null;
-          }
-
-          // 3. 解析NodeST历史为Message[]，同步到context和本地
-          if (latestHistory && Array.isArray(latestHistory.parts)) {
-            // 只保留非D类条目
-            const realMessages = latestHistory.parts.filter((msg: any) => !msg.is_d_entry);
-            // 转换为Message[]
-            const newMessages: Message[] = [];
-            let aiIndexCounter = 0;
-            for (let i = 0; i < realMessages.length; i++) {
-              const msg = realMessages[i];
-              if (msg.role === 'user') {
-                newMessages.push({
-                  id: `${selectedConversationId}-user-${i}-${Date.now()}`,
-                  text: msg.parts?.[0]?.text ?? '',
-                  sender: 'user',
-                  isLoading: false,
-                  timestamp: Date.now(),
-                  metadata: {}
-                });
-              } else if ((msg.role === 'model' || msg.role === 'assistant')) {
-                // 跳过first_mes的aiIndex
-                const isFirstMes = !!msg.is_first_mes;
-                newMessages.push({
-                  id: `${selectedConversationId}-bot-${i}-${Date.now()}`,
-                  text: msg.parts?.[0]?.text ?? '',
-                  sender: 'bot',
-                  isLoading: false,
-                  timestamp: Date.now(),
-                  metadata: {
-                    aiIndex: isFirstMes ? 0 : aiIndexCounter
-                  }
-                });
-                if (!isFirstMes) aiIndexCounter++;
-              }
-            }
-            // 4. 批量写入context
-            for (const m of newMessages) {
-              await addMessage(selectedConversationId, m);
-            }
-            // 5. 更新本地状态
-            setMessages(newMessages);
-          } else {
-            // fallback: 只清空
-            setMessages([]);
-          }
-          Alert.alert('编辑成功', 'AI消息内容已更新');
-        } else {
-          setTransientError("处理消息时出现了错误");
-          setTimeout(() => setTransientError(null), 5000); // 5秒后自动消失
-        }
-      } catch (e) {
-        setTransientError("处理消息时出现了错误");
-        setTimeout(() => setTransientError(null), 5000); // 5秒后自动消失
-      }
-    };
-
-    // 新增：AI消息删除
-    const handleDeleteAiMessage = async (messageId: string, aiIndex: number) => {
-      if (!selectedConversationId) return;
-      try {
-        const result = await NodeSTManager.deleteAiMessageByIndex({
-          conversationId: selectedConversationId,
-          messageIndex: aiIndex + 1
-        });
-        if (result.success) {
-      // --- 核心修复：彻底同步消息流 ---
-      // 1. 清空本地和context消息
-      await clearMessages(selectedConversationId);
-
-      // 2. 从NodeST历史读取最新消息流
-      // 读取NodeST历史
-      let latestHistory: any = null;
-      try {
-        // NodeST历史存储路径
-        const historyKey = `nodest_${selectedConversationId}_history`;
-        // 兼容 FileSystem/AsyncStorage
-        let historyStr = null;
-        if (typeof FileSystem !== 'undefined' && FileSystem.documentDirectory) {
-          // expo-file-system
-          const filePath = FileSystem.documentDirectory + 'nodest_characters/' + historyKey + '.json';
-          const fileInfo = await FileSystem.getInfoAsync(filePath);
-          if (fileInfo.exists) {
-            historyStr = await FileSystem.readAsStringAsync(filePath);
-          }
-        }
-        if (!historyStr && typeof AsyncStorage !== 'undefined') {
-          historyStr = await AsyncStorage.getItem(historyKey);
-        }
-        if (historyStr) {
-          latestHistory = JSON.parse(historyStr);
-        }
-      } catch (e) {
-        latestHistory = null;
-      }
-
-      // 3. 解析NodeST历史为Message[]，同步到context和本地
-      if (latestHistory && Array.isArray(latestHistory.parts)) {
-        // 只保留非D类条目
-        const realMessages = latestHistory.parts.filter((msg: any) => !msg.is_d_entry);
-        // 转换为Message[]
-        const newMessages: Message[] = [];
-        let aiIndexCounter = 0;
-        for (let i = 0; i < realMessages.length; i++) {
-          const msg = realMessages[i];
-          if (msg.role === 'user') {
-            newMessages.push({
-              id: `${selectedConversationId}-user-${i}-${Date.now()}`,
-              text: msg.parts?.[0]?.text ?? '',
-              sender: 'user',
-              isLoading: false,
-              timestamp: Date.now(),
-              metadata: {}
-            });
-          } else if ((msg.role === 'model' || msg.role === 'assistant')) {
-            // 跳过first_mes的aiIndex
-            const isFirstMes = !!msg.is_first_mes;
-            newMessages.push({
-              id: `${selectedConversationId}-bot-${i}-${Date.now()}`,
-              text: msg.parts?.[0]?.text ?? '',
-              sender: 'bot',
-              isLoading: false,
-              timestamp: Date.now(),
-              metadata: {
-                aiIndex: isFirstMes ? 0 : aiIndexCounter
-              }
-            });
-            if (!isFirstMes) aiIndexCounter++;
-          }
-        }
-        // 4. 批量写入context
-        for (const m of newMessages) {
-          await addMessage(selectedConversationId, m);
-        }
-        // 5. 更新本地状态
-        setMessages(newMessages);
-      } else {
-        // fallback: 只清空
-        setMessages([]);
-      }
-      Alert.alert('删除成功', 'AI消息及其对应用户消息已删除');
-    } else {
-      setTransientError("处理消息时出现了错误");
-      setTimeout(() => setTransientError(null), 5000); // 5秒后自动消失
-    }
-  } catch (e) {
-    setTransientError("处理消息时出现了错误");
-    setTimeout(() => setTransientError(null), 5000); // 5秒后自动消失
-  }
-};
-  const [isTestMarkdownVisible, setIsTestMarkdownVisible] = useState(false);
+  const insets = useSafeAreaInsets();
+  // References to avoid re-creating functions on each render
+  const asyncStorageOperations = useRef<Set<Promise<any>>>(new Set());
+  
+  // Router and params
   const router = useRouter();
   const params = useLocalSearchParams();
   const characterId = params.characterId as string;
-  const { user } = useUser(); // 获取用户设置
-
-  // Create animation value for sidebar content shift
+  const { user } = useUser();
+// 新增：用于标记是否已尝试恢复 lastConversationId，避免重复恢复
+const [hasRestoredLastConversation, setHasRestoredLastConversation] = useState(false);
+  // Animation refs (created once, persist between renders)
   const contentSlideAnim = useRef(new Animated.Value(0)).current;
-  // Add a new animation value for settings sidebar
   const settingsSlideAnim = useRef(new Animated.Value(0)).current;
-  const SIDEBAR_WIDTH = 280; // Match the sidebar width
-
-  // --- Add: Animated value for scaling content on keyboard show/hide ---
   const contentScaleAnim = useRef(new Animated.Value(1)).current;
-
-  // 新增：群聊设置侧边栏动画与显示状态
   const groupSettingsSidebarAnim = useRef(new Animated.Value(0)).current;
-  const [groupSettingsSidebarVisible, setGroupSettingsSidebarVisible] = useState(false);
+  
+  // Constants used throughout the component
+  const SIDEBAR_WIDTH = 280;
+  const EXTRA_BG_IDS_KEY_PREFIX = 'extraBgProcessedIds-';
 
-  // Create a stable memory configuration that won't change on every render
-  const memoryConfig = useMemo(() => createStableMemoryConfig(user), []);
+  // Create a stable memory configuration
+  const memoryConfig = useMemo(() => createStableMemoryConfig(user), [user]);
 
-  // 简化状态管理，只保留必要的状态
+  // Character context
   const {
     conversations,
     characters,
@@ -432,162 +187,23 @@ const App = () => {
     addMessage,
     clearMessages,
     updateCharacterExtraBackgroundImage,
-    isLoading: charactersLoading, // 新增：获取加载状态
-    setCharacters ,// 新增：用于兜底时补充context
-    addCharacter, // <-- 修复：确保解构
-    addConversation, // <-- 修复：确保解构
-    clearTransientMessages, // <-- 新增：解构
+    isLoading: charactersLoading,
+    setCharacters,
+    addCharacter,
+    addConversation,
+    clearTransientMessages,
   } = useCharacters();
-  
+
+  // UI state - core functionality
   const [selectedConversationId, setSelectedConversationId] = useState<string | null>(null);
   const [messages, setMessages] = useState<Message[]>([]);
-
-  // 新增：selectedCharacter 兜底机制
   const [fallbackCharacter, setFallbackCharacter] = useState<Character | null>(null);
-
-  const selectedCharacter: Character | undefined | null =
-    selectedConversationId
-      ? characters.find((char: Character) => char.id === selectedConversationId)
-      : null;
-
-    // 新增：重置初始化状态按钮
-    const handleResetDefaultCharacterInit = async () => {
-      await resetDefaultCharacterImported();
-      Alert.alert('已重置', '下次启动将重新导入默认角色');
-    };
-
-    const [defaultCharacterNavigated, setDefaultCharacterNavigated] = useState(false);
-    const characterToUse = fallbackCharacter || selectedCharacter;
-    const { mode, setMode } = useDialogMode();
-
-
-  // Add state for default character import loading
+  const [isWebViewTestVisible, setIsWebViewTestVisible] = useState(false);
+  const [defaultCharacterNavigated, setDefaultCharacterNavigated] = useState(false);
   const [isInitializing, setIsInitializing] = useState(true);
-  // 自动初始化默认角色（仅首次）
-  // 修改：自动初始化默认角色（仅首次）
-  useEffect(() => {
-    // 只在应用启动时调用一次
-    (async () => {
-      try {
-        console.log('[index] 调用 importDefaultCharactersIfNeeded ...');
-        setIsInitializing(true); // 开始初始化
-        
-        const result = await importDefaultCharactersIfNeeded(
-          addCharacter,
-          addConversation,
-          // 下面两个方法在 context 中已定义
-          (id: string, uri: string) => {
-            console.log(`[index] 调用 updateCharacterExtraBackgroundImage: id=${id}, uri=${uri}`);
-            return updateCharacterExtraBackgroundImage(id, uri);
-          },
-          (id: string, uri: string) => {
-            console.log(`[index] 调用 setCharacterAvatar: id=${id}, uri=${uri}`);
-            // 兼容 context 的 setCharacterAvatar
-            if (typeof id === 'string' && typeof uri === 'string') {
-              return characters.find(c => c.id === id)
-                ? Promise.resolve()
-                : Promise.resolve();
-            }
-            return Promise.resolve();
-          }
-        );
-        
-        console.log('[index] importDefaultCharactersIfNeeded 完成', result);
-        
-        // 如果有角色ID，自动选择该角色（不进行路由跳转）
-        if (result && result.characterId) {
-          setSelectedConversationId(result.characterId);
-          
-          // 如果是新导入的角色，更新消息列表
-          if (result.imported) {
-            const characterMessages = getMessages(result.characterId);
-            setMessages(characterMessages);
-            console.log(`[index] 选择了新导入的默认角色：${result.characterId}`);
-          }
-          // 新增：如果视觉小说模式已激活，设置 defaultCharacterNavigated 为 true
-          if (mode === 'visual-novel') {
-            console.log('[index] 视觉小说模式已激活，设置 defaultCharacterNavigated 为 true');
-            setDefaultCharacterNavigated(true);// <--- 必须加上这一行
-            if (defaultCharacterNavigated) {
-              console.log('[index] defaultCharacterNavigated 已为 true，直接调用 handleResetConversation');
-            } else {
-              console.log('[index] 设置 defaultCharacterNavigated = true，reset');
-              setDefaultCharacterNavigated(true);
+  const { mode, setMode } = useDialogMode();
 
-            }
-          }
-        }
-        // 延迟一些时间再关闭加载状态，以确保UI正确渲染
-        setTimeout(() => setIsInitializing(false), 500);
-      } catch (e) {
-        // eslint-disable-next-line no-console
-        console.warn('[DefaultCharacterImporter] 初始化失败:', e);
-        setIsInitializing(false); // 即使失败也关闭加载状态
-      }
-    })();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
-
-  // 新增：启动时读取character_view_mode并缓存
-  useEffect(() => {
-    (async () => {
-      try {
-        const mode = await AsyncStorage.getItem('character_view_mode');
-        if (
-          mode === 'large' ||
-          mode === 'small' ||
-          mode === 'vertical'
-        ) {
-          characterViewModeCache = mode;
-        } else {
-          characterViewModeCache = null;
-        }
-      } catch (e) {
-        characterViewModeCache = null;
-      }
-    })();
-  }, []);
-
-  // 兜底逻辑：如果 context 里查不到角色，尝试直接从 characters.json 读取
-  useEffect(() => {
-    if (
-      selectedConversationId &&
-      !selectedCharacter &&
-      !charactersLoading // 避免加载中时误判
-    ) {
-      // eslint-disable-next-line no-console
-      console.warn('[App] selectedCharacter not found in context, try fallback from storage:', selectedConversationId);
-      (async () => {
-        try {
-          const filePath = FileSystem.documentDirectory + 'characters.json';
-          const fileInfo = await FileSystem.getInfoAsync(filePath);
-          if (fileInfo.exists) {
-            const content = await FileSystem.readAsStringAsync(filePath);
-            const arr = JSON.parse(content);
-            if (Array.isArray(arr)) {
-              const found = arr.find((c: any) => c.id === selectedConversationId);
-              if (found) {
-                setFallbackCharacter(found);
-                // 可选：自动补充到 context，保证后续 context 可用
-              // 修正：直接传递新数组
-              if (!characters.some(c => c.id === found.id)) {
-                setCharacters([...characters, found]);
-              }
-              return;
-            }
-          }
-        }
-          setFallbackCharacter(null);
-        } catch (e) {
-          setFallbackCharacter(null);
-        }
-      })();
-    } else {
-      setFallbackCharacter(null);
-    }
-  }, [selectedConversationId, selectedCharacter, charactersLoading, setCharacters]);
-
-  // Group-related state
+  // Group chat state
   const [selectedGroupId, setSelectedGroupId] = useState<string | null>(null);
   const [groups, setGroups] = useState<Group[]>([]);
   const [groupMessages, setGroupMessages] = useState<GroupMessage[]>([]);
@@ -595,15 +211,17 @@ const App = () => {
   const [groupMembers, setGroupMembers] = useState<Character[]>([]);
   const [isGroupManageModalVisible, setIsGroupManageModalVisible] = useState(false);
   const [disbandedGroups, setDisbandedGroups] = useState<string[]>([]);
-  const [groupBackgrounds, setGroupBackgrounds] = useState<Record<string, string | undefined>>({}); // 新增
+  const [groupBackgrounds, setGroupBackgrounds] = useState<Record<string, string | undefined>>({});
 
-  // UI state
+  // UI state - sidebar and modals
   const [isSidebarVisible, setIsSidebarVisible] = useState(false);
   const [isSettingsSidebarVisible, setIsSettingsSidebarVisible] = useState(false);
   const [isMemoSheetVisible, setIsMemoSheetVisible] = useState(false);
   const [isKeyboardVisible, setKeyboardVisible] = useState(false);
   const [isNovelAITestVisible, setIsNovelAITestVisible] = useState(false);
   const [isVNDBTestVisible, setIsVNDBTestVisible] = useState(false);
+  const [groupSettingsSidebarVisible, setGroupSettingsSidebarVisible] = useState(false);
+  const [isHistoryModalVisible, setHistoryModalVisible] = useState(false);
 
   // Save/Load system states
   const [isSaveManagerVisible, setIsSaveManagerVisible] = useState(false);
@@ -611,72 +229,210 @@ const App = () => {
   const [isPreviewMode, setIsPreviewMode] = useState(false);
   const [currentPreviewSave, setCurrentPreviewSave] = useState<ChatSave | null>(null);
   const [previewBannerVisible, setPreviewBannerVisible] = useState(false);
-  const handleSendUnknownTagTest = () => {
-    if (!selectedConversationId) return;
-    handleSendMessage('<anything>123456</anything>', 'user');
-  };
-  // 添加一个跟踪处理过的图片URL的集合
+
+  // Message processing state
   const [processedImageUrls, setProcessedImageUrls] = useState<Set<string>>(new Set());
-  // 添加一个引用来跟踪处理中的任务ID
   const processingTaskIds = useRef<Set<string>>(new Set());
-
-  // Add ref to track if first message needs to be sent
   const firstMessageSentRef = useRef<Record<string, boolean>>({});
-
-  // Add ref to track if first_mes has been sent for each character
   const firstMesSentRef = useRef<Record<string, boolean>>({});
-
-  // Add auto-message feature variables
+  
+  // Auto-message feature state
   const [autoMessageEnabled, setAutoMessageEnabled] = useState(true);
   const autoMessageTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const autoMessageIntervalRef = useRef<number>(5); // Default 5 minutes
+  const autoMessageIntervalRef = useRef<number>(5);
   const lastMessageTimeRef = useRef<number>(Date.now());
-  const waitingForUserReplyRef = useRef<boolean>(false); // Track if bot is waiting for user reply
+  const waitingForUserReplyRef = useRef<boolean>(false);
 
-  // Add state to preserve chat scroll positions
+  // Chat scroll positions with improved handling
   const [chatScrollPositions, setChatScrollPositions] = useState<Record<string, number>>({});
-  
-  // Add new state for memory management
+  const scrollPositionUpdateTimeoutRef = useRef<any>(null);
+
+  // Memory management state
   const [memoryFacts, setMemoryFacts] = useState<any[]>([]);
   const [isMemoryPanelVisible, setIsMemoryPanelVisible] = useState(false);
   const [messageMemoryState, setMessageMemoryState] = useState<Record<string, string>>({});
 
-  // Add state to toggle search functionality
+  // Search and TTS state
   const [braveSearchEnabled, setBraveSearchEnabled] = useState<boolean>(false);
-  
-  // Add TTS enhancer state
   const [isTtsEnhancerEnabled, setIsTtsEnhancerEnabled] = useState(false);
   const [isTtsEnhancerModalVisible, setIsTtsEnhancerModalVisible] = useState(false);
 
-  // Get dialog mode
-  
-
-  // Add new ref for video component
+  // Video player state
   const videoRef = useRef<Video | null>(null);
   const [isVideoReady, setIsVideoReady] = useState(false);
   const [videoError, setVideoError] = useState<string | null>(null);
 
-  // Add new state to track regenerating message
+  // Message state
   const [regeneratingMessageId, setRegeneratingMessageId] = useState<string | null>(null);
-
-  // Add transient error state for temporary error messages
   const [transientError, setTransientError] = useState<string | null>(null);
 
-  // 新增：后处理相关状态
+  // Background image processing state
   const [isExtraBgGenerating, setIsExtraBgGenerating] = useState(false);
   const [extraBgTaskId, setExtraBgTaskId] = useState<string | null>(null);
   const [extraBgError, setExtraBgError] = useState<string | null>(null);
   const [extraBgImage, setExtraBgImage] = useState<string | null>(null);
   const extraBgGenAbortRef = useRef<{ aborted: boolean }>({ aborted: false });
-  const extraBgGenCounter = useRef<number>(0); // 用于覆盖生成
-
-  // 新增：用于记录已生成图片的AI消息ID集合
+  const extraBgGenCounter = useRef<number>(0);
   const processedExtraBgMessageIds = useRef<Set<string>>(new Set());
 
-  // 新增：持久化已处理AI消息ID集合
-  const EXTRA_BG_IDS_KEY_PREFIX = 'extraBgProcessedIds-';
+  // UI visibility state
+  const [isTopBarVisible, setIsTopBarVisible] = useState(true);
+  const [isTestMarkdownVisible, setIsTestMarkdownVisible] = useState(false);
 
-  // 加载已处理集合
+  // Calculate selected character information with memoization
+  const selectedCharacter: Character | undefined | null = useMemo(() => 
+    selectedConversationId ? characters.find((char: Character) => char.id === selectedConversationId) : null,
+  [selectedConversationId, characters]);
+  
+  const characterToUse = useMemo(() => fallbackCharacter || selectedCharacter, 
+    [fallbackCharacter, selectedCharacter]);
+
+  // Selected group with memoization
+  const selectedGroup: Group | null = useMemo(() => 
+    selectedGroupId ? groups.find(g => g.groupId === selectedGroupId) || null : null,
+  [selectedGroupId, groups]);
+
+  // Filtered messages - remove "continue" user messages
+  const filteredMessages = useMemo(() => {
+    return messages.filter(msg => {
+      if (msg.sender === 'user' && msg.metadata && msg.metadata.isContinue === true) {
+        return false;
+      }
+      return true;
+    });
+  }, [messages]);
+
+  // Character ID for memo overlay
+  const characterIdForMemo = useMemo(() => selectedConversationId || '', [selectedConversationId]);
+  const conversationIdForMemo = useMemo(() => 
+    selectedConversationId ? `conversation-${selectedConversationId}` : '',
+  [selectedConversationId]);
+
+  // Load user groups
+  const loadUserGroups = useCallback(async () => {
+    if (!user) return;
+    
+    try {
+      const userGroups = await getUserGroups(user);
+      const filteredGroups = userGroups.filter(group => !disbandedGroups.includes(group.groupId));
+      setGroups(filteredGroups);
+      console.log(`[Index] Loaded ${filteredGroups.length} groups (filtered from ${userGroups.length})`);
+    } catch (error) {
+      console.error('Failed to load user groups:', error);
+    }
+  }, [user, disbandedGroups]);
+
+  // Load group messages
+  const loadGroupMessages = useCallback(async (groupId: string) => {
+    if (!groupId) return;
+
+    try {
+      const messages = await getGroupMessages(groupId);
+      setGroupMessages(messages);
+    } catch (error) {
+      console.error('Failed to load group messages:', error);
+    }
+  }, []);
+
+  // Handle group disbanded
+  const handleGroupDisbanded = useCallback((groupId: string) => {
+    console.log(`[Index] Group disbanded: ${groupId}`);
+    
+    setDisbandedGroups(prev => [...prev, groupId]);
+    
+    if (selectedGroupId === groupId) {
+      setSelectedGroupId(null);
+      setGroupMessages([]);
+      setIsGroupMode(false);
+      
+      if (selectedConversationId) {
+        console.log(`[Index] Switching back to character conversation: ${selectedConversationId}`);
+      } else if (conversations.length > 0) {
+        setSelectedConversationId(conversations[0].id);
+        console.log(`[Index] Switching to first available character: ${conversations[0].id}`);
+      }    
+    }
+    
+    loadUserGroups();
+  }, [selectedGroupId, selectedConversationId, conversations, loadUserGroups]);
+
+  // Handle group background changed
+  const handleGroupBackgroundChanged = useCallback((groupId: string, newBackground: string | undefined) => {
+    setGroupBackgrounds(prev => ({
+      ...prev,
+      [groupId]: newBackground,
+    }));
+    
+    setGroups(prevGroups =>
+      prevGroups.map(g =>
+        g.groupId === groupId ? { ...g, backgroundImage: newBackground } : g
+      )
+    );
+  }, []);
+
+  // Toggle sidebars with optimized animations
+  const toggleSettingsSidebar = useCallback(() => {
+    const newIsVisible = !isSettingsSidebarVisible;
+    setIsSettingsSidebarVisible(newIsVisible);
+    
+    Animated.timing(settingsSlideAnim, {
+      toValue: newIsVisible ? SIDEBAR_WIDTH : 0,
+      duration: 300,
+      easing: Easing.inOut(Easing.ease),
+      useNativeDriver: true,
+    }).start();
+  }, [isSettingsSidebarVisible, settingsSlideAnim, SIDEBAR_WIDTH]);
+
+  const toggleSidebar = useCallback(() => {
+    const newIsVisible = !isSidebarVisible;
+    setIsSidebarVisible(newIsVisible);
+    
+    Animated.timing(contentSlideAnim, {
+      toValue: newIsVisible ? SIDEBAR_WIDTH : 0,
+      duration: 300,
+      easing: Easing.inOut(Easing.ease),
+      useNativeDriver: true,
+    }).start();
+  }, [isSidebarVisible, contentSlideAnim, SIDEBAR_WIDTH]);
+
+  const toggleGroupSettingsSidebar = useCallback(() => {
+    const newIsVisible = !groupSettingsSidebarVisible;
+    setGroupSettingsSidebarVisible(newIsVisible);
+    
+    Animated.timing(groupSettingsSidebarAnim, {
+      toValue: newIsVisible ? SIDEBAR_WIDTH : 0,
+      duration: 300,
+      easing: Easing.inOut(Easing.ease),
+      useNativeDriver: true,
+    }).start();
+  }, [groupSettingsSidebarVisible, groupSettingsSidebarAnim, SIDEBAR_WIDTH]);
+
+  // Toggle save manager with preview mode handling
+  const toggleSaveManager = useCallback(() => {
+    if (isPreviewMode) {
+      Alert.alert(
+        'Exit Preview Mode',
+        'You are currently previewing a saved chat. Do you want to exit preview mode?',
+        [
+          { text: 'Cancel', style: 'cancel' },
+          { 
+            text: 'Exit Preview', 
+            onPress: () => {
+              // Using the function form to avoid stale closures
+              (async () => {
+                await exitPreviewMode();
+                setIsSaveManagerVisible(prev => !prev);
+              })();
+            }
+          }
+        ]
+      );
+    } else {
+      setIsSaveManagerVisible(prev => !prev);
+    }
+  }, [isPreviewMode]);
+
+  // Save and load memory
   const loadProcessedExtraBgMessageIds = useCallback(async (characterId: string) => {
     try {
       const key = `${EXTRA_BG_IDS_KEY_PREFIX}${characterId}`;
@@ -692,321 +448,40 @@ const App = () => {
     } catch (e) {
       processedExtraBgMessageIds.current = new Set();
     }
-  }, []);
+  }, [EXTRA_BG_IDS_KEY_PREFIX]);
 
-  // 保存已处理集合
   const saveProcessedExtraBgMessageIds = useCallback(async (characterId: string) => {
     try {
       const key = `${EXTRA_BG_IDS_KEY_PREFIX}${characterId}`;
-      await AsyncStorage.setItem(key, JSON.stringify(Array.from(processedExtraBgMessageIds.current)));
+      const operation = AsyncStorage.setItem(key, JSON.stringify(Array.from(processedExtraBgMessageIds.current)));
+      asyncStorageOperations.current.add(operation);
+      await operation;
+      asyncStorageOperations.current.delete(operation);
     } catch (e) {
-      // ignore
+      // Ignore errors
     }
-  }, []);
+  }, [EXTRA_BG_IDS_KEY_PREFIX]);
 
-  // Toggle brave search function
-  const toggleBraveSearch = () => {
-    const newState = !braveSearchEnabled;
-    setBraveSearchEnabled(newState);
-    // Store preference
-    AsyncStorage.setItem('braveSearchEnabled', JSON.stringify(newState))
-      .catch(err => console.error('[App] Failed to save search preference:', err));
-    
-    // Show feedback toast
-    Alert.alert(
-      newState ? '已启用搜索' : '已禁用搜索',
-      newState 
-        ? '现在AI可以使用Brave搜索来回答需要最新信息的问题' 
-        : '已关闭网络搜索功能，AI将只使用已有知识回答问题',
-      [{ text: '确定', style: 'default' }]
-    );
-  };
-  
-  // Load saved search preference
-useEffect(() => {
-    if (user) {
-      loadUserGroups();
-    }
-  }, [user]);
-
-  const loadUserGroups = async () => {
-    if (!user) return;
-    
-    try {
-      const userGroups = await getUserGroups(user);
-      // Filter out disbanded groups
-      const filteredGroups = userGroups.filter(group => !disbandedGroups.includes(group.groupId));
-      setGroups(filteredGroups);
-      console.log(`[Index] Loaded ${filteredGroups.length} groups (filtered from ${userGroups.length})`);
-    } catch (error) {
-      console.error('Failed to load user groups:', error);
-    }
-  };
-
-   // Load saved search preference (来自源1)
-   useEffect(() => {
-    const loadSearchPreference = async () => {
-      try {
-        const savedPref = await AsyncStorage.getItem('braveSearchEnabled');
-        if (savedPref !== null) {
-          setBraveSearchEnabled(JSON.parse(savedPref));
-        }
-      } catch (error) {
-        console.error('[App] Failed to load search preference:', error);
-      }
-    };
-
-    loadSearchPreference();
-  }, []); // 空依赖数组，仅在挂载时运行
-
-  // Load TTS enhancer settings when component mounts (来自源2)
-  useEffect(() => {
-    const loadTtsEnhancerSettings = async () => {
-      try {
-        // 注意：确保 ttsService 在此作用域内可用
-        const settings = ttsService.getEnhancerSettings();
-        setIsTtsEnhancerEnabled(settings.enabled);
-      } catch (error) {
-        console.error('[App] Error loading TTS enhancer settings:', error);
-      }
-    };
-
-    loadTtsEnhancerSettings();
-  }, []); // 空依赖数组，仅在挂载时运行
-
-  // Listen for changes to enhancer settings (来自源3)
-  useEffect(() => {
-    const enhancerSettingsListener = EventRegister.addEventListener(
-      'ttsEnhancerSettingsChanged',
-      (settings: any) => {
-        // 确保 settings 存在且 enabled 是布尔值
-        if (settings && typeof settings.enabled === 'boolean') {
-          setIsTtsEnhancerEnabled(settings.enabled);
-        }
-      }
-    );
-
-    // 清理函数：在组件卸载时移除监听器
-    return () => {
-      // 确保 EventRegister.removeEventListener 接受正确的参数类型
-      if (typeof enhancerSettingsListener === 'string') {
-         EventRegister.removeEventListener(enhancerSettingsListener);
-      } else {
-         console.warn('[App] Failed to remove TTS enhancer listener: Invalid listener ID type.');
-         // 根据 EventRegister 的实际实现可能需要不同的处理
-      }
-    };
-  }, []); // 空依赖数组，监听器设置/清理仅在挂载/卸载时运行
-
-  // Load user groups when user changes (来自目标1)
-  useEffect(() => {
-    if (user) {
-      loadUserGroups();
-    } else {
-      // 可选：如果用户注销，清空组信息
-      setGroups([]);
-      setSelectedGroupId(null); // 如果有选择组ID的状态
-      setGroupMessages([]);
-      setGroupMembers([]);
-    }
-  }, [user]); // 依赖于 user
-
-  // Load group messages and members when a group is selected or groups list changes
-  useEffect(() => {
-    if (selectedGroupId) {
-      loadGroupMessages(selectedGroupId);
-
-      // Find the group to get member IDs
-      const selectedGroup = groups.find(g => g.groupId === selectedGroupId);
-      if (selectedGroup && characters) {
-        // Only load character members (exclude the current user)
-        const characterMemberIds = selectedGroup.groupMemberIds?.filter(
-          id => id !== user?.id
-        ) || [];
-        
-        // First try to find characters in the loaded characters array
-        let memberCharacters = characters.filter(
-          char => characterMemberIds.includes(char.id)
-        );
-        
-        // If we didn't find all members, try to load the missing ones
-        if (memberCharacters.length < characterMemberIds.length) {
-          console.log(`[Index] Found ${memberCharacters.length} of ${characterMemberIds.length} group members, loading missing ones...`);
-          
-          // Load missing members in the background
-          CharacterLoader.loadCharactersByIds(characterMemberIds)
-            .then(loadedMembers => {
-              if (loadedMembers && loadedMembers.length > 0) {
-                console.log(`[Index] Successfully loaded ${loadedMembers.length} group members`);
-                setGroupMembers(loadedMembers);
-              }
-            })
-            .catch(error => {
-              console.error('[Index] Error loading missing group members:', error);
-            });
-        } else {
-          setGroupMembers(memberCharacters);
-        }
-      } else {
-        setGroupMembers([]);
-      }
-    } else {
-      setGroupMessages([]);
-      setGroupMembers([]);
-    }
-  }, [selectedGroupId, groups, characters, user?.id]);
-
-  // --- Helper Functions ---
-
-  // (来自目标代码)
-  const loadGroupMessages = async (groupId: string) => {
-    if (!groupId) return; // 添加检查
-
-    try {
-       // 确保 getGroupMessages 在此作用域内可用
-      const messages = await getGroupMessages(groupId);
-      setGroupMessages(messages);
-    } catch (error) {
-      console.error('Failed to load group messages:', error);
-       // 可以考虑设置错误状态或通知用户
-    }
-  };
-
-  // Add function to handle group disbanded
-  const handleGroupDisbanded = useCallback((groupId: string) => {
-    console.log(`[Index] Group disbanded: ${groupId}`);
-    
-    // Add to disbanded groups list
-    setDisbandedGroups(prev => [...prev, groupId]);
-    
-    // If the current group is the one disbanded, clear it
-    if (selectedGroupId === groupId) {
-      setSelectedGroupId(null);
-      setGroupMessages([]);
-      setIsGroupMode(false);
-      
-      // If there's a character selected previously, switch back to it
-      if (selectedConversationId) {
-        console.log(`[Index] Switching back to character conversation: ${selectedConversationId}`);
-      } else if (conversations.length > 0) {
-        // If no previous character conversation, select the first available one
-        setSelectedConversationId(conversations[0].id);
-        console.log(`[Index] Switching to first available character: ${conversations[0].id}`);
-      }    
-    }
-    
-    // Reload groups to refresh the list
-    loadUserGroups();
-  }, [selectedGroupId, selectedConversationId, conversations]);
-
-  // 新增：群聊背景变更回调
-  const handleGroupBackgroundChanged = useCallback((groupId: string, newBackground: string | undefined) => {
-    setGroupBackgrounds(prev => ({
-      ...prev,
-      [groupId]: newBackground,
-    }));
-    // 同步更新groups中的backgroundImage字段
-    setGroups(prevGroups =>
-      prevGroups.map(g =>
-        g.groupId === groupId ? { ...g, backgroundImage: newBackground } : g
-      )
-    );
-  }, []);
-
-  // --- Component Render ---
-
-  // Modify toggleSettingsSidebar to animate settingsSlideAnim
-  const toggleSettingsSidebar = () => {
-    const newIsVisible = !isSettingsSidebarVisible;
-    setIsSettingsSidebarVisible(newIsVisible);
-    
-    // Animate the content area and settings sidebar
-    Animated.timing(settingsSlideAnim, {
-      toValue: newIsVisible ? SIDEBAR_WIDTH : 0,
-      duration: 300, // Use consistent duration of 300ms for all sidebar animations
-      easing: Easing.inOut(Easing.ease),
-      useNativeDriver: true,
-    }).start();
-  };
-
-  // Modify toggleSidebar to also animate contentSlideAnim
-  const toggleSidebar = () => {
-    const newIsVisible = !isSidebarVisible;
-    setIsSidebarVisible(newIsVisible);
-    
-    // Animate the content area
-    Animated.timing(contentSlideAnim, {
-      toValue: newIsVisible ? SIDEBAR_WIDTH : 0,
-      duration: 300, // Update to match the settings sidebar animation duration (300ms)
-      easing: Easing.inOut(Easing.ease),
-      useNativeDriver: true, // Use native driver for better performance
-    }).start();
-  };
-
-  // 新增：群聊设置侧边栏动画控制
-  const toggleGroupSettingsSidebar = () => {
-    const newIsVisible = !groupSettingsSidebarVisible;
-    setGroupSettingsSidebarVisible(newIsVisible);
-    Animated.timing(groupSettingsSidebarAnim, {
-      toValue: newIsVisible ? SIDEBAR_WIDTH : 0,
-      duration: 300,
-      easing: Easing.inOut(Easing.ease),
-      useNativeDriver: true,
-    }).start();
-  };
-
-  const toggleSaveManager = () => {
-    // If in preview mode, ask user if they want to exit
-    if (isPreviewMode) {
-      Alert.alert(
-        'Exit Preview Mode',
-        'You are currently previewing a saved chat. Do you want to exit preview mode?',
-        [
-          { text: 'Cancel', style: 'cancel' },
-          { 
-            text: 'Exit Preview', 
-            onPress: () => {
-              exitPreviewMode();
-              setIsSaveManagerVisible(!isSaveManagerVisible);
-            }
-          }
-        ]
-      );
-    } else {
-      setIsSaveManagerVisible(!isSaveManagerVisible);
-    }
-  };
-
-  const handleSaveMemo = (content: string) => {
-    // 这里可以添加保存备忘录的逻辑
-    console.log('Saving memo:', content);
-    // TODO: 将备忘录保存到本地存储或发送到服务器
-  };
-
-  // Preview a save
-  const handlePreviewSave = (save: ChatSave) => {
+  // Preview save functionality
+  const handlePreviewSave = useCallback((save: ChatSave) => {
     if (!isPreviewMode) {
-      // Store current messages for later
       setPreviewMessages(messages);
     }
     
-    // Enter preview mode and show the saved messages
     setIsPreviewMode(true);
     setCurrentPreviewSave(save);
     setMessages(save.messages);
     setIsSaveManagerVisible(false);
     
-    // Show preview banner
     setPreviewBannerVisible(true);
     
-    // Hide banner after 5 seconds
     setTimeout(() => {
       setPreviewBannerVisible(false);
     }, 5000);
-  };
+  }, [messages, isPreviewMode]);
 
-  // Exit preview mode and restore original messages
-  const exitPreviewMode = () => {
+  // Exit preview mode
+  const exitPreviewMode = useCallback(async () => {
     if (isPreviewMode && previewMessages) {
       setMessages(previewMessages);
       setIsPreviewMode(false);
@@ -1014,13 +489,12 @@ useEffect(() => {
       setPreviewMessages(null);
       setPreviewBannerVisible(false);
     }
-  };
+  }, [isPreviewMode, previewMessages]);
 
-  // Update handleLoadSave function to properly restore NodeST chat history
-  const handleLoadSave = async (save: ChatSave) => {
+  // Load save
+  const handleLoadSave = useCallback(async (save: ChatSave) => {
     if (!selectedConversationId) return;
     
-    // First ensure NodeST chat history is restored (this should already happen in SaveManager)
     if (save.nodestChatHistory) {
       console.log('[App] Verifying NodeST chat history restoration');
       try {
@@ -1035,46 +509,105 @@ useEffect(() => {
       console.warn('[App] Save does not contain NodeST chat history');
     }
     
-    // Now clear all messages
-    clearMessages(selectedConversationId)
-      .then(async () => {
-        // Add each message from the save
-        for (const msg of save.messages) {
-          await addMessage(selectedConversationId, msg);
-        }
+    try {
+      await clearMessages(selectedConversationId);
+      
+      // Batch adding messages for better performance
+      const messagePromises = save.messages.map(msg => addMessage(selectedConversationId, msg));
+      await Promise.all(messagePromises);
+      
+      setMessages(save.messages);
+      setIsSaveManagerVisible(false);
+      setIsPreviewMode(false);
+      setPreviewMessages(null);
+      setCurrentPreviewSave(null);
+      
+      Alert.alert('Success', 'Chat restored successfully to saved point!');
+    } catch (error) {
+      console.error('Error restoring chat:', error);
+      Alert.alert('Error', 'Failed to restore chat state.');
+      
+      exitPreviewMode();
+    }
+  }, [selectedConversationId, clearMessages, addMessage, exitPreviewMode]);
+
+  // Send message with optimized handling
+  const sendMessageInternal = useCallback(async (newMessage: string, sender: 'user' | 'bot', isLoading = false) => {
+    if (!selectedConversationId) {
+      console.warn('No conversation selected.');
+      return null;
+    }
+
+    const isErrorMessage = newMessage.includes("抱歉，处理消息时出现了错误") || 
+                           newMessage.includes("抱歉，无法重新生成回复") ||
+                           newMessage.includes("发生错误，无法重新生成") ||
+                           newMessage.includes("处理图片时出现了错误") ||
+                           newMessage.includes("生成图片时出现了错误") ||
+                           newMessage.includes("编辑图片时出现了错误") ||
+                           newMessage.includes("发送消息时出现了错误");
+
+    if (isErrorMessage) {
+      setTransientError("处理消息时出现了错误");
+      setTimeout(() => setTransientError(null), 5000);
+      
+      if (selectedConversationId) {
+        await clearTransientMessages(selectedConversationId);
+      }
+      return null;
+    }
+
+    const messageId = `${Date.now()}-${Math.random().toString(36).substring(2, 15)}`;
+    
+    let metadata = undefined;
+    if (sender === 'bot' && !isLoading) {
+      const isErrorMessage = newMessage.includes("抱歉，处理消息时出现了错误") || 
+                             newMessage.includes("抱歉，无法重新生成回复") ||
+                             newMessage.includes("发生错误，无法重新生成") ||
+                             newMessage.includes("处理图片时出现了错误") ||
+                             newMessage.includes("生成图片时出现了错误") ||
+                             newMessage.includes("编辑图片时出现了错误") ||
+                             newMessage.includes("发送消息时出现了错误");
+
+      if (!isErrorMessage) {
+        const existingBotMessages = messages.filter(m => 
+          m.sender === 'bot' && 
+          !m.isLoading && 
+          !m.metadata?.isErrorMessage && 
+          !m.metadata?.error
+        );
+        const aiIndex = existingBotMessages.length;
         
-        // Update local state
-        setMessages(save.messages);
-        setIsSaveManagerVisible(false);
-        setIsPreviewMode(false);
-        setPreviewMessages(null);
-        setCurrentPreviewSave(null);
-        
-        Alert.alert('Success', 'Chat restored successfully to saved point!');
-      })
-      .catch(error => {
-        console.error('Error restoring chat:', error);
-        Alert.alert('Error', 'Failed to restore chat state.');
-        
-        // Exit preview mode on error
-        exitPreviewMode();
-      });
-  };
+        metadata = { aiIndex };
+      } else {
+        metadata = { isErrorMessage: true };
+      }
+    }
 
-  // Handle chat save creation
-  const handleSaveCreated = (save: ChatSave) => {
-    console.log('Save created:', save.id);
-  };
+    const newMessageObj: Message = {
+      id: messageId,
+      text: newMessage,
+      sender: sender,
+      isLoading: isLoading,
+      timestamp: Date.now(),
+      metadata
+    };
 
-  useEffect(() => {
-    setSelectedConversationId(conversations.length > 0 ? conversations[0].id : null);
-  }, [conversations]);
+    try {
+      await addMessage(selectedConversationId, newMessageObj);
+    } catch (err) {
+      setTransientError("处理消息时出现了错误");
+      setTimeout(() => setTransientError(null), 5000);
+      
+      if (selectedConversationId) {
+        await clearTransientMessages(selectedConversationId);
+      }
+      return null;
+    }
+    return messageId;
+  }, [selectedConversationId, messages, clearTransientMessages, addMessage]);
 
-  // 确保每次消息更新时重新获取消息
-  const currentMessages = selectedConversationId ? getMessages(selectedConversationId) : [];
-
-  const handleSendMessage = async (newMessage: string, sender: 'user' | 'bot', isLoading = false, metadata?: Record<string, any>) => {
-    // If in preview mode, exit it first
+  const handleSendMessage = useCallback(async (newMessage: string, sender: 'user' | 'bot', isLoading = false, metadata?: Record<string, any>) => {
+    // Exit preview mode if active
     if (isPreviewMode) {
       Alert.alert(
         'Exit Preview Mode',
@@ -1083,9 +616,9 @@ useEffect(() => {
           { text: 'Cancel', style: 'cancel' },
           { 
             text: 'Send & Exit Preview', 
-            onPress: () => {
-              exitPreviewMode();
-              sendMessageInternal(newMessage, sender, isLoading);
+            onPress: async () => {
+              await exitPreviewMode();
+              await sendMessageInternal(newMessage, sender, isLoading);
             }
           }
         ]
@@ -1093,7 +626,7 @@ useEffect(() => {
       return;
     }
 
-    // 检查是否为错误提示消息（仅用于临时提示，不加入消息流）
+    // Check for transient errors
     const isTransientError = metadata?.isErrorMessage === true ||
       newMessage.includes("抱歉，处理消息时出现了错误") ||
       newMessage.includes("抱歉，无法重新生成回复") ||
@@ -1106,28 +639,29 @@ useEffect(() => {
 
     if (isTransientError) {
       setTransientError("处理消息时出现了错误");
-      setTimeout(() => setTransientError(null), 5000); // 5秒后自动消失
-      // --- 新增：自动清理最后一条用户消息和bot isLoading消息 ---
+      setTimeout(() => setTransientError(null), 5000);
+      
       if (selectedConversationId) {
         await clearTransientMessages(selectedConversationId);
       }
       return;
     }
 
+    // Send the message
     let messageId: string | null = null;
     try {
       messageId = await sendMessageInternal(newMessage, sender, isLoading);
     } catch (err) {
       setTransientError("处理消息时出现了错误");
-      setTimeout(() => setTransientError(null), 5000); // 5秒后自动消失
-      // --- 新增：自动清理最后一条用户消息和bot isLoading消息 ---
+      setTimeout(() => setTransientError(null), 5000);
+      
       if (selectedConversationId) {
         await clearTransientMessages(selectedConversationId);
       }
       return;
     }
 
-    // === 新实现：直接追加消息到本地状态 ===
+    // Update local state
     setMessages(prev => [
       ...prev,
       {
@@ -1140,155 +674,69 @@ useEffect(() => {
       }
     ]);
     
-    // If it's a user message, update memory state to "processing"
+    // Process memory for user messages
     if (sender === 'user' && !isLoading && messageId) {
       setMessageMemoryState(prev => ({
         ...prev,
         [messageId]: 'processing'
       }));
       
-      // Process memory after a short delay to allow UI to update
       setTimeout(() => {
         processMessageMemory(messageId, newMessage, selectedConversationId);
       }, 500);
     }
 
-    // If user is sending a message, clear the "waiting for reply" flag
+    // Update user reply state
     if (sender === 'user' && !isLoading) {
       waitingForUserReplyRef.current = false;
-      console.log('[App] User sent a message, no longer waiting for reply');
-      
-      // Clear unread messages count when user sends a message
       updateUnreadMessagesCount(0);
     }
 
-    // Reset the auto message timer after any message is sent
+    // Reset auto message timer
     if (!isLoading) {
       lastMessageTimeRef.current = Date.now();
       setupAutoMessageTimer();
     }
 
-    // Pass search preference to NodeST manager when applicable
+    // Update search preference
     if (sender === 'user' && !isLoading) {
-      // Inform NodeST about search preference
       try {
         await NodeSTManager.setSearchEnabled(braveSearchEnabled);
-        console.log(`[App] Search functionality ${braveSearchEnabled ? 'enabled' : 'disabled'}`);
       } catch (error) {
         console.error('[App] Failed to set search preference:', error);
       }
     }
-  };
+  }, [
+    isPreviewMode, exitPreviewMode, selectedConversationId,
+    clearTransientMessages, sendMessageInternal, braveSearchEnabled
+  ]);
 
-  // Internal helper function to actually send the message
-  const sendMessageInternal = async (newMessage: string, sender: 'user' | 'bot', isLoading = false) => {
-    if (!selectedConversationId) {
-      console.warn('No conversation selected.');
-      return null;
-    }
-
-    // 错误消息不再插入消息流
-    const isErrorMessage = newMessage.includes("抱歉，处理消息时出现了错误") || 
-                           newMessage.includes("抱歉，无法重新生成回复") ||
-                           newMessage.includes("发生错误，无法重新生成") ||
-                           newMessage.includes("处理图片时出现了错误") ||
-                           newMessage.includes("生成图片时出现了错误") ||
-                           newMessage.includes("编辑图片时出现了错误") ||
-                           newMessage.includes("发送消息时出现了错误");
-
-    if (isErrorMessage) {
-      setTransientError("处理消息时出现了错误");
-      setTimeout(() => setTransientError(null), 5000); // 5秒后自动消失
-      // --- 新增：自动清理最后一条用户消息和bot isLoading消息 ---
-      if (selectedConversationId) {
-        await clearTransientMessages(selectedConversationId);
-      }
-      return null;
-    }
-
-    const messageId = `${Date.now()}-${Math.random().toString(36).substring(2, 15)}`;
-    
-    // Calculate aiIndex for bot messages
-    let metadata = undefined;
-    if (sender === 'bot' && !isLoading) {
-      // Check if this is an error message by content
-      const isErrorMessage = newMessage.includes("抱歉，处理消息时出现了错误") || 
-                             newMessage.includes("抱歉，无法重新生成回复") ||
-                             newMessage.includes("发生错误，无法重新生成") ||
-                             newMessage.includes("处理图片时出现了错误") ||
-                             newMessage.includes("生成图片时出现了错误") ||
-                             newMessage.includes("编辑图片时出现了错误") ||
-                             newMessage.includes("发送消息时出现了错误");
-
-      // Only count non-error bot messages for aiIndex calculation
-      if (!isErrorMessage) {
-        const existingBotMessages = messages.filter(m => 
-          m.sender === 'bot' && 
-          !m.isLoading && 
-          !m.metadata?.isErrorMessage && 
-          !m.metadata?.error
-        );
-        const aiIndex = existingBotMessages.length;
-        
-        metadata = { aiIndex };
-        console.log(`[App] Assigning aiIndex ${aiIndex} to new bot message`);
-      } else {
-        // For error messages, add error flag but don't include in aiIndex calculation
-        metadata = { isErrorMessage: true };
-        console.log(`[App] Message identified as error message, not assigning aiIndex`);
-      }
-    }
-
-    const newMessageObj: Message = {
-      id: messageId,
-      text: newMessage,
-      sender: sender,
-      isLoading: isLoading,
-      timestamp: Date.now(),
-      metadata // Add metadata with aiIndex for bot messages or error flag for error messages
-    };
-
-    // 只在Context中更新消息，本地状态通过useEffect自动更新
-    try {
-      await addMessage(selectedConversationId, newMessageObj);
-    } catch (err) {
-      setTransientError("处理消息时出现了错误");
-      setTimeout(() => setTransientError(null), 5000); // 5秒后自动消失
-      // --- 新增：自动清理最后一条用户消息和bot isLoading消息 ---
-      if (selectedConversationId) {
-        await clearTransientMessages(selectedConversationId);
-      }
-      return null;
-    }
-    return messageId;
-  };
-
-  const handleSendGroupMessage = async (text: string) => {
+  // Handle group messages
+  const handleSendGroupMessage = useCallback(async (text: string) => {
     if (!selectedGroupId || !user) return;
     
     try {
       const newMessage = await sendGroupMessage(user, selectedGroupId, text);
       if (newMessage) {
-        // Update local state with the new message
         setGroupMessages(prev => [...prev, newMessage]);
       }
     } catch (error) {
       console.error('Failed to send group message:', error);
       Alert.alert('Error', 'Failed to send message. Please try again.');
     }
-  };
+  }, [selectedGroupId, user]);
 
-  const handleRegenerateMessage = async (messageId: string, _messageIndex: number) => {
+  // Message regeneration with optimized saving
+  const handleRegenerateMessage = useCallback(async (messageId: string, _messageIndex: number) => {
     if (!selectedConversationId) {
       console.warn('No conversation selected for regeneration');
       return;
     }
   
     try {
-      // Set regenerating message ID to show loading indicator on button
       setRegeneratingMessageId(messageId);
   
-      // 获取角色 first_mes 内容（用于识别 first_mes 消息）
+      // Get first_mes content
       let firstMesText = '';
       try {
         const char = fallbackCharacter || selectedCharacter;
@@ -1300,7 +748,7 @@ useEffect(() => {
         firstMesText = '';
       }
   
-      // 找出要重新生成的消息在列表中的实际位置
+      // Find message position
       const targetMsgIndex = messages.findIndex(msg => msg.id === messageId);
       if (targetMsgIndex === -1) {
         console.warn('Target message not found:', messageId);
@@ -1308,40 +756,37 @@ useEffect(() => {
         return;
       }
   
-    // === 修正点：只排除first_mes，不排除html页面 ===
-    const botMessages = messages.filter(msg =>
-      msg.sender === 'bot' &&
-      !msg.isLoading &&
-      !msg.metadata?.isErrorMessage &&
-      !msg.metadata?.error &&
-      (firstMesText ? msg.text !== firstMesText : true) &&
-      !msg.metadata?.isFirstMes
-      // 不再排除 isWebViewContent(msg.text)
-    );
+      // Filter bot messages
+      const botMessages = messages.filter(msg =>
+        msg.sender === 'bot' &&
+        !msg.isLoading &&
+        !msg.metadata?.isErrorMessage &&
+        !msg.metadata?.error &&
+        (firstMesText ? msg.text !== firstMesText : true) &&
+        !msg.metadata?.isFirstMes
+      );
 
-
-    // 找到目标消息在真实AI消息中的索引（aiIndex）
-    const targetMsg = messages[targetMsgIndex];
-    let aiIndex = -1;
-    if (targetMsg) {
-      aiIndex = botMessages.findIndex(m => m.id === targetMsg.id);
-    }
-
-    if (aiIndex === -1) {
-      // 兼容极端情况：如果是first_mes，aiIndex=0
-      if (firstMesText && targetMsg?.text === firstMesText) {
-        aiIndex = 0;
-      } else {
-        console.warn('Target message not found in filtered botMessages:', messageId);
-        setRegeneratingMessageId(null);
-        return;
+      // Find target AI index
+      const targetMsg = messages[targetMsgIndex];
+      let aiIndex = -1;
+      if (targetMsg) {
+        aiIndex = botMessages.findIndex(m => m.id === targetMsg.id);
       }
-    }
+
+      if (aiIndex === -1) {
+        if (firstMesText && targetMsg?.text === firstMesText) {
+          aiIndex = 0;
+        } else {
+          console.warn('Target message not found in filtered botMessages:', messageId);
+          setRegeneratingMessageId(null);
+          return;
+        }
+      }
   
-      // 创建一个只包含目标消息之前的消息列表(包含目标消息的上一条用户消息)
+      // Create messages to keep
       let messagesToKeep = messages.slice(0, targetMsgIndex);
   
-      // 确保保留目标消息前的用户消息（如果是机器人消息）
+      // Ensure we keep user messages
       if (targetMsg.sender === 'bot' && targetMsgIndex > 0) {
         const prevMsg = messages[targetMsgIndex - 1];
         if (prevMsg && prevMsg.sender === 'user') {
@@ -1349,7 +794,7 @@ useEffect(() => {
         }
       }
   
-      // 复制用于显示的消息列表，并添加一个loading状态的消息在原位置
+      // Display loading state
       const displayMessages = [
         ...messagesToKeep,
         {
@@ -1360,37 +805,32 @@ useEffect(() => {
         }
       ];
   
-      // 更新UI显示，展示loading状态(无闪烁)
       setMessages(displayMessages);
 
+      // Get API settings
+      const apiSettings = getApiSettings();
+      let apiKey = '';
+      if (apiSettings.apiProvider === 'openai-compatible' && apiSettings.OpenAIcompatible?.enabled) {
+        apiKey = apiSettings.OpenAIcompatible.apiKey || '';
+      } else if (apiSettings.apiProvider === 'openrouter' && apiSettings.openrouter?.enabled) {
+        apiKey = apiSettings.openrouter.apiKey || '';
+      } else {
+        apiKey = user?.settings?.chat?.characterApiKey || '';
+      }
 
-        // === 修正点：获取当前api设置和apiKey ===
-        const apiSettings = getApiSettings(); // 应返回完整的apiSettings对象
-        // 优先用OpenAIcompatible/openrouter的key，否则fallback到characterApiKey
-        let apiKey = '';
-        if (apiSettings.apiProvider === 'openai-compatible' && apiSettings.OpenAIcompatible?.enabled) {
-          apiKey = apiSettings.OpenAIcompatible.apiKey || '';
-        } else if (apiSettings.apiProvider === 'openrouter' && apiSettings.openrouter?.enabled) {
-          apiKey = apiSettings.openrouter.apiKey || '';
-        } else {
-          apiKey = user?.settings?.chat?.characterApiKey || '';
-        }
-
-
-      // 调用 NodeSTManager，传递严格的 aiIndex+1
+      // Regenerate message
       const result = await NodeSTManager.regenerateFromMessage({
-        messageIndex: aiIndex + 1, // 用严格过滤后的aiIndex+1
+        messageIndex: aiIndex + 1,
         conversationId: selectedConversationId,
         apiKey,
         apiSettings,
         character: fallbackCharacter || selectedCharacter || undefined
       });
   
-      // 构建最终消息列表
+      // Process result
       let finalMessages = [...messagesToKeep];
   
       if (result.success && result.text) {
-        // 生成成功，添加新的回复消息在原位置
         finalMessages.push({
           id: `${messageId}-regenerated-${Date.now()}`,
           text: result.text,
@@ -1405,20 +845,18 @@ useEffect(() => {
           }
         });
       } else {
-        // 生成失败，仅弹出 notification
         setTransientError("处理消息时出现了错误");
-        setTimeout(() => setTransientError(null), 5000); // 5秒后自动消失
+        setTimeout(() => setTransientError(null), 5000);
         setRegeneratingMessageId(null);
         return;
       }
   
-      // 将消息保存到数据库
+      // Save messages
       await clearMessages(selectedConversationId);
-      for (const msg of finalMessages) {
-        await addMessage(selectedConversationId, msg);
-      }
+      const savePromises = finalMessages.map(msg => addMessage(selectedConversationId, msg));
+      await Promise.all(savePromises);
   
-      // 最后更新UI
+      // Update UI
       setMessages(finalMessages);
       setRegeneratingMessageId(null);
     } catch (error) {
@@ -1426,25 +864,366 @@ useEffect(() => {
       
       setRegeneratingMessageId(null);
       setTransientError("处理消息时出现了错误");
-      setTimeout(() => setTransientError(null), 5000); // 5秒后自动消失
+      setTimeout(() => setTransientError(null), 5000);
       return;
     }
-  };
+  }, [
+    selectedConversationId, messages, fallbackCharacter, 
+    selectedCharacter, clearMessages, addMessage, user
+  ]);
 
-  // 监听 messagesMap 的变化, 只在切换会话时同步
-  useEffect(() => {
-    if (selectedConversationId) {
-      // 添加一个调试日志，确认确实在更新消息
-      const currentMessages = getMessages(selectedConversationId);
-      console.log(`[Index] Updating messages for conversation ${selectedConversationId}: ${currentMessages.length} messages`);
-      
-      // 确保总是创建新的数组引用，强制触发依赖项变化
-      setMessages([...currentMessages]);
+  // Edit AI message
+  const handleEditAiMessage = useCallback(async (messageId: string, aiIndex: number, newContent: string) => {
+    if (!selectedConversationId) return;
+    try {
+      const result = await NodeSTManager.editAiMessageByIndex({
+        conversationId: selectedConversationId,
+        messageIndex: aiIndex + 1,
+        newContent
+      });
+      if (result.success) {
+        // Clear local messages
+        await clearMessages(selectedConversationId);
+
+        // Read NodeST history
+        let latestHistory: any = null;
+        try {
+          const historyKey = `nodest_${selectedConversationId}_history`;
+          let historyStr = null;
+          
+          if (typeof FileSystem !== 'undefined' && FileSystem.documentDirectory) {
+            const filePath = FileSystem.documentDirectory + 'nodest_characters/' + historyKey + '.json';
+            const fileInfo = await FileSystem.getInfoAsync(filePath);
+            if (fileInfo.exists) {
+              historyStr = await FileSystem.readAsStringAsync(filePath);
+            }
+          }
+          
+          if (!historyStr && typeof AsyncStorage !== 'undefined') {
+            historyStr = await AsyncStorage.getItem(historyKey);
+          }
+          
+          if (historyStr) {
+            latestHistory = JSON.parse(historyStr);
+          }
+        } catch (e) {
+          latestHistory = null;
+        }
+
+        // Convert NodeST history to messages
+        if (latestHistory && Array.isArray(latestHistory.parts)) {
+          const realMessages = latestHistory.parts.filter((msg: any) => !msg.is_d_entry);
+          const newMessages: Message[] = [];
+          let aiIndexCounter = 0;
+          
+          for (let i = 0; i < realMessages.length; i++) {
+            const msg = realMessages[i];
+            if (msg.role === 'user') {
+              newMessages.push({
+                id: `${selectedConversationId}-user-${i}-${Date.now()}`,
+                text: msg.parts?.[0]?.text ?? '',
+                sender: 'user',
+                isLoading: false,
+                timestamp: Date.now(),
+                metadata: {}
+              });
+            } else if ((msg.role === 'model' || msg.role === 'assistant')) {
+              const isFirstMes = !!msg.is_first_mes;
+              newMessages.push({
+                id: `${selectedConversationId}-bot-${i}-${Date.now()}`,
+                text: msg.parts?.[0]?.text ?? '',
+                sender: 'bot',
+                isLoading: false,
+                timestamp: Date.now(),
+                metadata: {
+                  aiIndex: isFirstMes ? 0 : aiIndexCounter
+                }
+              });
+              if (!isFirstMes) aiIndexCounter++;
+            }
+          }
+          
+          // Save messages in batch
+          const messagePromises = newMessages.map(m => addMessage(selectedConversationId, m));
+          await Promise.all(messagePromises);
+          
+          // Update UI
+          setMessages(newMessages);
+          Alert.alert('编辑成功', 'AI消息内容已更新');
+        } else {
+          setMessages([]);
+        }
+      } else {
+        setTransientError("处理消息时出现了错误");
+        setTimeout(() => setTransientError(null), 5000);
+      }
+    } catch (e) {
+      setTransientError("处理消息时出现了错误");
+      setTimeout(() => setTransientError(null), 5000);
     }
-  }, [selectedConversationId, getMessages]);
+  }, [selectedConversationId, clearMessages, addMessage]);
 
-  const handleSelectConversation = (id: string) => {
-    // Check if this is a group ID
+  // Delete AI message
+  const handleDeleteAiMessage = useCallback(async (messageId: string, aiIndex: number) => {
+    if (!selectedConversationId) return;
+    try {
+      const result = await NodeSTManager.deleteAiMessageByIndex({
+        conversationId: selectedConversationId,
+        messageIndex: aiIndex + 1
+      });
+      
+      if (result.success) {
+        // Clear local messages
+        await clearMessages(selectedConversationId);
+
+        // Read NodeST history
+        let latestHistory: any = null;
+        try {
+          const historyKey = `nodest_${selectedConversationId}_history`;
+          let historyStr = null;
+          
+          if (typeof FileSystem !== 'undefined' && FileSystem.documentDirectory) {
+            const filePath = FileSystem.documentDirectory + 'nodest_characters/' + historyKey + '.json';
+            const fileInfo = await FileSystem.getInfoAsync(filePath);
+            if (fileInfo.exists) {
+              historyStr = await FileSystem.readAsStringAsync(filePath);
+            }
+          }
+          
+          if (!historyStr && typeof AsyncStorage !== 'undefined') {
+            historyStr = await AsyncStorage.getItem(historyKey);
+          }
+          
+          if (historyStr) {
+            latestHistory = JSON.parse(historyStr);
+          }
+        } catch (e) {
+          latestHistory = null;
+        }
+
+        // Convert NodeST history to messages
+        if (latestHistory && Array.isArray(latestHistory.parts)) {
+          const realMessages = latestHistory.parts.filter((msg: any) => !msg.is_d_entry);
+          const newMessages: Message[] = [];
+          let aiIndexCounter = 0;
+          
+          for (let i = 0; i < realMessages.length; i++) {
+            const msg = realMessages[i];
+            if (msg.role === 'user') {
+              newMessages.push({
+                id: `${selectedConversationId}-user-${i}-${Date.now()}`,
+                text: msg.parts?.[0]?.text ?? '',
+                sender: 'user',
+                isLoading: false,
+                timestamp: Date.now(),
+                metadata: {}
+              });
+            } else if ((msg.role === 'model' || msg.role === 'assistant')) {
+              const isFirstMes = !!msg.is_first_mes;
+              newMessages.push({
+                id: `${selectedConversationId}-bot-${i}-${Date.now()}`,
+                text: msg.parts?.[0]?.text ?? '',
+                sender: 'bot',
+                isLoading: false,
+                timestamp: Date.now(),
+                metadata: {
+                  aiIndex: isFirstMes ? 0 : aiIndexCounter
+                }
+              });
+              if (!isFirstMes) aiIndexCounter++;
+            }
+          }
+          
+          // Save messages in batch
+          const messagePromises = newMessages.map(m => addMessage(selectedConversationId, m));
+          await Promise.all(messagePromises);
+          
+          // Update UI
+          setMessages(newMessages);
+          Alert.alert('删除成功', 'AI消息及其对应用户消息已删除');
+        } else {
+          setMessages([]);
+        }
+      } else {
+        setTransientError("处理消息时出现了错误");
+        setTimeout(() => setTransientError(null), 5000);
+      }
+    } catch (e) {
+      setTransientError("处理消息时出现了错误");
+      setTimeout(() => setTransientError(null), 5000);
+    }
+  }, [selectedConversationId, clearMessages, addMessage]);
+
+  // Handle WebView test
+  const handleWebViewTest = useCallback(async () => {
+    try {
+      const webViewHtml = await getWebViewExampleHtml();
+      
+      if (!selectedConversationId) {
+        Alert.alert('提示', '请先选择一个角色开始对话');
+        return;
+      }
+      
+      if (mode !== 'visual-novel') {
+        Alert.alert(
+          '切换到视觉小说模式',
+          '需要在视觉小说模式下才能测试WebView功能，是否切换？',
+          [
+            { text: '取消', style: 'cancel' },
+            { 
+              text: '切换', 
+              onPress: () => {
+                setMode('visual-novel');
+                setTimeout(() => {
+                  handleSendMessage(webViewHtml, 'bot');
+                }, 300);
+              }
+            }
+          ]
+        );
+        return;
+      }
+      
+      handleSendMessage(webViewHtml, 'bot');
+    } catch (error) {
+      console.error('Failed to load WebView example:', error);
+      Alert.alert('错误', '加载WebView示例失败');
+    }
+  }, [selectedConversationId, mode, setMode, handleSendMessage]);
+
+  // Reset default characters
+  const handleResetDefaultCharacterInit = useCallback(async () => {
+    await resetDefaultCharacterImported();
+    Alert.alert('已重置', '下次启动将重新导入默认角色');
+  }, []);
+
+  // Get background image
+  const getBackgroundImage = useCallback(() => {
+    if (extraBgImage) {
+      return { uri: extraBgImage };
+    }
+    if (
+      characterToUse?.enableAutoExtraBackground &&
+      characterToUse?.extrabackgroundimage
+    ) {
+      return { uri: characterToUse.extrabackgroundimage };
+    }
+    if (characterToUse?.backgroundImage) {
+      if (
+        typeof characterToUse.backgroundImage === 'object' &&
+        characterToUse.backgroundImage.localAsset
+      ) {
+        return characterToUse.backgroundImage.localAsset;
+      }
+      if (typeof characterToUse.backgroundImage === 'string') {
+        return { uri: characterToUse.backgroundImage };
+      }
+    }
+    return require('@/assets/images/default-background.jpg');
+  }, [extraBgImage, characterToUse]);
+
+  // Get group background image
+  const getGroupBackgroundImage = useCallback(() => {
+    if (selectedGroup) {
+      if (groupBackgrounds[selectedGroup.groupId]) {
+        return { uri: groupBackgrounds[selectedGroup.groupId] };
+      }
+      if (selectedGroup.backgroundImage) {
+        return { uri: selectedGroup.backgroundImage };
+      }
+    }
+    return require('@/assets/images/group-chat-background.jpg');
+  }, [selectedGroup, groupBackgrounds]);
+
+  // Reset conversation
+  const handleResetConversation = useCallback(async () => {
+    if (selectedConversationId) {
+      await clearMessages(selectedConversationId);
+      
+      if (firstMessageSentRef.current[selectedConversationId]) {
+        delete firstMessageSentRef.current[selectedConversationId];
+      }
+      
+      firstMesSentRef.current[selectedConversationId] = true;
+      
+      setTimeout(async () => {
+        if (characterToUse?.jsonData) {
+          if (messages.length > 0) {
+            console.log(`[first_mes] [reset] 当前界面已有消息，不发送first_mes到${selectedConversationId}`);
+          } else {
+            try {
+              const characterData = JSON.parse(characterToUse.jsonData);
+              let firstMes = characterData.roleCard?.first_mes;
+
+              // Apply regex scripts
+              try {
+                const globalSettings = typeof window !== 'undefined' && window.__globalSettingsCache
+                  ? window.__globalSettingsCache
+                  : await loadGlobalSettingsState();
+                  
+                if (
+                  globalSettings &&
+                  globalSettings.regexEnabled &&
+                  Array.isArray(globalSettings.regexScriptGroups) &&
+                  globalSettings.regexScriptGroups.length > 0
+                ) {
+                  const matchedGroups = globalSettings.regexScriptGroups.filter(
+                    (g: any) =>
+                      (g.bindType === 'all') ||
+                      (g.bindType === 'character' && g.bindCharacterId === selectedConversationId)
+                  );
+                  
+                  const enabledScripts: any[] = [];
+                  matchedGroups.forEach((group: any) => {
+                    if (Array.isArray(group.scripts)) {
+                      group.scripts.forEach((s: any) => {
+                        if (!s.disabled) enabledScripts.push(s);
+                      });
+                    }
+                  });
+                  
+                  if (enabledScripts.length > 0) {
+                    let NodeSTCoreClass = null;
+                    try {
+                      NodeSTCoreClass = (await import('@/NodeST/nodest/core/node-st-core')).NodeSTCore;
+                    } catch (e) {}
+                    
+                    if (NodeSTCoreClass && typeof NodeSTCoreClass.applyGlobalRegexScripts === 'function') {
+                      firstMes = NodeSTCoreClass.applyGlobalRegexScripts(
+                        firstMes,
+                        enabledScripts,
+                        2
+                      );
+                    }
+                  }
+                }
+              } catch (e) {
+                // Ignore errors
+              }
+              
+              if (firstMes) {
+                console.log(`[first_mes] [reset] 发送first_mes到${selectedConversationId}:`, firstMes);
+                addMessage(selectedConversationId, {
+                  id: `first-reset-${Date.now()}`,
+                  text: firstMes,
+                  sender: 'bot',
+                  timestamp: Date.now()
+                });
+                
+                lastMessageTimeRef.current = Date.now();
+                setupAutoMessageTimer();
+              }
+            } catch (e) {
+              console.error('Error adding first message after reset:', e);
+            }
+          }
+        }
+      }, 300);
+    }
+  }, [selectedConversationId, characterToUse, messages.length, addMessage]);
+
+  // Handle select conversation
+  const handleSelectConversation = useCallback((id: string) => {
     if (id.startsWith('group-')) {
       setSelectedGroupId(id);
       setSelectedConversationId(null);
@@ -1457,18 +1236,16 @@ useEffect(() => {
     
     setIsSidebarVisible(false);
     
-    // Reset animated value when closing sidebar with the consistent animation timing
     Animated.timing(contentSlideAnim, {
       toValue: 0,
-      duration: 300, // Updated to 300ms for consistency
+      duration: 300,
       easing: Easing.inOut(Easing.ease),
       useNativeDriver: true,
     }).start();
-  };
+  }, [contentSlideAnim]);
 
-
-  const handleAvatarPress = () => {
-    // If in preview mode, ask user if they want to exit before navigating
+  // Handle avatar press
+  const handleAvatarPress = useCallback(() => {
     if (isPreviewMode) {
       Alert.alert(
         'Exit Preview Mode',
@@ -1487,382 +1264,196 @@ useEffect(() => {
     } else {
       router.push(`/pages/character-detail?id=${selectedConversationId}`);
     }
-  };
+  }, [isPreviewMode, exitPreviewMode, router, selectedConversationId]);
 
-  const handleRateMessage = async (messageId: string, isUpvote: boolean) => {
-    // Rating functionality removed as it's not implemented in the current version
-    console.log('Message rating not implemented:', { messageId, isUpvote });
-  };
+  // Handle toggle group manage
+  const handleToggleGroupManage = useCallback(() => {
+    setIsGroupManageModalVisible(!isGroupManageModalVisible);
+  }, [isGroupManageModalVisible]);
 
-  // Add keyboard listeners
-  useEffect(() => {
-    const keyboardWillShowListener = Keyboard.addListener(
-      'keyboardWillShow',
-      () => {
-        setKeyboardVisible(true);
-        // Animate scale down smoothly
-        Animated.timing(contentScaleAnim, {
-          toValue: 0.96, // Slightly scale down
-          duration: 220,
-          easing: Easing.out(Easing.ease),
-          useNativeDriver: true,
-        }).start();
-      }
-    );
-    const keyboardWillHideListener = Keyboard.addListener(
-      'keyboardWillHide',
-      () => {
-        setKeyboardVisible(false);
-        // Animate scale back up smoothly
-        Animated.timing(contentScaleAnim, {
-          toValue: 1,
-          duration: 220,
-          easing: Easing.out(Easing.ease),
-          useNativeDriver: true,
-        }).start();
-      }
-    );
+  // Toggle memo overlay
+  const toggleMemoOverlay = useCallback(() => {
+    setIsMemoSheetVisible(!isMemoSheetVisible);
+  }, [isMemoSheetVisible]);
 
-    return () => {
-      keyboardWillShowListener.remove();
-      keyboardWillHideListener.remove();
-    };
-  }, [contentScaleAnim]);
+  // Handle save memo
+  const handleSaveMemo = useCallback((content: string) => {
+    console.log('Saving memo:', content);
+  }, []);
 
-  // Pass keyboard state to tab layout
-  useEffect(() => {
-    if (Platform.OS === 'ios') {
-      router.setParams({ hideTabBar: isKeyboardVisible ? 'true' : 'false' });
-    }
-  }, [isKeyboardVisible]);
+  // Handle save created
+  const handleSaveCreated = useCallback((save: ChatSave) => {
+    console.log('Save created:', save.id);
+  }, []);
 
-  // 添加持久化状态
-  useEffect(() => {
-    const loadLastConversation = async () => {
-      try {
-        const lastId = await AsyncStorage.getItem('lastConversationId');
-        if (lastId) {
-          // 确保角色存在
-          const characterExists = characters.some(char => char.id === lastId);
-          if (characterExists) {
-            setSelectedConversationId(lastId);
-            // 更新消息列表
-            const messagesForConversation = getMessages(lastId);
-            setMessages(messagesForConversation);
-          } else if (conversations.length > 0) {
-            // 如果找不到上次的会话，使用第一个可用的会话
-            setSelectedConversationId(conversations[0].id);
-            const messagesForConversation = getMessages(conversations[0].id);
-            setMessages(messagesForConversation);
-          }
-        }
-      } catch (error) {
-        console.error('Failed to load last conversation:', error);
-      }
-    };
+  // Handle show full history
+  const handleShowFullHistory = useCallback(() => {
+    setHistoryModalVisible(true);
+  }, []);
 
-    loadLastConversation();
-  }, [conversations, characters]); // 添加 characters 作为依赖
+  // Handle restore top bar
+  const handleRestoreTopBar = useCallback(() => {
+    setIsTopBarVisible(true);
+    DeviceEventEmitter.emit('topBarVisibilityChanged', true);
+  }, []);
 
-  // 当选中的会话改变时更新消息
-  useEffect(() => {
-    if (selectedConversationId) {
-      const currentMessages = getMessages(selectedConversationId);
-      setMessages(currentMessages);
-    }
-  }, [selectedConversationId]);
-
-  useEffect(() => {
-    if (characterId) {
-      console.log('[Index] Character ID from params:', characterId);
-      // Validate the character exists
-      const characterExists = characters.some(char => char.id === characterId);
-      console.log('[Index] Character exists in characters array:', characterExists);
-
-      if (characterExists) {
-        // Set the selected conversation ID
-        setSelectedConversationId(characterId);
-        console.log('[Index] Selected conversation set to:', characterId);
-
-        // Load messages for this character
-        const characterMessages = getMessages(characterId);
-        console.log('[Index] Loaded messages count:', characterMessages.length);
-        setMessages(characterMessages);
-
-        // --- 新增：首次进入该角色会话且消息为空时，自动发送first_mes ---
-        if (
-          characterMessages.length === 0 &&
-          !firstMessageSentRef.current[characterId]
-        ) {
-          // 新增：发送前再次检查界面messages是否为空
-          if (messages.length > 0) {
-            console.log(`[first_mes] [param effect] 当前界面已有消息，不发送first_mes到${characterId}`);
-          } else {
-            const char = characters.find(c => c.id === characterId);
-            let firstMes = '';
-            try {
-              if (char?.jsonData) {
-                const characterData = JSON.parse(char.jsonData);
-                firstMes = characterData.roleCard?.first_mes || '';
-              }
-            } catch (e) {
-              firstMes = '';
-            }
-            if (firstMes) {
-              console.log(`[first_mes] [param effect] 发送first_mes到${characterId}:`, firstMes);
-              addMessage(characterId, {
-                id: `first-create-${Date.now()}`,
-                text: firstMes,
-                sender: 'bot',
-                timestamp: Date.now()
-              });
-              firstMessageSentRef.current[characterId] = true;
-            }
-          }
-        } else if (characterMessages.length > 0) {
-          firstMessageSentRef.current[characterId] = true;
-        }
-      } else {
-        console.warn('[Index] Character not found in characters array:', characterId);
-      }
-
-      setIsSidebarVisible(false); // Ensure sidebar is closed
-    }
-  }, [characterId, characters, getMessages]);
-
-  // 监听 messages 变化，自动发送 first_mes（仅角色会话，且消息为空时）
-  useEffect(() => {
-    // 避免 handleResetConversation 后重复触发
-    if (
-      selectedConversationId &&
-      !isGroupMode &&
-      characterToUse &&
-      messages.length === 0 &&
-      !firstMesSentRef.current[selectedConversationId]
-    ) {
-      // 修正：此处messages.length === 0，但实际上setMessages是异步的，可能出现messages为空但实际getMessages(selectedConversationId)已有消息
-      const actualMessages = getMessages(selectedConversationId);
-      if (actualMessages && actualMessages.length > 0) {
-        console.log(`[first_mes] [messages effect] getMessages(${selectedConversationId})已有${actualMessages.length}条消息，不发送first_mes`);
-      } else {
-        let firstMes = '';
-        try {
-          if (characterToUse.jsonData) {
-            const characterData = JSON.parse(characterToUse.jsonData);
-            firstMes = characterData.roleCard?.first_mes || '';
-          }
-        } catch (e) {
-          firstMes = '';
-        }
-        if (firstMes) {
-          console.log(`[first_mes] [messages effect] 发送first_mes到${selectedConversationId}:`, firstMes);
-          addMessage(selectedConversationId, {
-            id: `first-auto-${Date.now()}`,
-            text: firstMes,
-            sender: 'bot',
-            timestamp: Date.now()
-          });
-          firstMesSentRef.current[selectedConversationId] = true;
-        }
-      }
-    }
-    // 如果消息不为空，标记已发送
-    if (selectedConversationId && messages.length > 0) {
-      firstMesSentRef.current[selectedConversationId] = true;
-    }
-    // 如果切换到新角色或清空消息，重置标记
-    if (selectedConversationId && messages.length === 0) {
-      // 只在未通过 reset 主动设置时重置
-      // 若 reset 后已设置为 true，则不重置
-      // 这里不需要特殊处理，reset 会主动设置为 true
-    }
-  }, [selectedConversationId, characterToUse, messages, isGroupMode, addMessage]);
-
-  useEffect(() => {
-    if (selectedConversationId) {
-      console.log('[Index] Saving selectedConversationId to AsyncStorage:', selectedConversationId);
-      AsyncStorage.setItem('lastConversationId', selectedConversationId)
-        .catch(err => console.error('[Index] Failed to save lastConversationId:', err));
-    }
-  }, [selectedConversationId]);
-
-  function getCharacterConversationId(selectedConversationId: string): string | undefined {
-    // Since we're already using the character ID as the conversation ID throughout the app,
-    // we can simply return the selectedConversationId if it exists
+  // Get character conversation ID
+  const getCharacterConversationId = useCallback((selectedConversationId: string): string | undefined => {
     return selectedConversationId || undefined;
-  }
+  }, []);
 
- // 获取角色的背景图片
-const getBackgroundImage = () => {
-  if (extraBgImage) {
-    return { uri: extraBgImage };
-  }
-  if (
-    characterToUse?.enableAutoExtraBackground &&
-    characterToUse?.extrabackgroundimage
-  ) {
-    return { uri: characterToUse.extrabackgroundimage };
-  }
-  // 修正：兼容 localAsset 格式
-  if (characterToUse?.backgroundImage) {
-    if (
-      typeof characterToUse.backgroundImage === 'object' &&
-      characterToUse.backgroundImage.localAsset
-    ) {
-      return characterToUse.backgroundImage.localAsset;
+  // Update unread messages count
+  const updateUnreadMessagesCount = useCallback((count: number) => {
+    AsyncStorage.setItem('unreadMessagesCount', String(count)).catch(err => 
+      console.error('[App] Failed to save unread messages count:', err)
+    );
+    
+    EventRegister.emit('unreadMessagesUpdated', count);
+  }, []);
+
+  // Toggle memory panel
+  const toggleMemoryPanel = useCallback(() => {
+    setIsMemoryPanelVisible(!isMemoryPanelVisible);
+    if (!isMemoryPanelVisible) {
+      fetchMemoryFacts();
     }
-    if (typeof characterToUse.backgroundImage === 'string') {
-      return { uri: characterToUse.backgroundImage };
+  }, [isMemoryPanelVisible]);
+
+  // Fetch memory facts
+  const fetchMemoryFacts = useCallback(async () => {
+    if (!selectedConversationId) return;
+    
+    try {
+      const userMessage = messages.length > 0 ? messages[messages.length - 1].text : "";
+      
+      const mem0Service = Mem0Service.getInstance();
+      const searchResults = await mem0Service.searchMemories(
+        userMessage,
+        characterToUse?.id || "",
+        selectedConversationId,
+        10
+      );
+      
+      if (searchResults && searchResults.results) {
+        setMemoryFacts(searchResults.results);
+      }
+    } catch (error) {
+      console.error('Error fetching memory facts:', error);
     }
-  }
-  return require('@/assets/images/default-background.jpg');
-};
+  }, [selectedConversationId, messages, characterToUse]);
 
-  // 获取群聊背景图片（优先群聊自定义背景）
-  const getGroupBackgroundImage = () => {
-    if (selectedGroup) {
-      // 优先使用本地state中的最新背景
-      if (groupBackgrounds[selectedGroup.groupId]) {
-        return { uri: groupBackgrounds[selectedGroup.groupId] };
+  // Process message memory
+  const processMessageMemory = useCallback(async (messageId: string, text: string, conversationId: string | null) => {
+    if (!conversationId || !characterToUse?.id) return;
+    
+    try {
+      const mem0Service = Mem0Service.getInstance();
+      
+      await mem0Service.addChatMemory(
+        text,
+        'user',
+        characterToUse.id,
+        conversationId
+      );
+      
+      setMessageMemoryState(prev => ({
+        ...prev,
+        [messageId]: 'saved'
+      }));
+      
+      if (isMemoryPanelVisible) {
+        fetchMemoryFacts();
       }
-      if (selectedGroup.backgroundImage) {
-        return { uri: selectedGroup.backgroundImage };
+    } catch (error) {
+      console.error('Error processing message memory:', error);
+      
+      setMessageMemoryState(prev => ({
+        ...prev,
+        [messageId]: 'failed'
+      }));
+    }
+  }, [characterToUse, isMemoryPanelVisible, fetchMemoryFacts]);
+
+  // Handle TTS enhancer toggle
+  const handleTtsEnhancerToggle = useCallback(() => {
+    setIsTtsEnhancerModalVisible(true);
+  }, []);
+
+  // Handle playback status update
+  const handlePlaybackStatusUpdate = useCallback((status: AVPlaybackStatus) => {
+    if (status.isLoaded) {
+      setIsVideoReady(true);
+      if (videoError) setVideoError(null);
+    } else {
+      if (status.error) {
+        console.error('Video playback error:', status.error);
+        setVideoError(status.error);
       }
     }
-    return require('@/assets/images/group-chat-background.jpg');
-  };
+  }, [videoError]);
 
-  // Update handleResetConversation to send first_mes after reset
-  const handleResetConversation = async () => {
-    if (selectedConversationId) {
-      await clearMessages(selectedConversationId);
-      // 清除 first_mes 已发送标记
-      if (firstMessageSentRef.current[selectedConversationId]) {
-        delete firstMessageSentRef.current[selectedConversationId];
-      }
-      // 立即设置 firstMesSentRef，防止 useEffect 再次自动触发
-      firstMesSentRef.current[selectedConversationId] = true;
-      setTimeout(async () => {
-        if (characterToUse?.jsonData) {
-          // 新增：发送前再次检查界面messages是否为空
-          if (messages.length > 0) {
-            console.log(`[first_mes] [reset] 当前界面已有消息，不发送first_mes到${selectedConversationId}`);
-          } else {
-            try {
-              const characterData = JSON.parse(characterToUse.jsonData);
-              let firstMes = characterData.roleCard?.first_mes;
-
-              // === 新实现：应用新版全局正则脚本组 ===
-              try {
-                const globalSettings = typeof window !== 'undefined' && window.__globalSettingsCache
-                  ? window.__globalSettingsCache
-                  : await loadGlobalSettingsState();
-                if (
-                  globalSettings &&
-                  globalSettings.regexEnabled &&
-                  Array.isArray(globalSettings.regexScriptGroups) &&
-                  globalSettings.regexScriptGroups.length > 0
-                ) {
-                  // 1. 找到所有绑定到当前角色id的组和全部绑定的组
-                  const matchedGroups = globalSettings.regexScriptGroups.filter(
-                    (g: any) =>
-                      (g.bindType === 'all') ||
-                      (g.bindType === 'character' && g.bindCharacterId === selectedConversationId)
-                  );
-                  // 2. 合并所有启用的正则脚本
-                  const enabledScripts: any[] = [];
-                  matchedGroups.forEach((group: any) => {
-                    if (Array.isArray(group.scripts)) {
-                      group.scripts.forEach((s: any) => {
-                        if (!s.disabled) enabledScripts.push(s);
-                      });
-                    }
-                  });
-                  // 3. 动态导入 NodeSTCore 并应用正则
-                  if (enabledScripts.length > 0) {
-                    let NodeSTCoreClass = null;
-                    try {
-                      NodeSTCoreClass = (await import('@/NodeST/nodest/core/node-st-core')).NodeSTCore;
-                    } catch (e) {}
-                    if (NodeSTCoreClass && typeof NodeSTCoreClass.applyGlobalRegexScripts === 'function') {
-                      // placement=2 表示AI输出
-                      firstMes = NodeSTCoreClass.applyGlobalRegexScripts(
-                        firstMes,
-                        enabledScripts,
-                        2
-                      );
-                    }
-                  }
-                }
-              } catch (e) {
-                // ignore
-              }
-              if (firstMes) {
-                console.log(`[first_mes] [reset] 发送first_mes到${selectedConversationId}:`, firstMes);
-                addMessage(selectedConversationId, {
-                  id: `first-reset-${Date.now()}`,
-                  text: firstMes,
-                  sender: 'bot',
-                  timestamp: Date.now()
-                });
-                // 已经设置为 true，无需再次设置
-                lastMessageTimeRef.current = Date.now();
-                setupAutoMessageTimer();
-              }
-            } catch (e) {
-              console.error('Error adding first message after reset:', e);
-            }
-          }
+  // Handle scroll position change with debounce
+  const handleScrollPositionChange = useCallback((characterId: string, position: number) => {
+    if (scrollPositionUpdateTimeoutRef.current) {
+      clearTimeout(scrollPositionUpdateTimeoutRef.current);
+    }
+    
+    scrollPositionUpdateTimeoutRef.current = setTimeout(() => {
+      setChatScrollPositions(prev => {
+        const previousPosition = prev[characterId];
+        if (Math.abs((previousPosition || 0) - position) > 10) {
+          return { ...prev, [characterId]: position };
         }
-      }, 300);
-    }
-  };
+        return prev;
+      });
+    }, 200); // Debounce for better performance
+  }, []);
 
-  // Function to set up auto message timer with proper safeguards
+  // Toggle brave search
+  const toggleBraveSearch = useCallback(() => {
+    setBraveSearchEnabled(prev => {
+      const newState = !prev;
+      AsyncStorage.setItem('braveSearchEnabled', JSON.stringify(newState))
+        .catch(err => console.error('[App] Failed to save search preference:', err));
+      
+      Alert.alert(
+        newState ? '已启用搜索' : '已禁用搜索',
+        newState 
+          ? '现在AI可以使用Brave搜索来回答需要最新信息的问题' 
+          : '已关闭网络搜索功能，AI将只使用已有知识回答问题',
+        [{ text: '确定', style: 'default' }]
+      );
+      
+      return newState;
+    });
+  }, []);
+
+  // Set up auto message timer
   const setupAutoMessageTimer = useCallback(() => {
-    // Clear any existing timer
     if (autoMessageTimerRef.current) {
       clearTimeout(autoMessageTimerRef.current);
       autoMessageTimerRef.current = null;
     }
     
-    // If auto messaging is disabled, no character selected, or waiting for user reply, don't set up timer
     if (!autoMessageEnabled || !characterToUse?.id || waitingForUserReplyRef.current) {
-      console.log(`[App] Auto message timer not set: enabled=${autoMessageEnabled}, hasCharacter=${!!characterToUse}, waitingForUserReply=${waitingForUserReplyRef.current}`);
       return;
     }
 
-    // Check character-specific settings:
-    // 1. autoMessage must be explicitly enabled
     if (characterToUse.autoMessage !== true) {
-      console.log('[App] Auto message disabled for this character in settings');
       return;
     }
 
-    // Use character-specific interval or default to 5 minutes
-    const interval = characterToUse.autoMessageInterval || 5;
-    autoMessageIntervalRef.current = interval;
-
-    // Set up new timer
-    const intervalMs = autoMessageIntervalRef.current * 60 * 1000; // Convert minutes to ms
+    autoMessageIntervalRef.current = characterToUse.autoMessageInterval || 5;
     
-    console.log(`[App] Auto message timer set for ${autoMessageIntervalRef.current} minutes`);
+    const intervalMs = autoMessageIntervalRef.current * 60 * 1000;
     
     autoMessageTimerRef.current = setTimeout(async () => {
-      console.log('[App] Auto message timer triggered');
-      
-      // Only send auto message if we have a selected character and conversation
       if (characterToUse && selectedConversationId) {
-        // Reset timer reference since it's been triggered
         autoMessageTimerRef.current = null;
         
         try {
-          // Generate a truly unique message ID for this auto message
-          // Using both timestamp and UUID components to ensure uniqueness
           const uniqueAutoMsgId = `auto-${Date.now()}-${Math.random().toString(36).substring(2, 9)}`;
-          console.log(`[App] Generating auto message with ID: ${uniqueAutoMsgId}`);
           
-          // Call NodeST with special auto-message instruction - note we don't add a loading state message
           const result = await NodeSTManager.processChatMessage({
             userMessage: "[AUTO_MESSAGE] 用户已经一段时间没有回复了。请基于上下文和你的角色设定，主动发起一条合适的消息。这条消息应该自然，不要直接提及用户长时间未回复的事实。",
             status: "同一角色继续对话",
@@ -1878,18 +1469,14 @@ const getBackgroundImage = () => {
             character: characterToUse
           });
           
-          // If successful, add the auto message response directly (no loading state)
           if (result.success && result.text) {
-            // Calculate aiIndex before adding the message
             const aiMessageCount = messages.filter(m => m.sender === 'bot' && !m.isLoading).length;
             
-            // Add the auto message as a bot message with a guaranteed unique ID
             await addMessage(selectedConversationId, {
               id: uniqueAutoMsgId,
               text: result.text,
               sender: 'bot',
               timestamp: Date.now(),
-              // Add metadata to mark this as an auto message response with the correct aiIndex
               metadata: {
                 isAutoMessageResponse: true,
                 aiIndex: aiMessageCount,
@@ -1897,343 +1484,42 @@ const getBackgroundImage = () => {
               }
             });
             
-            // Update last message time
             lastMessageTimeRef.current = Date.now();
-            
-            // Set waitingForUserReply to true to prevent further auto-messages until user responds
             waitingForUserReplyRef.current = true;
-            console.log('[App] Auto message sent, now waiting for user reply');
             
-            // IMPORTANT: Only update notification badge if notificationEnabled is true
             if (characterToUse.notificationEnabled === true) {
-              console.log('[App] Notifications enabled for this character, updating unread count');
               updateUnreadMessagesCount(1);
-            } else {
-              console.log('[App] Notifications disabled for this character, not showing badge');
             }
-          } else {
-            console.error('[App] Failed to generate auto message:', result.error);
           }
         } catch (error) {
           console.error('[App] Error generating auto message:', error);
         }
       }
     }, intervalMs);
-    
-    console.log(`[App] Auto message timer set for ${autoMessageIntervalRef.current} minutes`);
-  }, [characterToUse, selectedConversationId, autoMessageEnabled, user?.settings, messages]);
-// === 新增：isWebViewContent 工具函数（与 ChatDialog 保持一致） ===
-function isWebViewContent(text: string): boolean {
-  if (!text) return false;
-  // 检查直接以 <!DOCTYPE html> 或 <html 开头的内容
-  if (/^\s*(<!DOCTYPE html|<html)/i.test(text)) {
-    return true;
-  }
-  // 检查是否有包含在三重反引号中的HTML内容
-  const codeBlockMatch = text.match(/```(?:html)?\s*([\s\S]*?)```/);
-  if (codeBlockMatch && /^\s*(<!DOCTYPE html|<html)/i.test(codeBlockMatch[1])) {
-    return true;
-  }
-  // 检查是否包含结构性标签
-  const STRUCTURAL_TAGS = [
-    'source', 'section', 'article', 'aside', 'nav', 'header', 'footer',
-    'style', 'script', 'html', 'body', 'head', 'meta', 'link', 'title', 'doctype'
-  ];
-  if (STRUCTURAL_TAGS.some(tag => new RegExp(`<${tag}[\\s>]|</${tag}>|<!DOCTYPE`, 'i').test(text))) {
-    return true;
-  }
-  if (codeBlockMatch && STRUCTURAL_TAGS.some(tag => new RegExp(`<${tag}[\\s>]|</${tag}>|<!DOCTYPE`, 'i').test(codeBlockMatch[1]))) {
-    return true;
-  }
-  return false;
-}
-  // Update handleAutoMessageSettings function to properly handle state changes
-  useEffect(() => {
-    // Initialize auto message interval from character settings if available
-    if (characterToUse) {
-      const newAutoMessageEnabled = characterToUse.autoMessage === true;
-      
-      // Only log and update if the setting has actually changed
-      if (autoMessageEnabled !== newAutoMessageEnabled) {
-        console.log(`[App] Auto message setting changed to: ${newAutoMessageEnabled}`);
-        setAutoMessageEnabled(newAutoMessageEnabled);
-      }
-      
-      // Get the interval directly from the character settings
-      autoMessageIntervalRef.current = characterToUse.autoMessageInterval || 5;
-      
-      // Only reset the timer if auto messages are enabled
-      if (newAutoMessageEnabled) {
-        // Set up timer with a small delay to allow state updates to complete
-        setTimeout(() => {
-          setupAutoMessageTimer();
-        }, 100);
-      } else if (autoMessageTimerRef.current) {
-        // Clean up existing timer if auto messages are now disabled
-        clearTimeout(autoMessageTimerRef.current);
-        autoMessageTimerRef.current = null;
-        console.log('[App] Auto message timer cleared due to setting change');
-      }
-    }
-    
-    // Clean up timer on unmount or character change
-    return () => {
-      if (autoMessageTimerRef.current) {
-        clearTimeout(autoMessageTimerRef.current);
-        autoMessageTimerRef.current = null;
-      }
-    };
-  }, [characterToUse, setupAutoMessageTimer]);
+  }, [
+    autoMessageEnabled, characterToUse, selectedConversationId,
+    messages, user, addMessage, updateUnreadMessagesCount
+  ]);
 
-  // Add unread messages counter function
-  const updateUnreadMessagesCount = (count: number) => {
-    // Use AsyncStorage to persist unread message count
-    AsyncStorage.setItem('unreadMessagesCount', String(count)).catch(err => 
-      console.error('[App] Failed to save unread messages count:', err)
-    );
-    
-    // Use EventRegister instead of window.dispatchEvent for React Native
-    EventRegister.emit('unreadMessagesUpdated', count);
-  };
-
-  // Reset timer whenever a new message is sent
-  useEffect(() => {
-    if (messages.length > 0) {
-      const lastMessage = messages[messages.length - 1];
-      
-      // Update last message time
-      lastMessageTimeRef.current = Date.now();
-      
-      // Set up new timer
-      setupAutoMessageTimer();
-    }
-  }, [messages, setupAutoMessageTimer]);
-  
-  // Set up timer when character changes
-  useEffect(() => {
-    // Initialize auto message interval from character settings if available
-    if (characterToUse) {
-      // Use explicit boolean check for autoMessage setting
-      setAutoMessageEnabled(characterToUse.autoMessage === true);
-      
-      // Get the interval directly from the character settings
-      autoMessageIntervalRef.current = characterToUse.autoMessageInterval || 5;
-      
-      setupAutoMessageTimer();
-    }
-    
-    // Clean up timer on unmount or character change
-    return () => {
-      if (autoMessageTimerRef.current) {
-        clearTimeout(autoMessageTimerRef.current);
-        autoMessageTimerRef.current = null;
-      }
-    };
-  }, [characterToUse, setupAutoMessageTimer]);
-
-  // Save scroll positions on app pause/background
-  useEffect(() => {
-    const saveScrollPositions = async () => {
-      try {
-        if (Object.keys(chatScrollPositions).length > 0) {
-          await AsyncStorage.setItem('chatScrollPositions', JSON.stringify(chatScrollPositions));
-        }
-      } catch (error) {
-        console.error('Failed to save scroll positions:', error);
-      }
-    };
-
-    // 新增：App 进入后台时，强制处理所有记忆缓存，确保写入数据库
-    const handleAppBackground = async () => {
-      try {
-        console.log('[App] AppState: 进入后台，开始处理所有记忆缓存...');
-        await Mem0Service.getInstance().processAllCharacterMemories();
-        console.log('[App] 所有记忆缓存已处理并写入数据库');
-      } catch (error) {
-        console.error('[App] 处理记忆缓存时出错:', error);
-      }
-    };
-
-    // Add app state change listener
-    const subscription = AppState.addEventListener('change', (nextAppState) => {
-      if (nextAppState === 'background' || nextAppState === 'inactive') {
-        saveScrollPositions();
-        // 新增：后台时处理记忆缓存
-        handleAppBackground();
-      }
-    });
-    
-    // Load saved scroll positions on mount
-    const loadScrollPositions = async () => {
-      try {
-        const savedPositions = await AsyncStorage.getItem('chatScrollPositions');
-        if (savedPositions) {
-          setChatScrollPositions(JSON.parse(savedPositions));
-        }
-      } catch (error) {
-        console.error('Failed to load scroll positions:', error);
-      }
-    };
-    
-    loadScrollPositions();
-    
-    return () => {
-      subscription.remove();
-      saveScrollPositions();
-    };
-  }, [chatScrollPositions]);
-
-  // Update ChatDialog props to include scroll position handling
-  const handleScrollPositionChange = (characterId: string, position: number) => {
-    // 记录之前的位置
-    const previousPosition = chatScrollPositions[characterId];
-    
-    // 更新位置（只在变化超过一定阈值时更新，避免频繁更新）
-    if (Math.abs((previousPosition || 0) - position) > 10) {
-      setChatScrollPositions(prev => ({
-        ...prev,
-        [characterId]: position
-      }));
-      ;
-    }
-  };
-
-  // Add function to toggle memory panel visibility
-  const toggleMemoryPanel = () => {
-    setIsMemoryPanelVisible(!isMemoryPanelVisible);
-    if (!isMemoryPanelVisible) {
-      // Fetch memory facts when opening the panel
-      fetchMemoryFacts();
-    }
-  };
-
-  // Add function to fetch memory facts
-  const fetchMemoryFacts = async () => {
-    if (!selectedConversationId) return;
-    
-    try {
-      const userMessage = messages.length > 0 ? messages[messages.length - 1].text : "";
-      
-      // Use Mem0Service to search for relevant memories
-      const mem0Service = Mem0Service.getInstance();
-      const searchResults = await mem0Service.searchMemories(
-        userMessage,
-        characterToUse?.id || "",
-        selectedConversationId,
-        10
-      );
-      
-      if (searchResults && searchResults.results) {
-        setMemoryFacts(searchResults.results);
-      }
-    } catch (error) {
-      console.error('Error fetching memory facts:', error);
-    }
-  };
-
-  // Add function to process message memory
-  const processMessageMemory = async (messageId: string, text: string, conversationId: string | null) => {
-    if (!conversationId || !characterToUse?.id) return;
-    
-    try {
-      const mem0Service = Mem0Service.getInstance();
-      
-      // Process memory through the Mem0Service
-      await mem0Service.addChatMemory(
-        text,
-        'user',
-        characterToUse.id,
-        conversationId
-      );
-      
-      // Update memory state to "saved"
-      setMessageMemoryState(prev => ({
-        ...prev,
-        [messageId]: 'saved'
-      }));
-      
-      // Refresh memory facts if panel is open
-      if (isMemoryPanelVisible) {
-        fetchMemoryFacts();
-      }
-    } catch (error) {
-      console.error('Error processing message memory:', error);
-      
-      // Update memory state to "failed"
-      setMessageMemoryState(prev => ({
-        ...prev,
-        [messageId]: 'failed'
-      }));
-    }
-  };
-
-  // Handler for TTS enhancer button click 
-  const handleTtsEnhancerToggle = () => {
-    setIsTtsEnhancerModalVisible(true);
-  };
-
-  // Add function to handle video playback status updates
-  const handlePlaybackStatusUpdate = (status: AVPlaybackStatus) => {
-    if (status.isLoaded) {
-      setIsVideoReady(true);
-      // Reset error state when video loads successfully
-      if (videoError) setVideoError(null);
-    } else {
-      // Handle video loading error
-      if (status.error) {
-        console.error('Video playback error:', status.error);
-        setVideoError(status.error);
-      }
-    }
-  };
-
-  // Reset video state when character changes
-  useEffect(() => {
-    setIsVideoReady(false);
-    setVideoError(null);
-  }, [characterToUse?.id]);
-
-  const handleToggleGroupManage = () => {
-    setIsGroupManageModalVisible(!isGroupManageModalVisible);
-  };
-
-  const selectedGroup: Group | null = selectedGroupId ? groups.find(g => g.groupId === selectedGroupId) || null : null;
-
-  const toggleMemoOverlay = () => {
-    setIsMemoSheetVisible(!isMemoSheetVisible);
-  };
-
-  const characterIdForMemo = selectedConversationId || '';
-  const conversationIdForMemo = selectedConversationId ? `conversation-${selectedConversationId}` : '';
-
-  // 新增：历史模态框状态
-  const [isHistoryModalVisible, setHistoryModalVisible] = useState(false);
-
-  // 新增：显示全部聊天历史
-  const handleShowFullHistory = useCallback(() => {
-    setHistoryModalVisible(true);
-  }, []);
-
-  // 新增：后处理触发函数
+  // Background generation
   const triggerExtraBackgroundGeneration = useCallback(async (character: Character, lastBotMessage: string) => {
-    // 1. 检查开关和条件
     if (!character || !character.backgroundImage) {
       console.log('[后处理] 不触发：character/backgroundImage 不存在');
       return;
     }
+    
     if (!character.enableAutoExtraBackground) {
       console.log('[后处理] 不触发：enableAutoExtraBackground 为 false');
       return;
     }
-    // 只判断 backgroundImageConfig.isNovelAI
+    
     if (!character.backgroundImageConfig?.isNovelAI) {
       console.log('[后处理] 不触发：backgroundImageConfig.isNovelAI 为 false');
       return;
     }
 
-    // 2. 获取NovelAI参数（seed等）和提示词
     let novelaiConfig = character.backgroundImageConfig?.novelaiSettings || {};
-    // --- 修正 seed 取值逻辑 ---
+    
     let seed: number | undefined;
     if (
       character.backgroundImageConfig?.seed !== undefined &&
@@ -2251,7 +1537,7 @@ function isWebViewContent(text: string): boolean {
       seed = Math.floor(Math.random() * 2 ** 32);
     }
 
-    // --- 合并默认正负面提示词 ---
+    // Merge default prompts
     let positiveTags: string[] = [
       ...DEFAULT_POSITIVE_PROMPTS,
       ...(character.backgroundImageConfig?.positiveTags || [])
@@ -2273,7 +1559,7 @@ function isWebViewContent(text: string): boolean {
       seed, positiveTags, negativeTags, fixedTags, allPositiveTags, artistTag, novelaiConfig
     });
 
-    // 3. 获取上下文（10条）
+    // Get recent conversation context
     let contextMessages: {role: string, content: string}[] = [];
     try {
       contextMessages = await StorageAdapter.exportConversation(character.id);
@@ -2284,11 +1570,10 @@ function isWebViewContent(text: string): boolean {
       console.warn('[后处理] 获取上下文失败:', e);
     }
 
-    // 4. AI生成场景描述
+    // Generate scene description using AI
     let aiSceneDesc = '';
     try {
-      
-      // 检查 openai_compatible 是否启用
+      // Check API settings for available providers
       const apiSettings = getApiSettings();    
       
       if (
@@ -2296,7 +1581,7 @@ function isWebViewContent(text: string): boolean {
         apiSettings.openrouter.apiKey &&
         apiSettings.openrouter.model
       ) {
-        // 使用 OpenRouterAdapter
+        // Use OpenRouterAdapter
         const openrouterAdapter = new OpenRouterAdapter(
           apiSettings.openrouter.apiKey,
           apiSettings.openrouter.model
@@ -2308,7 +1593,7 @@ function isWebViewContent(text: string): boolean {
         aiSceneDesc = (aiSceneDesc || '').replace(/[\r\n]+/g, ' ').trim();
         console.log('[后处理] OpenRouterAdapter生成场景描述:', aiSceneDesc);
       } else if (apiSettings.OpenAIcompatible?.enabled && apiSettings.OpenAIcompatible.apiKey && apiSettings.OpenAIcompatible.endpoint && apiSettings.OpenAIcompatible.model) {
-        // 动态导入 OpenAIAdapter
+        // Dynamically import OpenAIAdapter
         const { OpenAIAdapter } = await import('@/NodeST/nodest/utils/openai-adapter');
         const openaiAdapter = new OpenAIAdapter({
           endpoint: apiSettings.OpenAIcompatible.endpoint,
@@ -2322,7 +1607,7 @@ function isWebViewContent(text: string): boolean {
         aiSceneDesc = (aiSceneDesc || '').replace(/[\r\n]+/g, ' ').trim();
         console.log('[后处理] OpenAICompatible生成场景描述:', aiSceneDesc);
       } else {
-        // 原有GeminiAdapter逻辑
+        // Fallback to GeminiAdapter
         const prompt = `请根据以下对话内容，用一句不超过15个英文单词的连贯语句，描述角色当前的表情、动作、场景（时间、地点、画面），不要描述外观、服饰。输出英文短句。对话内容：\n${contextMessages.map(m=>`${m.role}: ${m.content}`).join('\n')}`;
         console.log('[后处理] 发送GeminiAdapter prompt:', prompt);
         aiSceneDesc = await GeminiAdapter.executeDirectGenerateContent(prompt);
@@ -2332,7 +1617,7 @@ function isWebViewContent(text: string): boolean {
     } catch (e) {
       aiSceneDesc = '';
       console.warn('[后处理] 场景描述生成失败:', e);
-      // 新增：兜底，尝试用CloudServiceProvider
+      // Fallback to CloudServiceProvider
       try {
         const cloudResp = await (CloudServiceProvider.constructor as typeof CloudServiceProviderClass).generateChatCompletionStatic(
           [
@@ -2353,7 +1638,7 @@ function isWebViewContent(text: string): boolean {
       }
     }
 
-    // 5. 替换normalTags
+    // Process normalTags with AI scene description
     let newNormalTags: string[] = [];
     if (fixedTags && fixedTags.length > 0) {
       newNormalTags = [...fixedTags];
@@ -2363,7 +1648,7 @@ function isWebViewContent(text: string): boolean {
     }
     console.log('[后处理] 处理后normalTags:', newNormalTags);
 
-    // 6. 组装最终positiveTags
+    // Build final positive tags
     let finalPositiveTags = [
       ...(character.backgroundImageConfig?.genderTags || []),
       ...(character.backgroundImageConfig?.characterTags || []),
@@ -2373,13 +1658,13 @@ function isWebViewContent(text: string): boolean {
       ...newNormalTags
     ].filter(Boolean);
 
-    // --- 负面提示词确保不为空 ---
+    // Ensure negative prompts aren't empty
     let finalNegativePrompt = [
       ...DEFAULT_NEGATIVE_PROMPTS,
       ...(character.backgroundImageConfig?.negativeTags || [])
     ].filter(Boolean).join(', ');
 
-    // 7. NovelAI参数
+    // NovelAI parameters
     const novelaiToken = user?.settings?.chat?.novelai?.token || '';
     const sizePreset = character.backgroundImageConfig?.sizePreset || { width: 832, height: 1216 };
     const model = novelaiConfig.model || 'NAI Diffusion V4 Curated';
@@ -2388,7 +1673,7 @@ function isWebViewContent(text: string): boolean {
     const sampler = novelaiConfig.sampler || 'k_euler_ancestral';
     const noiseSchedule = novelaiConfig.noiseSchedule || 'karras';
 
-    // 新增：构造 characterPrompts 参数（与 ImageRegenerationModal.tsx 保持一致）
+    // Character prompts positioning
     let characterPrompts: { prompt: string; positions: { x: number; y: number }[] }[] = [];
     if (character.backgroundImageConfig?.characterTags && character.backgroundImageConfig.characterTags.length > 0) {
       characterPrompts = [
@@ -2399,25 +1684,26 @@ function isWebViewContent(text: string): boolean {
       ];
     }
 
-    // 新增：useCoords/useOrder 参数（与 ImageRegenerationModal.tsx 保持一致）
+    // Additional parameters
     const useCoords = typeof novelaiConfig.useCoords === 'boolean' ? novelaiConfig.useCoords : false;
     const useOrder = typeof novelaiConfig.useOrder === 'boolean' ? novelaiConfig.useOrder : true;
 
     console.log('[后处理] NovelAI请求参数:', {
-      token: novelaiToken,
+      token: novelaiToken ? '(已设置)' : '(未设置)',
       prompt: finalPositiveTags.join(', '),
       negativePrompt: finalNegativePrompt,
       model, width: sizePreset.width, height: sizePreset.height,
       steps, scale, sampler, seed, noiseSchedule, characterPrompts, useCoords, useOrder
     });
 
+    // Set loading states
     setIsExtraBgGenerating(true);
     setExtraBgError(null);
     setExtraBgImage(null);
     const myGenId = ++extraBgGenCounter.current;
     extraBgGenAbortRef.current.aborted = false;
 
-    // 封装生成图片的逻辑，支持重试
+    // Function to generate image with retry support
     const generateNovelAIImage = async (): Promise<{ url?: string; error?: any }> => {
       try {
         const result = await NovelAIService.generateImage({
@@ -2443,7 +1729,7 @@ function isWebViewContent(text: string): boolean {
       }
     };
 
-    // 支持429重试一次
+    // Retry logic for 429 errors
     let retryCount = 0;
     let maxRetry = 1;
     let retryDelayMs = 8000;
@@ -2460,7 +1746,7 @@ function isWebViewContent(text: string): boolean {
         url = genUrl;
         break;
       }
-      // 检查是否429错误
+      // Check for 429 rate limit error
       if (error && error.message && typeof error.message === 'string' && error.message.includes('429')) {
         lastError = error;
         if (retryCount < maxRetry) {
@@ -2469,11 +1755,10 @@ function isWebViewContent(text: string): boolean {
           retryCount++;
           continue;
         } else {
-          // 已重试一次，仍然失败
           break;
         }
       } else {
-        // 其他错误，立即中止
+        // Other errors, abort immediately
         lastError = error;
         break;
       }
@@ -2482,95 +1767,631 @@ function isWebViewContent(text: string): boolean {
     if (url) {
       setExtraBgImage(url);
       console.log('[后处理] setExtraBgImage:', url);
-      // 更新角色的extrabackgroundimage属性
+      // Update character's extrabackgroundimage
       await updateCharacterExtraBackgroundImage(character.id, url);
       console.log('[后处理] updateCharacterExtraBackgroundImage已调用:', character.id, url);
-      // 自动切换背景
+      // Auto-switch background for current character
       if (characterToUse?.id === character.id) {
         setExtraBgImage(url);
         console.log('[后处理] 当前角色，触发setExtraBgImage:', url);
       }
-      // 新增：将本次AI消息ID加入已处理集合，防止重复生成（持久化）
+      // Add AI message ID to processed set to prevent duplicate generation
       if (messages && messages.length > 0) {
         const lastMsg = messages[messages.length - 1];
         if (lastMsg && lastMsg.sender === 'bot') {
           processedExtraBgMessageIds.current.add(lastMsg.id);
-          // 持久化
+          // Persist processed IDs
           saveProcessedExtraBgMessageIds(character.id);
         }
       }
       setIsExtraBgGenerating(false);
       console.log('[后处理] 图片生成流程结束');
     } else {
-      // 失败，显示错误
+      // Failed, show error
       setExtraBgError(lastError?.message || '生成失败');
       setIsExtraBgGenerating(false);
       console.error('[后处理] 图片生成异常:', lastError);
     }
   }, [user, characterToUse, updateCharacterExtraBackgroundImage, messages, saveProcessedExtraBgMessageIds]);
-  
-  // 聊天后处理主入口：监听messages变化
+
+  // Initialize default characters and load preferences
   useEffect(() => {
-    // console.log('messages updated:', messages.map(m => ({sender: m.sender, isLoading: m.isLoading, text: m.text})));
+    (async () => {
+      try {
+        console.log('[index] 调用 importDefaultCharactersIfNeeded ...');
+        setIsInitializing(true);
+        
+        const result = await importDefaultCharactersIfNeeded(
+          addCharacter,
+          addConversation,
+          (id: string, uri: string) => {
+            console.log(`[index] 调用 updateCharacterExtraBackgroundImage: id=${id}, uri=${uri}`);
+            return updateCharacterExtraBackgroundImage(id, uri);
+          },
+          (id: string, uri: string) => {
+            console.log(`[index] 调用 setCharacterAvatar: id=${id}, uri=${uri}`);
+            return Promise.resolve();
+          }
+        );
+        
+        console.log('[index] importDefaultCharactersIfNeeded 完成', result);
+        
+        if (result && result.characterId) {
+          setSelectedConversationId(result.characterId);
+          
+          if (result.imported) {
+            const characterMessages = getMessages(result.characterId);
+            setMessages(characterMessages);
+            console.log(`[index] 选择了新导入的默认角色：${result.characterId}`);
+          }
+          
+          if (mode === 'visual-novel') {
+            console.log('[index] 视觉小说模式已激活，设置 defaultCharacterNavigated 为 true');
+            setDefaultCharacterNavigated(true);
+          }
+        }
+        
+        setTimeout(() => setIsInitializing(false), 500);
+      } catch (e) {
+        console.warn('[DefaultCharacterImporter] 初始化失败:', e);
+        setIsInitializing(false);
+      }
+    })();
+
+    // Load character view mode
+    (async () => {
+      try {
+        const mode = await AsyncStorage.getItem('character_view_mode');
+        if (
+          mode === 'large' ||
+          mode === 'small' ||
+          mode === 'vertical'
+        ) {
+          characterViewModeCache = mode;
+        } else {
+          characterViewModeCache = null;
+        }
+      } catch (e) {
+        characterViewModeCache = null;
+      }
+    })();
+
+    // Load global settings
+    (async () => {
+      const globalSettings = await loadGlobalSettingsState();
+      if (globalSettings && typeof window !== 'undefined') {
+        window.__globalSettingsCache = globalSettings;
+      }
+    })();
+
+    // Sync table memory plugin
+    try {
+      const enabled = isTableMemoryEnabled();
+      setTableMemoryEnabled(enabled);
+      console.log('[index] 同步表格记忆插件开关:', enabled);
+    } catch (e) {
+      console.warn('[index] 同步表格记忆插件开关失败:', e);
+    }
+
+    // Load search preference
+    (async () => {
+      try {
+        const savedPref = await AsyncStorage.getItem('braveSearchEnabled');
+        if (savedPref !== null) {
+          setBraveSearchEnabled(JSON.parse(savedPref));
+        }
+      } catch (error) {
+        console.error('[App] Failed to load search preference:', error);
+      }
+    })();
+
+    // Load TTS enhancer settings
+    (async () => {
+      try {
+        const settings = ttsService.getEnhancerSettings();
+        setIsTtsEnhancerEnabled(settings.enabled);
+      } catch (error) {
+        console.error('[App] Error loading TTS enhancer settings:', error);
+      }
+    })();
+  }, []);
+
+  // Fall back to loading character from storage if not found in context
+  useEffect(() => {
+    if (
+      selectedConversationId &&
+      !selectedCharacter &&
+      !charactersLoading
+    ) {
+      console.warn('[App] selectedCharacter not found in context, try fallback from storage:', selectedConversationId);
+      (async () => {
+        try {
+          const filePath = FileSystem.documentDirectory + 'characters.json';
+          const fileInfo = await FileSystem.getInfoAsync(filePath);
+          if (fileInfo.exists) {
+            const content = await FileSystem.readAsStringAsync(filePath);
+            const arr = JSON.parse(content);
+            if (Array.isArray(arr)) {
+              const found = arr.find((c: any) => c.id === selectedConversationId);
+              if (found) {
+                setFallbackCharacter(found);
+                
+                if (!characters.some(c => c.id === found.id)) {
+                  setCharacters([...characters, found]);
+                }
+                return;
+              }
+            }
+          }
+          setFallbackCharacter(null);
+        } catch (e) {
+          setFallbackCharacter(null);
+        }
+      })();
+    } else {
+      setFallbackCharacter(null);
+    }
+  }, [selectedConversationId, selectedCharacter, charactersLoading, characters, setCharacters]);
+// 初始化时尝试恢复上次的对话
+useEffect(() => {
+  // 只有在没有通过URL参数指定characterId时才自动恢复
+  if (!characterId && !selectedConversationId && !hasRestoredLastConversation && characters.length > 0) {
+    (async () => {
+      try {
+        const lastId = await AsyncStorage.getItem('lastConversationId');
+        if (lastId && characters.some(char => char.id === lastId)) {
+          setSelectedConversationId(lastId);
+          const characterMessages = getMessages(lastId);
+          setMessages(characterMessages);
+        }
+      } catch (e) {
+        // ignore
+      } finally {
+        setHasRestoredLastConversation(true);
+      }
+    })();
+  }
+}, [characterId, selectedConversationId, hasRestoredLastConversation, characters, getMessages]);
+  // Load groups when user changes
+  useEffect(() => {
+    if (user) {
+      loadUserGroups();
+    } else {
+      setGroups([]);
+      setSelectedGroupId(null);
+      setGroupMessages([]);
+      setGroupMembers([]);
+    }
+  }, [user, loadUserGroups]);
+
+  // Load group messages and members
+  useEffect(() => {
+    if (selectedGroupId) {
+      loadGroupMessages(selectedGroupId);
+
+      const selectedGroup = groups.find(g => g.groupId === selectedGroupId);
+      if (selectedGroup && characters) {
+        const characterMemberIds = selectedGroup.groupMemberIds?.filter(
+          id => id !== user?.id
+        ) || [];
+        
+        let memberCharacters = characters.filter(
+          char => characterMemberIds.includes(char.id)
+        );
+        
+        if (memberCharacters.length < characterMemberIds.length) {
+          console.log(`[Index] Found ${memberCharacters.length} of ${characterMemberIds.length} group members, loading missing ones...`);
+          
+          CharacterLoader.loadCharactersByIds(characterMemberIds)
+            .then(loadedMembers => {
+              if (loadedMembers && loadedMembers.length > 0) {
+                console.log(`[Index] Successfully loaded ${loadedMembers.length} group members`);
+                setGroupMembers(loadedMembers);
+              }
+            })
+            .catch(error => {
+              console.error('[Index] Error loading missing group members:', error);
+            });
+        } else {
+          setGroupMembers(memberCharacters);
+        }
+      } else {
+        setGroupMembers([]);
+      }
+    } else {
+      setGroupMessages([]);
+      setGroupMembers([]);
+    }
+  }, [selectedGroupId, groups, characters, user?.id, loadGroupMessages]);
+
+  // Load saved chat scroll positions
+  useEffect(() => {
+    const saveScrollPositions = async () => {
+      try {
+        if (Object.keys(chatScrollPositions).length > 0) {
+          const operation = AsyncStorage.setItem('chatScrollPositions', JSON.stringify(chatScrollPositions));
+          asyncStorageOperations.current.add(operation);
+          await operation;
+          asyncStorageOperations.current.delete(operation);
+        }
+      } catch (error) {
+        console.error('Failed to save scroll positions:', error);
+      }
+    };
+
+    // Process memory cache when app goes to background
+    const handleAppBackground = async () => {
+      try {
+        console.log('[App] AppState: 进入后台，开始处理所有记忆缓存...');
+        await Mem0Service.getInstance().processAllCharacterMemories();
+        console.log('[App] 所有记忆缓存已处理并写入数据库');
+      } catch (error) {
+        console.error('[App] 处理记忆缓存时出错:', error);
+      }
+    };
+
+    // Add app state change listener
+    const subscription = AppState.addEventListener('change', (nextAppState) => {
+      if (nextAppState === 'background' || nextAppState === 'inactive') {
+        saveScrollPositions();
+        handleAppBackground();
+      }
+    });
+    
+    // Load saved scroll positions
+    const loadScrollPositions = async () => {
+      try {
+        const savedPositions = await AsyncStorage.getItem('chatScrollPositions');
+        if (savedPositions) {
+          setChatScrollPositions(JSON.parse(savedPositions));
+        }
+      } catch (error) {
+        console.error('Failed to load scroll positions:', error);
+      }
+    };
+    
+    loadScrollPositions();
+    
+    return () => {
+      subscription.remove();
+      saveScrollPositions();
+    };
+  }, [chatScrollPositions]);
+
+  // First message handling
+  useEffect(() => {
+    if (
+      selectedConversationId &&
+      !isGroupMode &&
+      characterToUse &&
+      messages.length === 0 &&
+      !firstMesSentRef.current[selectedConversationId]
+    ) {
+      const actualMessages = getMessages(selectedConversationId);
+      if (actualMessages && actualMessages.length > 0) {
+        console.log(`[first_mes] [messages effect] getMessages(${selectedConversationId})已有${actualMessages.length}条消息，不发送first_mes`);
+      } else {
+        (async () => {
+          let firstMes = '';
+          try {
+            if (characterToUse.jsonData) {
+              const characterData = JSON.parse(characterToUse.jsonData);
+              firstMes = characterData.roleCard?.first_mes || '';
+              
+              // Apply regex scripts
+              try {
+                const globalSettings = typeof window !== 'undefined' && window.__globalSettingsCache
+                  ? window.__globalSettingsCache
+                  : await loadGlobalSettingsState();
+                  
+                if (
+                  globalSettings &&
+                  globalSettings.regexEnabled &&
+                  Array.isArray(globalSettings.regexScriptGroups) &&
+                  globalSettings.regexScriptGroups.length > 0
+                ) {
+                  const matchedGroups = globalSettings.regexScriptGroups.filter(
+                    (g: any) =>
+                      (g.bindType === 'all') ||
+                      (g.bindType === 'character' && g.bindCharacterId === selectedConversationId)
+                  );
+                  
+                  const enabledScripts: any[] = [];
+                  matchedGroups.forEach((group: any) => {
+                    if (Array.isArray(group.scripts)) {
+                      group.scripts.forEach((s: any) => {
+                        if (!s.disabled) enabledScripts.push(s);
+                      });
+                    }
+                  });
+                  
+                  if (enabledScripts.length > 0) {
+                    let NodeSTCoreClass = null;
+                    try {
+                      NodeSTCoreClass = (await import('@/NodeST/nodest/core/node-st-core')).NodeSTCore;
+                    } catch (e) {}
+                    
+                    if (NodeSTCoreClass && typeof NodeSTCoreClass.applyGlobalRegexScripts === 'function') {
+                      firstMes = NodeSTCoreClass.applyGlobalRegexScripts(
+                        firstMes,
+                        enabledScripts,
+                        2
+                      );
+                    }
+                  }
+                }
+              } catch (e) {
+                // Ignore errors
+              }
+            }
+          } catch (e) {
+            firstMes = '';
+          }
+          
+          if (firstMes) {
+            console.log(`[first_mes] [messages effect] 发送first_mes到${selectedConversationId}:`, firstMes);
+            const result = await addMessage(selectedConversationId, {
+              id: `first-auto-${Date.now()}`,
+              text: firstMes,
+              sender: 'bot',
+              timestamp: Date.now()
+            });
+            firstMesSentRef.current[selectedConversationId] = true;
+          }
+        })();
+      }
+    }
+    
+    // If messages not empty, mark first message as sent
+    if (selectedConversationId && messages.length > 0) {
+      firstMesSentRef.current[selectedConversationId] = true;
+    }
+  }, [selectedConversationId, characterToUse, messages, isGroupMode, addMessage, getMessages]);
+
+  // Save last selected conversation
+  useEffect(() => {
+    if (selectedConversationId) {
+      console.log('[Index] Saving selectedConversationId to AsyncStorage:', selectedConversationId);
+      const operation = AsyncStorage.setItem('lastConversationId', selectedConversationId);
+      asyncStorageOperations.current.add(operation);
+      operation.then(() => {
+        asyncStorageOperations.current.delete(operation);
+      }).catch(err => {
+        asyncStorageOperations.current.delete(operation);
+        console.error('[Index] Failed to save lastConversationId:', err);
+      });
+    }
+  }, [selectedConversationId]);
+
+  // Update messages when conversation changes
+  useEffect(() => {
+    if (selectedConversationId) {
+      const currentMessages = getMessages(selectedConversationId);
+      console.log(`[Index] Updating messages for conversation ${selectedConversationId}: ${currentMessages.length} messages`);
+      setMessages([...currentMessages]);
+    }
+  }, [selectedConversationId, getMessages]);
+
+  // Initial conversation handling from URL params
+  useEffect(() => {
+    if (characterId) {
+      console.log('[Index] Character ID from params:', characterId);
+      const characterExists = characters.some(char => char.id === characterId);
+      console.log('[Index] Character exists in characters array:', characterExists);
+
+      if (characterExists) {
+        setSelectedConversationId(characterId);
+        console.log('[Index] Selected conversation set to:', characterId);
+
+        const characterMessages = getMessages(characterId);
+        console.log('[Index] Loaded messages count:', characterMessages.length);
+        setMessages(characterMessages);
+
+        if (
+          characterMessages.length === 0 &&
+          !firstMessageSentRef.current[characterId]
+        ) {
+          if (messages.length > 0) {
+            console.log(`[first_mes] [param effect] 当前界面已有消息，不发送first_mes到${characterId}`);
+          } else {
+            (async () => {
+              const char = characters.find(c => c.id === characterId);
+              let firstMes = '';
+              try {
+                if (char?.jsonData) {
+                  const characterData = JSON.parse(char.jsonData);
+                  firstMes = characterData.roleCard?.first_mes || '';
+                }
+              } catch (e) {
+                firstMes = '';
+              }
+              if (firstMes) {
+                console.log(`[first_mes] [param effect] 发送first_mes到${characterId}:`, firstMes);
+                addMessage(characterId, {
+                  id: `first-create-${Date.now()}`,
+                  text: firstMes,
+                  sender: 'bot',
+                  timestamp: Date.now()
+                });
+                firstMessageSentRef.current[characterId] = true;
+              }
+            })();
+          }
+        } else if (characterMessages.length > 0) {
+          firstMessageSentRef.current[characterId] = true;
+        }
+      } else {
+        console.warn('[Index] Character not found in characters array:', characterId);
+      }
+
+      setIsSidebarVisible(false);
+    }
+  }, [characterId, characters, getMessages, messages, addMessage]);
+
+  // Auto message timer setup
+  useEffect(() => {
+    if (characterToUse) {
+      const newAutoMessageEnabled = characterToUse.autoMessage === true;
+      
+      if (autoMessageEnabled !== newAutoMessageEnabled) {
+        console.log(`[App] Auto message setting changed to: ${newAutoMessageEnabled}`);
+        setAutoMessageEnabled(newAutoMessageEnabled);
+      }
+      
+      autoMessageIntervalRef.current = characterToUse.autoMessageInterval || 5;
+      
+      if (newAutoMessageEnabled) {
+        setTimeout(() => {
+          setupAutoMessageTimer();
+        }, 100);
+      } else if (autoMessageTimerRef.current) {
+        clearTimeout(autoMessageTimerRef.current);
+        autoMessageTimerRef.current = null;
+        console.log('[App] Auto message timer cleared due to setting change');
+      }
+    }
+
+    return () => {
+      if (autoMessageTimerRef.current) {
+        clearTimeout(autoMessageTimerRef.current);
+        autoMessageTimerRef.current = null;
+      }
+    };
+  }, [characterToUse, setupAutoMessageTimer]);
+
+  // TTS enhancer settings listener
+  useEffect(() => {
+    const enhancerSettingsListener = EventRegister.addEventListener(
+      'ttsEnhancerSettingsChanged',
+      (settings: any) => {
+        if (settings && typeof settings.enabled === 'boolean') {
+          setIsTtsEnhancerEnabled(settings.enabled);
+        }
+      }
+    );
+
+    return () => {
+      if (typeof enhancerSettingsListener === 'string') {
+         EventRegister.removeEventListener(enhancerSettingsListener);
+      } else {
+         console.warn('[App] Failed to remove TTS enhancer listener: Invalid listener ID type.');
+      }
+    };
+  }, []);
+
+  // Reset auto message timer when messages change
+  useEffect(() => {
+    if (messages.length > 0) {
+      lastMessageTimeRef.current = Date.now();
+      setupAutoMessageTimer();
+    }
+  }, [messages, setupAutoMessageTimer]);
+
+  // Handle keyboard events
+  useEffect(() => {
+    const keyboardWillShowListener = Keyboard.addListener(
+      'keyboardWillShow',
+      () => {
+        setKeyboardVisible(true);
+        Animated.timing(contentScaleAnim, {
+          toValue: 0.96,
+          duration: 220,
+          easing: Easing.out(Easing.ease),
+          useNativeDriver: true,
+        }).start();
+      }
+    );
+    
+    const keyboardWillHideListener = Keyboard.addListener(
+      'keyboardWillHide',
+      () => {
+        setKeyboardVisible(false);
+        Animated.timing(contentScaleAnim, {
+          toValue: 1,
+          duration: 220,
+          easing: Easing.out(Easing.ease),
+          useNativeDriver: true,
+        }).start();
+      }
+    );
+
+    return () => {
+      keyboardWillShowListener.remove();
+      keyboardWillHideListener.remove();
+    };
+  }, [contentScaleAnim]);
+
+  // Update tab bar visibility based on keyboard
+  useEffect(() => {
+    if (Platform.OS === 'ios') {
+      router.setParams({ hideTabBar: isKeyboardVisible ? 'true' : 'false' });
+    }
+  }, [isKeyboardVisible, router]);
+
+  // Background image generation handling
+  useEffect(() => {
     if (!characterToUse) {
-      // console.log('[后处理] 不触发：characterToUse 不存在');
       return;
     }
+    
     if (!characterToUse.enableAutoExtraBackground) {
       console.log('[后处理] 不触发：enableAutoExtraBackground 为 false');
       return;
     }
-    // 新增：判断backgroundImageConfig?.isNovelAI 或 backgroundImage对象的isNovelAI
+    
     const isNovelAI =
       characterToUse.backgroundImageConfig?.isNovelAI === true ||
       (typeof characterToUse.backgroundImage === 'object' &&
         characterToUse.backgroundImage !== null &&
         (characterToUse.backgroundImage as any).isNovelAI === true);
+        
     if (!isNovelAI) {
       console.log('[后处理] 不触发：backgroundImageConfig.isNovelAI 为 false');
       return;
     }
+    
     if (!characterToUse.backgroundImage) {
       console.log('[后处理] 不触发：backgroundImage 为空');
       return;
     }
+    
     if (!messages || messages.length === 0) {
       console.log('[后处理] 不触发：messages 为空');
       return;
     }
+    
     const lastMsg = messages[messages.length - 1];
     if (!lastMsg) {
       console.log('[后处理] 不触发：lastMsg 不存在');
       return;
     }
+    
     if (lastMsg.sender !== 'bot') {
       console.log('[后处理] 不触发：最后一条消息 sender 不是 bot');
       return;
     }
+    
     if (lastMsg.isLoading) {
       console.log('[后处理] 不触发：最后一条消息 isLoading 为 true');
       return;
     }
+    
     if (lastMsg.metadata && lastMsg.metadata.isErrorMessage) {
       console.log('[后处理] 不触发：最后一条消息为 error message');
       return;
     }
 
-    // 新增：检测该AI消息是否已生成过图片（持久化），若已生成则不再触发
+    // Check if this message has already been processed
     if (processedExtraBgMessageIds.current.has(lastMsg.id)) {
-      // 已为该AI消息生成过图片，停止后处理
       return;
     }
 
-    {
-      console.log('触发后处理，最后一条AI消息:', lastMsg.text);
-      triggerExtraBackgroundGeneration(characterToUse, lastMsg.text);
-      // 覆盖生成
-      extraBgGenAbortRef.current.aborted = true;
-    }
+    console.log('触发后处理，最后一条AI消息:', lastMsg.text);
+    triggerExtraBackgroundGeneration(characterToUse, lastMsg.text);
+    extraBgGenAbortRef.current.aborted = true;
   }, [messages, characterToUse, characterToUse?.enableAutoExtraBackground, triggerExtraBackgroundGeneration]);
 
-  // --- 清理机制：当对话被重置或消息被清空时，清空已处理集合 ---
+  // Clear processed message IDs when conversation is reset
   useEffect(() => {
     if ((!messages || messages.length === 0) && characterToUse?.id) {
       processedExtraBgMessageIds.current.clear();
@@ -2578,23 +2399,22 @@ function isWebViewContent(text: string): boolean {
     }
   }, [messages, characterToUse?.id, saveProcessedExtraBgMessageIds]);
 
-  // 切换角色时加载集合
+  // Load processed message IDs when character changes
   useEffect(() => {
     if (characterToUse?.id) {
       loadProcessedExtraBgMessageIds(characterToUse.id);
     }
   }, [characterToUse?.id, loadProcessedExtraBgMessageIds]);
 
-  // 4. 取消自动生成背景后，背景还原为backgroundImage，并清理extraBgImage缓存
+  // Reset extraBgImage when auto background is disabled
   useEffect(() => {
     if (characterToUse && !characterToUse.enableAutoExtraBackground) {
       setExtraBgImage(null);
     }
   }, [characterToUse?.enableAutoExtraBackground]);
 
-  // 5. 检查extraBgImage的缓存是否及时清理
+  // Clean up extraBgImage when character changes
   useEffect(() => {
-    // 当切换角色、关闭自动生成、或extraBgImage对应的角色ID变化时清理
     if (
       !characterToUse ||
       !characterToUse.enableAutoExtraBackground ||
@@ -2602,19 +2422,15 @@ function isWebViewContent(text: string): boolean {
     ) {
       setExtraBgImage(null);
     }
-  }, [characterToUse, characterToUse?.enableAutoExtraBackground, characterToUse?.extrabackgroundimage]);
+  }, [characterToUse, characterToUse?.enableAutoExtraBackground, characterToUse?.extrabackgroundimage, extraBgImage]);
 
-  // 新增：开启自动生成背景时自动触发后处理
+  // Trigger background generation when auto background is enabled
   useEffect(() => {
     if (
       characterToUse &&
       characterToUse.enableAutoExtraBackground &&
-      // 没有本地extraBgImage（防止重复生成）
       !extraBgImage
     ) {
-      // 只在没有extrabackgroundimage或本地extraBgImage时触发
-      // 但如果extrabackgroundimage为空，也应触发
-      // 只要AI消息存在，触发一次
       if (messages && messages.length > 0) {
         const lastMsg = messages[messages.length - 1];
         if (
@@ -2623,43 +2439,68 @@ function isWebViewContent(text: string): boolean {
           !lastMsg.isLoading &&
           !(lastMsg.metadata && lastMsg.metadata.isErrorMessage)
         ) {
-          // 触发后处理
           triggerExtraBackgroundGeneration(characterToUse, lastMsg.text);
         }
       }
     }
-    // eslint-disable-next-line
-  }, [characterToUse?.enableAutoExtraBackground]);
+  }, [characterToUse?.enableAutoExtraBackground, characterToUse, extraBgImage, messages, triggerExtraBackgroundGeneration]);
 
+  // Listen for top bar visibility changes
+  useEffect(() => {
+    const listener = EventRegister.addEventListener('toggleTopBarVisibility', (visible: boolean) => {
+      setIsTopBarVisible(visible);
+      DeviceEventEmitter.emit('topBarVisibilityChanged', visible);
+    });
+    return () => {
+      EventRegister.removeEventListener(listener as string);
+    };
+  }, []);
 
+  // Clear transient errors
+  useEffect(() => {
+    if (
+      transientError &&
+      transientError.includes('处理消息时出现了错误') &&
+      selectedConversationId
+    ) {
+      clearTransientMessages(selectedConversationId);
+    }
+  }, [transientError, selectedConversationId, clearTransientMessages]);
 
   return (
     <View style={styles.outerContainer}>
-      
       <StatusBar translucent backgroundColor="transparent" />
+      
+     {/* Restore top bar button */}
+      {!isTopBarVisible && (
+        <TouchableOpacity
+          style={{
+            position: 'absolute',
+            // 修改：使用安全区顶部高度
+            top: (insets?.top ?? 0) + 10,
+            left: 18,
+            zIndex: 99999,
+            backgroundColor: 'rgba(0,0,0,0.18)', 
+            borderRadius: 16,
+            paddingVertical: 2,
+            paddingHorizontal: 8,
+            flexDirection: 'row',
+            alignItems: 'center',
+            elevation: 2,
+            shadowColor: 'transparent',
+            shadowOffset: { width: 0, height: 0 },
+            shadowOpacity: 0,
+            shadowRadius: 0,
+          }}
+          onPress={handleRestoreTopBar}
+          activeOpacity={0.85}
+        >
+          <Ionicons name="chevron-down" size={18} color="#fff" />
+        </TouchableOpacity>
+      )}
 
-      <TouchableOpacity
-        style={{
-          position: 'absolute',
-          bottom: 120,
-          right: 24,
-          zIndex: 99999,
-          backgroundColor: '#9c27b0',
-          borderRadius: 28,
-          width: 56,
-          height: 56,
-          justifyContent: 'center',
-          alignItems: 'center',
-          elevation: 10,
-        }}
-        onPress={handleWebViewTest}
-        activeOpacity={0.85}
-      >
-        <Text style={{ color: '#fff', fontWeight: 'bold', fontSize: 22 }}>Web</Text>
-      </TouchableOpacity>
-
-            {/* 新增：初始化加载蒙层 */}
-            {isInitializing && (
+      {/* Loading overlay */}
+      {isInitializing && (
         <View style={styles.initializingOverlay}>
           <ImageBackground 
             source={require('@/assets/images/default-background.jpg')}
@@ -2672,89 +2513,12 @@ function isWebViewContent(text: string): boolean {
           </ImageBackground>
         </View>
       )}
-            
 
-{/* /* 
-        <TouchableOpacity
-        style={{
-          position: 'absolute',
-          bottom: 32,
-          right: 24,
-          zIndex: 99999,
-          backgroundColor: '#3498db',
-          borderRadius: 28,
-          width: 56,
-          height: 56,
-          justifyContent: 'center',
-          alignItems: 'center',
-          elevation: 10,
-        }}
-        onPress={() => setIsTestMarkdownVisible(true)}
-        activeOpacity={0.85}
-      >
-        <Text style={{ color: '#fff', fontWeight: 'bold', fontSize: 22 }}>M↓</Text>
-      </TouchableOpacity> */
-
-      /* <TouchableOpacity
-        style={{
-          position: 'absolute',
-          bottom: 32,
-          right: 24,
-          zIndex: 99999,
-          backgroundColor: '#3498db',
-          borderRadius: 28,
-          width: 56,
-          height: 56,
-          justifyContent: 'center',
-          alignItems: 'center',
-          elevation: 10,
-        }}
-        onPress={() => setIsTestMarkdownVisible(true)}
-        activeOpacity={0.85}
-      >
-        <Text style={{ color: '#fff', fontWeight: 'bold', fontSize: 22 }}>M↓</Text>
-      </TouchableOpacity>
-
-
-      {isTestMarkdownVisible && (
-        <View style={{
-          position: 'absolute',
-          left: 0, right: 0, bottom: 0,
-          backgroundColor: 'rgba(0,0,0,0.7)',
-          zIndex: 99999,
-          alignItems: 'center',
-          justifyContent: 'flex-end',
-          paddingBottom: 40,
-        }}>
-          <TestMarkdown
-            onSendMessage={(text, sender) => {
-              handleSendMessage(text, sender);
-              setIsTestMarkdownVisible(false);
-            }}
-          />
-          <TouchableOpacity
-            style={{
-              marginTop: 10,
-              alignSelf: 'center',
-              padding: 10,
-              backgroundColor: '#444',
-              borderRadius: 20,
-            }}
-            onPress={() => setIsTestMarkdownVisible(false)}
-          >
-            <Text style={{ color: '#fff', fontSize: 15 }}>关闭</Text>
-          </TouchableOpacity>
-          </View>
-      )} */ }
-
-      
       <MemoryProvider config={memoryConfig}>
         <Mem0Initializer />
         
-
         <View style={styles.backgroundContainer}>
           {!isGroupMode && characterToUse?.dynamicPortraitEnabled && characterToUse?.dynamicPortraitVideo ? (
-            // Render video background if enabled and video exists
             <>
               <Video
                 ref={videoRef}
@@ -2770,9 +2534,8 @@ function isWebViewContent(text: string): boolean {
                   setVideoError(error?.toString() || 'Failed to load video');
                 }}
                 useNativeControls={false}
-              /> */
+              /> 
               
-              {/* Show loading indicator while video is loading */}
               {!isVideoReady && !videoError && (
                 <View style={styles.videoLoadingContainer}>
                   <ActivityIndicator size="large" color="#ffffff" />
@@ -2780,7 +2543,6 @@ function isWebViewContent(text: string): boolean {
                 </View>
               )}
               
-              {/* Show error message if video failed to load */}
               {videoError && (
                 <View style={styles.videoErrorContainer}>
                   <ImageBackground
@@ -2799,26 +2561,26 @@ function isWebViewContent(text: string): boolean {
               )}
             </>
           ) : (
-          // 修正：群聊模式下优先显示群聊自定义背景
-          <ImageBackground
-            source={isGroupMode 
-              ? getGroupBackgroundImage()
-              : (characterToUse ? getBackgroundImage() : require('@/assets/images/default-background.jpg'))}
-            style={styles.backgroundImage}
-            resizeMode="cover"
-          >
-            <View style={{flex: 1}} />
-          </ImageBackground>
+            <ImageBackground
+              source={isGroupMode 
+                ? getGroupBackgroundImage()
+                : (characterToUse ? getBackgroundImage() : require('@/assets/images/default-background.jpg'))}
+              style={styles.backgroundImage}
+              resizeMode="cover"
+            >
+              <View style={{flex: 1}} />
+            </ImageBackground>
           )}
         </View>
 
-        {/* 新增：右上角图片生成中indicator */}
+        {/* Background generation indicator */}
         {isExtraBgGenerating && (
           <View style={{
             position: 'absolute',
-            top: 90, // 与TopBarWithBackground下沿对齐（原top: 40）
+            top: 90,
             right: 30,
             zIndex: 999999,
+            backgroundColor: 'rgba(0,0,0,0.6)',
             borderRadius: 20,
             paddingVertical: 8,
             paddingHorizontal: 18,
@@ -2827,10 +2589,11 @@ function isWebViewContent(text: string): boolean {
             elevation: 8,
           }}>
             <ActivityIndicator size="small" color="rgb(255, 224, 195)" />
+            <Text style={{ color: 'rgb(255, 224, 195)', marginLeft: 8 }}>生成新背景...</Text>
           </View>
         )}
         
-        {/* Sidebar is positioned absolutely at the root level */}
+        {/* Sidebar */}
         {user && (
           <Sidebar
             isVisible={isSidebarVisible}
@@ -2840,23 +2603,23 @@ function isWebViewContent(text: string): boolean {
             onClose={toggleSidebar}
             animationValue={contentSlideAnim}
             currentUser={user}
-            disbandedGroups={disbandedGroups} // Pass disbanded groups to Sidebar
+            disbandedGroups={disbandedGroups}
           />
         )}
 
-      {/* 新增：群聊设置侧边栏 */}
-      {isGroupMode && (
-        <GroupSettingsSidebar
-          isVisible={groupSettingsSidebarVisible}
-          onClose={toggleGroupSettingsSidebar}
-          animationValue={groupSettingsSidebarAnim}
-          selectedGroup={selectedGroup}
-          currentUser={user}
-          onGroupBackgroundChanged={handleGroupBackgroundChanged} // 新增
-        />
-      )}
+        {/* Group settings sidebar */}
+        {isGroupMode && (
+          <GroupSettingsSidebar
+            isVisible={groupSettingsSidebarVisible}
+            onClose={toggleGroupSettingsSidebar}
+            animationValue={groupSettingsSidebarAnim}
+            selectedGroup={selectedGroup}
+            currentUser={user}
+            onGroupBackgroundChanged={handleGroupBackgroundChanged}
+          />
+        )}
 
-        {/* Everything else (content + topbar) gets animated together */}
+        {/* Main content area */}
         <Animated.View 
           style={[
             styles.contentMainContainer,
@@ -2868,10 +2631,7 @@ function isWebViewContent(text: string): boolean {
                     Animated.multiply(settingsSlideAnim, -1),
                   ),
                 },
-                // 新增：群聊设置侧边栏动画（左移）
-                { 
-                  translateX: Animated.multiply(groupSettingsSidebarAnim, -1)
-                },
+                { translateX: Animated.multiply(groupSettingsSidebarAnim, -1) },
                 { scale: contentScaleAnim }
               ],
               width: '100%',
@@ -2886,57 +2646,42 @@ function isWebViewContent(text: string): boolean {
               styles.container,
               (characterToUse || isGroupMode) ? styles.transparentBackground : styles.darkBackground
             ]}>
-              <TopBarWithBackground
-                selectedCharacter={!isGroupMode ? characterToUse : null}
-                selectedGroup={isGroupMode ? selectedGroup : null}
-                onAvatarPress={isGroupMode ? handleToggleGroupManage : handleAvatarPress}
-                onMemoPress={() => setIsMemoSheetVisible(true)}
-                onSettingsPress={toggleSettingsSidebar}
-                onMenuPress={toggleSidebar}
-                onSaveManagerPress={isGroupMode ? undefined : toggleSaveManager}
-                showBackground={false}
-                isGroupMode={isGroupMode}
-                currentUser={user}
-                onGroupDisbanded={handleGroupDisbanded}
-                isEmpty={!isGroupMode && (!characterToUse || messages.length === 0)}
-                // 新增：群聊设置按钮事件
-                onGroupSettingsPress={toggleGroupSettingsSidebar}
-                
-              />
+              
+              {/* Top bar */}
+              {isTopBarVisible && (
+                <TopBarWithBackground
+                  selectedCharacter={!isGroupMode ? characterToUse : null}
+                  selectedGroup={isGroupMode ? selectedGroup : null}
+                  onAvatarPress={isGroupMode ? handleToggleGroupManage : handleAvatarPress}
+                  onMemoPress={() => setIsMemoSheetVisible(true)}
+                  onSettingsPress={toggleSettingsSidebar}
+                  onMenuPress={toggleSidebar}
+                  onSaveManagerPress={isGroupMode ? undefined : toggleSaveManager}
+                  showBackground={false}
+                  isGroupMode={isGroupMode}
+                  currentUser={user}
+                  onGroupDisbanded={handleGroupDisbanded}
+                  isEmpty={!isGroupMode && (!characterToUse || messages.length === 0)}
+                  onGroupSettingsPress={toggleGroupSettingsSidebar}
+                />
+              )}
 
               <SafeAreaView style={[
                 styles.safeArea,
                 (characterToUse || isGroupMode) && styles.transparentBackground,
-                mode === 'background-focus' && styles.backgroundFocusSafeArea
+                mode === 'background-focus' && styles.backgroundFocusSafeArea,
+                !isTopBarVisible && { marginTop: 10 } // 顶部栏隐藏时顶部留10px间隙
               ]}>
-                {/* 错误提示条，仅临时显示，不进入消息流 */}
+                {/* Transient error display */}
                 {transientError && (
-                  <View style={{
-                    position: 'absolute',
-                    top: 10,
-                    left: 0,
-                    right: 0,
-                    zIndex: 999,
-                    alignItems: 'center',
-                    pointerEvents: 'none'
-                  }}>
-                    <View style={{
-                      backgroundColor: 'rgba(220,53,69,0.95)',
-                      paddingVertical: 8,
-                      paddingHorizontal: 24,
-                      borderRadius: 20,
-                      shadowColor: '#000',
-                      shadowOffset: { width: 0, height: 2 },
-                      shadowOpacity: 0.2,
-                      shadowRadius: 4,
-                      elevation: 6,
-                    }}>
-                      <Text style={{ color: '#fff', fontSize: 15, fontWeight: 'bold' }}>{transientError}</Text>
+                  <View style={styles.transientErrorContainer}>
+                    <View style={styles.transientErrorBox}>
+                      <Text style={styles.transientErrorText}>{transientError}</Text>
                     </View>
                   </View>
                 )}
 
-                {/* Preview Mode Banner (only show in character chat mode) */}
+                {/* Preview Mode Banner */}
                 {isPreviewMode && previewBannerVisible && !isGroupMode && (
                   <View style={styles.previewBanner}>
                     <Text style={styles.previewBannerText}>
@@ -2960,10 +2705,12 @@ function isWebViewContent(text: string): boolean {
                   </View>
                 )}
                 
+                {/* Chat content */}
                 <View style={[
                   styles.contentContainer,
                   (characterToUse || isGroupMode) && styles.transparentBackground,
-                  mode === 'background-focus' && !isGroupMode && styles.backgroundFocusContentContainer
+                  mode === 'background-focus' && !isGroupMode && styles.backgroundFocusContentContainer,
+                  !isTopBarVisible && { paddingTop: 0 }
                 ]}>
                   {isGroupMode ? (
                     <GroupDialog
@@ -2971,7 +2718,6 @@ function isWebViewContent(text: string): boolean {
                       groupId={selectedGroupId || ''}
                       messages={groupMessages}
                       onScrollPositionChange={(groupId, position) => {
-                        // Handle group chat scroll position
                         setChatScrollPositions(prev => ({
                           ...prev,
                           [`group-${groupId}`]: position
@@ -2979,14 +2725,14 @@ function isWebViewContent(text: string): boolean {
                       }}
                       currentUser={user || { id: '', name: 'User' }}
                       groupMembers={groupMembers}
-                      isGroupDisbanded={disbandedGroups.includes(selectedGroupId || '')} // Pass disbanded status
+                      isGroupDisbanded={disbandedGroups.includes(selectedGroupId || '')}
                     />
                   ) : (
                     <ChatDialog
-                      messages={messages}
+                      messages={filteredMessages}
                       style={StyleSheet.flatten([styles.chatDialog])}
                       selectedCharacter={characterToUse}
-                      onRateMessage={handleRateMessage}
+                      onRateMessage={() => {}} // Rating functionality removed
                       onRegenerateMessage={handleRegenerateMessage}
                       savedScrollPosition={characterToUse?.id ? chatScrollPositions[characterToUse.id] : undefined}
                       onScrollPositionChange={handleScrollPositionChange}
@@ -2996,19 +2742,18 @@ function isWebViewContent(text: string): boolean {
                       isHistoryModalVisible={isHistoryModalVisible}
                       setHistoryModalVisible={setHistoryModalVisible}
                       onShowFullHistory={handleShowFullHistory}
-                    onEditMessage={handleEditAiMessage}
-                    onDeleteMessage={handleDeleteAiMessage}
+                      onEditMessage={handleEditAiMessage}
+                      onDeleteMessage={handleDeleteAiMessage}
                     />
                   )}
                 </View>
 
-                {/* Adjust input bar position for different modes */}
+                {/* Input bar */}
                 <View style={[
                   styles.inputBar,
                   (characterToUse || isGroupMode) && styles.transparentBackground,
                   mode === 'background-focus' && !isGroupMode && styles.backgroundFocusInputBar
                 ]}>
-                  {/* Conditionally render either ChatInput or GroupInput */}
                   {isGroupMode ? (
                     <GroupInput
                       onSendMessage={handleSendGroupMessage}
@@ -3024,7 +2769,6 @@ function isWebViewContent(text: string): boolean {
                         conversationId={selectedConversationId ? getCharacterConversationId(selectedConversationId) ?? '' : ''}
                         onResetConversation={handleResetConversation}
                         selectedCharacter={characterToUse}
-                        // Pass search and TTS functionality to ChatInput
                         braveSearchEnabled={braveSearchEnabled}
                         toggleBraveSearch={toggleBraveSearch}
                         isTtsEnhancerEnabled={isTtsEnhancerEnabled}
@@ -3037,11 +2781,9 @@ function isWebViewContent(text: string): boolean {
                     )
                   )}
                 </View>
-
-                {/* Sidebars and overlays */}
               </SafeAreaView>
 
-              {/* Group Management Modal */}
+              {/* Modals */}
               {isGroupManageModalVisible && selectedGroup && (
                 <GroupManagementModal
                   visible={isGroupManageModalVisible}
@@ -3051,9 +2793,7 @@ function isWebViewContent(text: string): boolean {
                   allCharacters={characters}
                   currentUser={user || { id: '', name: 'User' }}
                   onGroupUpdated={() => {
-                    // Reload groups after update
                     loadUserGroups();
-                    // Reload current group messages
                     if (selectedGroupId) {
                       loadGroupMessages(selectedGroupId);
                     }
@@ -3061,13 +2801,13 @@ function isWebViewContent(text: string): boolean {
                 />
               )}
 
-              {/* 直接在主视图中渲染 MemoOverlay */}
+              {/* Overlay Components */}
               <MemoOverlay
                 isVisible={isMemoSheetVisible}
                 onClose={toggleMemoOverlay}
                 characterId={characterIdForMemo}
                 conversationId={conversationIdForMemo}
-                customUserName={characterToUse?.customUserName} // 新增传递
+                customUserName={characterToUse?.customUserName}
               />            
               
               {/* Save Manager */}
@@ -3086,16 +2826,27 @@ function isWebViewContent(text: string): boolean {
                 />
               )}
               
-              {/* TTS Enhancer Modal - same level as other modals */}
+              {/* TTS Enhancer Modal */}
               <TTSEnhancerModal
                 visible={isTtsEnhancerModalVisible}
                 onClose={() => setIsTtsEnhancerModalVisible(false)}
               />
+
+              {/* Lazy loaded modals */}
+              <Suspense fallback={null}>
+                {/* {isHistoryModalVisible && (
+                  <HistoryModal
+                    visible={isHistoryModalVisible}
+                    onClose={() => setHistoryModalVisible(false)}
+                    characterId={selectedConversationId || ''}
+                  />
+                )} */}
+              </Suspense>
             </View>
           </KeyboardAvoidingView>
         </Animated.View>
 
-        {/* SettingsSidebar 绝对定位并放在所有内容之后，确保在最顶层 */}
+        {/* Settings Sidebar */}
         {characterToUse && (
           <View
             pointerEvents="box-none"
@@ -3105,7 +2856,7 @@ function isWebViewContent(text: string): boolean {
               right: 0,
               bottom: 0,
               left: 0,
-              zIndex: 99999, // 确保在最顶层
+              zIndex: 99999,
             }}
           >
             <SettingsSidebar
@@ -3124,9 +2875,8 @@ function isWebViewContent(text: string): boolean {
 const styles = StyleSheet.create({
   outerContainer: {
     flex: 1,
-    backgroundColor: '#181818', // Add a dark background to prevent white flash
+    backgroundColor: '#181818',
   },
-  // New styles for fixed background
   backgroundContainer: {
     position: 'absolute',
     top: 0,
@@ -3134,14 +2884,13 @@ const styles = StyleSheet.create({
     right: 0,
     bottom: 0,
     zIndex: 0,
-    backgroundColor: '#181818', // Add a dark background here as well
+    backgroundColor: '#181818',
   },
   backgroundImage: {
     flex: 1,
     width: '100%',
     height: '100%',
   },
-  // Add new styles for video background
   backgroundVideo: {
     flex: 1,
     width: '100%',
@@ -3182,7 +2931,7 @@ const styles = StyleSheet.create({
     left: 0,
     right: 0,
     bottom: 0,
-    zIndex: 10, // Lower than sidebar's z-index
+    zIndex: 10,
   },
   container: {
     flex: 1,
@@ -3264,30 +3013,27 @@ const styles = StyleSheet.create({
   inputBarContainer: {
     width: '100%',
   },
-  // Add styles for visual novel mode
   visualNovelContentContainer: {
     flex: 1,
-
-    paddingBottom: 200, // Add extra space for visual novel dialog
+    paddingBottom: 200,
   },
   visualNovelInputBar: {
-    paddingBottom: 180, // Add extra padding to position above visual novel dialog
+    paddingBottom: 180,
   },
-  // Adjust styles for background focus mode to show top half
   backgroundFocusSafeArea: {
-    // Keep the normal safeArea settings, no special adjustments needed
+    // Keep default settings
   },
   backgroundFocusContentContainer: {
-    flex: 1, // Take only the top half of the screen
+    flex: 1,
     padding: 10,
   },
   backgroundFocusInputBar: {
     padding: 10,
-    backgroundColor: `transparent`,
+    backgroundColor: 'transparent',
   },
   initializingOverlay: {
     ...StyleSheet.absoluteFillObject,
-    zIndex: 10000, // 确保在最上层
+    zIndex: 10000,
   },
   initializingBackground: {
     flex: 1,
@@ -3299,7 +3045,7 @@ const styles = StyleSheet.create({
     borderRadius: 16,
     padding: 24,
   },
-    floatingLogButton: {
+  floatingLogButton: {
     position: 'absolute',
     bottom: 32,
     right: 24,
@@ -3321,7 +3067,32 @@ const styles = StyleSheet.create({
     fontWeight: 'bold',
     fontSize: 28,
   },
+  transientErrorContainer: {
+    position: 'absolute',
+    top: 10,
+    left: 0,
+    right: 0,
+    zIndex: 999,
+    alignItems: 'center',
+    pointerEvents: 'none'
+  },
+  transientErrorBox: {
+    backgroundColor: 'rgba(220,53,69,0.95)',
+    paddingVertical: 8,
+    paddingHorizontal: 24,
+    borderRadius: 20,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.2,
+    shadowRadius: 4,
+    elevation: 6, 
+    
+  },
+  transientErrorText: {
+    color: '#fff',
+    fontSize: 15,
+    fontWeight: 'bold'
+  }
 });
 
 export default App;
-

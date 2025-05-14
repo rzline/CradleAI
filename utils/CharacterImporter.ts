@@ -55,6 +55,7 @@ export class CharacterImporter {
     backgroundImage?: string; // Add backgroundImage field to return PNG data
     alternateGreetings?: string[]; // 新增
     regexScripts?: any[]; // 新增：返回regexScripts
+    originalJson?: string; // 新增：原始json内容
   }> {
     const data = await PNGParser.readPNGChunks(filePath);
     
@@ -163,13 +164,28 @@ export class CharacterImporter {
       console.warn('[CharacterImporter] 读取regex_scripts时出错:', e);
     }
 
+    // 读取原始PNG中的json内容
+    let originalJson: string | undefined;
+    try {
+      // PNGParser.readPNGChunks 已经解析了chara数据，但我们需要原始json字符串
+      // 这里假设PNGParser.readPNGChunks返回的data.charaRaw为原始json字符串（如无则序列化data.chara）
+      if (typeof data.charaRaw === 'string') {
+        originalJson = data.charaRaw;
+      } else if (data.chara) {
+        originalJson = JSON.stringify(data.chara, null, 2);
+      }
+    } catch (e) {
+      // ignore
+    }
+
     return { 
       roleCard, 
       worldBook, 
       extractedName,
       backgroundImage,  // Return the background image data
       alternateGreetings, // 新增
-      regexScripts // 新增
+      regexScripts, // 新增
+      originalJson // 新增
     };
   }
 
@@ -184,6 +200,7 @@ export class CharacterImporter {
     extractedName: string;
     backgroundImage?: string;
     alternateGreetings?: string[]; // 新增
+    originalJson?: string; // 新增
   }> {
     try {
       let content = await FileSystem.readAsStringAsync(filePath);
@@ -212,7 +229,7 @@ export class CharacterImporter {
         alternateGreetings = data.data.alternate_greetings;
       }
 
-      return { roleCard, worldBook, preset, extractedName, backgroundImage, alternateGreetings };
+      return { roleCard, worldBook, preset, extractedName, backgroundImage, alternateGreetings, originalJson: content };
     } catch (e) {
       throw new Error('导入JSON角色卡失败: ' + (e instanceof Error ? e.message : '未知错误'));
     }

@@ -61,6 +61,14 @@ export interface ApiForwardingOptions {
     headers: Record<string, string>;
 }
 
+// Stream message callbacks for streaming API responses
+export interface StreamCallbacks {
+  onData: (chunk: string) => void;
+  onError: (error: any) => void;
+  onComplete: () => void;
+  // onStart?: () => void;
+}
+
 // ============= NodeST 核心类型 =============
 
 export interface RoleCardJson {
@@ -650,6 +658,7 @@ export interface ChatDialogProps {
   savedScrollPosition?: number;
   onScrollPositionChange?: (characterId: string, position: number) => void;
   messageMemoryState?: Record<string, string>; // Add this new prop
+  streamingMessage?: string | null; // 新增：流式消息
 }
 
 export interface ChatSettings {
@@ -678,6 +687,8 @@ export interface ChatSettings {
   // Add new model configuration fields
   geminiPrimaryModel?: string;
   geminiBackupModel?: string;
+  geminiTemperature?: number;
+  geminiMaxTokens?: number;
   retryDelay?: number;
   useZhipuEmbedding?: boolean;
   zhipuApiKey?: string;
@@ -700,6 +711,9 @@ export interface ChatSettings {
     // 新增：多渠道支持
     providers?: OpenAICompatibleProviderConfig[];
     selectedProviderId?: string;
+    stream?: boolean;
+    temperature?: number;
+    max_tokens?: number;
   };
 }
 
@@ -741,6 +755,9 @@ export interface OpenAICompatibleProviderConfig {
   id: string; // unique id for the provider
   name: string; // user-friendly name
   apiKey: string;
+  stream : boolean;
   model: string;
   endpoint: string;
+  temperature: number;
+  max_tokens: number;
 }

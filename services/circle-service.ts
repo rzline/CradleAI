@@ -1768,19 +1768,21 @@ export class CircleService {
           } catch (historyError) {
             console.warn(`【朋友圈服务】获取角色 ${character.name} 的聊天历史失败:`, historyError);
           }
-          
+                    // 获取角色对用户的昵称（customUserName），如果没有则用userNickname
+          const userDisplayName = character.customUserName || `用户`;
+
           // Process interaction directly instead of using scheduler
           const options: CirclePostOptions = {
             type: 'replyToPost',
             content: {
               authorId: 'user-1', // 明确标记为用户发布的帖子
-              authorName: updatedPost.characterName,
+              authorName: userDisplayName, // 使用角色对用户的昵称
               text: updatedPost.content,
-              context: images.length > 0 ? 
-                `这是${updatedPost.characterName}发布的带有${images.length}张图片的朋友圈动态。请重点关注并回应图片内容。` : 
-                `这是${updatedPost.characterName}发布的一条朋友圈动态。${
-                  updatedPost.comments?.length ? 
-                  `目前已有${updatedPost.comments.length}条评论和${updatedPost.likes}个点赞。` : 
+              context: images.length > 0 ?
+                `这是${userDisplayName}发布的带有${images.length}张图片的朋友圈动态。请重点关注并回应图片内容。` :
+                `这是${userDisplayName}发布的一条朋友圈动态。${
+                  updatedPost.comments?.length ?
+                  `目前已有${updatedPost.comments.length}条评论和${updatedPost.likes}个点赞。` :
                   '还没有其他人互动。'
                 }`,
               images: updatedPost.images,

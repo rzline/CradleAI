@@ -33,6 +33,9 @@ export interface OpenAICompatibleConfig {
   endpoint: string;
   apiKey: string;
   model: string;
+  stream?: boolean;
+  temperature?: number;
+  max_tokens?: number;
 }
 
 // Define interfaces for image handling to match gemini-adapter
@@ -51,13 +54,44 @@ interface GeneratedContent {
 }
 
 export class OpenAIAdapter {
-  private endpoint: string;
-  private apiKey: string;
-  private model: string;
-  private useCloudService: boolean = false;
   private cloudStatusUnsubscribe: (() => void) | null = null;
   private conversationHistory: Array<{ role: string; content: string }> = [];
-  
+
+  // getter: 动态获取配置
+  private get endpoint(): string {
+    const apiSettings = getApiSettings();
+    return apiSettings.OpenAIcompatible?.endpoint?.replace(/\/$/, '') || '';
+  }
+  private get apiKey(): string {
+    const apiSettings = getApiSettings();
+    return apiSettings.OpenAIcompatible?.apiKey || '';
+  }
+  private get model(): string {
+    const apiSettings = getApiSettings();
+    return apiSettings.OpenAIcompatible?.model || 'gpt-3.5-turbo';
+  }
+  private get stream(): boolean {
+    const apiSettings = getApiSettings();
+    return !!apiSettings.OpenAIcompatible?.stream;
+  }
+  private get temperature(): number {
+    const apiSettings = getApiSettings();
+    return typeof apiSettings.OpenAIcompatible?.temperature === 'number'
+      ? apiSettings.OpenAIcompatible.temperature
+      : 0.7;
+  }
+  private get max_tokens(): number {
+    const apiSettings = getApiSettings();
+    return typeof apiSettings.OpenAIcompatible?.max_tokens === 'number'
+      ? apiSettings.OpenAIcompatible.max_tokens
+      : 8192;
+  }
+  private get useCloudService(): boolean {
+    const apiSettings = getApiSettings();
+    return !!apiSettings.useCloudService;
+  }
+
+
   // Available models mapping from OpenAI naming to internal naming
   private availableModels = [
     "gpt-4-turbo",
@@ -71,17 +105,12 @@ export class OpenAIAdapter {
   ];
 
   constructor(config: OpenAICompatibleConfig) {
-    this.endpoint = config.endpoint.replace(/\/$/, '');
-    this.apiKey = config.apiKey;
-    this.model = config.model;
-    
     // Initialize cloud service status
     this.updateCloudServiceStatus();
 
     // Subscribe to cloud service status changes
     this.cloudStatusUnsubscribe = addCloudServiceStatusListener((enabled) => {
       console.log(`[OpenAIAdapter] 云服务状态更新: ${enabled ? '启用' : '禁用'}`);
-      this.useCloudService = enabled;
     });
     
     console.log(`[OpenAIAdapter] 初始化，endpoint: ${this.endpoint}, model: ${this.model}`);
@@ -103,7 +132,6 @@ export class OpenAIAdapter {
    * Check and update cloud service status from the tracker.
    */
   private updateCloudServiceStatus(): void {
-    this.useCloudService = getCloudServiceStatus();
     console.log(`[OpenAIAdapter] 初始化云服务状态: ${this.useCloudService ? '启用' : '禁用'}`);
   }
 
@@ -111,23 +139,14 @@ export class OpenAIAdapter {
    * Update API settings
    */
   public updateSettings(config: Partial<OpenAICompatibleConfig>): void {
-    if (config.endpoint !== undefined) {
-      this.endpoint = config.endpoint.replace(/\/$/, '');
-    }
-    if (config.apiKey !== undefined) {
-      this.apiKey = config.apiKey;
-    }
-    if (config.model !== undefined) {
-      this.model = config.model;
-    }
-    console.log(`[OpenAIAdapter] 设置已更新，endpoint: ${this.endpoint}, model: ${this.model}`);
+    console.log('[OpenAIAdapter] updateSettings已废弃，所有设置自动从settings-helper获取');
   }
-
   /**
    * Check if API key is configured
    */
   public isApiKeyConfigured(): boolean {
     return !!this.apiKey;
+    
   }
 
   /**
@@ -147,6 +166,8 @@ export class OpenAIAdapter {
       // 新增参数
       memoryResults?: any;
       characterId?: string;
+      // 新增：流式回调
+      onStream?: (delta: string) => void;
     }
   ) {
     // === 新增：表格记忆注入逻辑迁移到这里 ===
@@ -159,17 +180,10 @@ export class OpenAIAdapter {
       temperature,
       max_tokens,
       stream,
+      onStream, // 新增
       ...restOptions
     } = options || {};
 
-    // 兼容参数传递方式
-    if (!effectiveCharacterId && memoryResults) {
-      effectiveCharacterId =
-        memoryResults.characterId ||
-        memoryResults.agentId ||
-        memoryResults.results?.[0]?.characterId ||
-        memoryResults.results?.[0]?.agentId;
-    }
 
     // 如果memoryResults存在，优先从memoryResults获取characterId
     if (memoryResults) {
@@ -210,9 +224,9 @@ export class OpenAIAdapter {
         role: "user",
         content: tableMemoryText + `
 <response_guidelines>
-- 你会在回复中结合上面的表格记忆内容，表格中记录了角色相关的重要信息和事实。
-- 你会确保回复与表格中的信息保持一致，不会捏造表格中不存在的信息。
-- 你的回复会自然融入表格中的信息，不会生硬地提及"根据表格"之类的字眼。
+- 你会在回复中结合上面的[角色长期记忆表格]内容，表格中记录了重要信息和事实。
+- 你会确保回复与[角色长期记忆表格]的信息保持一致，不会捏造表格中不存在的信息。
+- 你的回复会自然融入[角色长期记忆表格]的信息，不会生硬地提及"根据表格"之类的字眼。
 - 你会确保回复保持角色人设的一致性。
 </response_guidelines>`
       });
@@ -224,9 +238,22 @@ export class OpenAIAdapter {
       'Authorization': `Bearer ${this.apiKey}`
     };
 
+    const reqTemperature = typeof options?.temperature === 'number'
+      ? options.temperature
+      : this.temperature;
+    const reqMaxTokens = typeof options?.max_tokens === 'number'
+      ? options.max_tokens
+      : this.max_tokens;
+    const reqStream = typeof options?.stream === 'boolean'
+      ? options.stream
+      : this.stream;
+
     const data = {
-      model: this.model,
+      model: options?.model || this.model,
       messages: enhancedMessages,
+      temperature: reqTemperature,
+      max_tokens: reqMaxTokens,
+      stream: reqStream,
       ...restOptions // 不包含 memoryResults/characterId
     };
     // 新增：详细打印请求内容，包括完整的messages数组
@@ -241,10 +268,75 @@ export class OpenAIAdapter {
       data
     });
 
-    try {
+        try {
+      if (data.stream) {
+        // --- 流式响应处理 ---
+        const resp = await fetch(url, {
+          method: 'POST',
+          headers,
+          body: JSON.stringify(data)
+        });
+        if (!resp.ok) {
+          let errMsg = '';
+          try {
+            const errJson = await resp.json();
+            errMsg = JSON.stringify(errJson);
+          } catch {
+            errMsg = resp.statusText;
+          }
+          throw new Error(`OpenAI兼容API流式请求失败: HTTP ${resp.status}: ${errMsg}`);
+        }
+        // 处理SSE流
+        const reader = resp.body?.getReader();
+        let resultText = '';
+        let done = false;
+        let buffer = '';
+        while (reader && !done) {
+          const { value, done: doneReading } = await reader.read();
+          done = doneReading;
+          if (value) {
+            buffer += new TextDecoder().decode(value);
+            // 按行分割
+            let lines = buffer.split('\n');
+            buffer = lines.pop() || '';
+            for (const line of lines) {
+              const trimmed = line.trim();
+              if (!trimmed) continue;
+              if (trimmed === 'data: [DONE]') {
+                done = true;
+                break;
+              }
+              if (trimmed.startsWith('data: ')) {
+                try {
+                  const json = JSON.parse(trimmed.slice(6));
+                  const delta = json.choices?.[0]?.delta?.content || json.choices?.[0]?.message?.content || '';
+                  if (delta) {
+                    resultText += delta;
+                    // 新增：流式回调
+                    if (typeof onStream === 'function') {
+                      onStream(delta);
+                    }
+                  }
+                } catch (e) {
+                  // ignore parse error
+                }
+              }
+            }
+          }
+        }
+        // 返回模拟的OpenAI响应格式
+        return {
+          choices: [
+            {
+              message: { content: resultText }
+            }
+          ]
+        };
+      } else {
+
       const resp = await axios.post(url, data, { headers });
       console.log(`[OpenAIAdapter] 收到响应:`, resp.data);
-      return resp.data;
+      return resp.data; }
     } catch (error: any) {
       if (error.response) {
         console.error(`[OpenAIAdapter] 请求失败，状态码: ${error.response.status}，响应:`, error.response.data);
@@ -457,9 +549,9 @@ export class OpenAIAdapter {
       if (tableMemoryText) {
         // 构建表格记忆提示词，与gemini-adapter逻辑保持一致
         const tableMemoryPrompt = `${tableMemoryText}\n\n<response_guidelines>
-- 你会在回复中结合上面的表格记忆内容，表格中记录了角色相关的重要信息和事实。
-- 你会确保回复与表格中的信息保持一致，不会捏造表格中不存在的信息。
-- 你的回复会自然融入表格中的信息，不会生硬地提及"根据表格"之类的字眼。
+- 你会在回复中结合上面的[角色长期记忆表格]内容，表格中记录了重要信息和事实。
+- 你会确保回复与[角色长期记忆表格]的信息保持一致，不会捏造表格中不存在的信息。
+- 你的回复会自然融入[角色长期记忆表格]的信息，不会生硬地提及"根据表格"之类的字眼。
 - 你会确保回复保持角色人设的一致性。
 </response_guidelines>`;
 
@@ -792,7 +884,7 @@ export class OpenAIAdapter {
       const completion = await this.chatCompletion(messages, {
         model: modelToUse,
         temperature: options.temperature || 0.7,
-        max_tokens: 8192,
+        max_tokens: this.max_tokens,
         response_format: options.includeImageOutput ? undefined : { type: "text" }
       });
       const endTime = Date.now();
@@ -1571,14 +1663,12 @@ export class OpenAIAdapter {
             combinedPrompt += searchSection;
             
             combinedPrompt += `<response_guidelines>
-- 我会结合上面的记忆内容和联网搜索结果，全面回答用户的问题。
-- **首先**，我会在回复中用<mem></mem>标签包裹我对记忆内容的引用和回忆过程，例如:
-  <mem>我记得你之前提到过关于这个话题，当时我们讨论了...</mem>
-- **然后**，我会用<websearch></websearch>标签包裹我对网络搜索结果的解释和引用，例如:
+- 结合上面的记忆内容和联网搜索结果，全面回答{{user}}的问题。
+- 用<websearch></websearch>标签包裹我对网络搜索结果的解释和引用，例如:
   <websearch>根据最新的网络信息，关于这个问题的专业观点是...</websearch>
 - 确保回复能够同时**有效整合记忆和网络信息**，让内容更加全面和有用。
-- 我回复的语气和风格一定会与角色人设保持一致。
-- 我**不会在回复中使用多组<mem>或<websearch>标签，整个回复只能有一组<mem>标签和一组<websearch>标签。**
+- 回复的语气和风格一定会与角色人设保持一致。
+- 不要在回复中使用多组<websearch>标签，整个回复只能有一组<websearch>标签。**
 </response_guidelines>`;
             
             // 记录融合提示词的长度
@@ -1589,7 +1679,7 @@ export class OpenAIAdapter {
             const finalPrompt: ChatMessage[] = [
               ...contents.slice(0, -1),
               {
-                role: "system",
+                role: "user",
                 parts: [{ text: combinedPrompt }]
               },
               contents[contents.length - 1]
@@ -1678,14 +1768,12 @@ export class OpenAIAdapter {
       combinedPrompt += searchSection;
       
       combinedPrompt += `<response_guidelines>
-- 我会结合上面的记忆内容和联网搜索结果，全面回答用户的问题。
-- **首先**，我会在回复中用<mem></mem>标签包裹我对记忆内容的引用和回忆过程，例如:
-  <mem>我记得你之前提到过关于这个话题，当时我们讨论了...</mem>
-- **然后**，我会用<websearch></websearch>标签包裹我对网络搜索结果的解释和引用，例如:
+- 结合上面的记忆内容和联网搜索结果，全面回答{{user}}的问题。
+- 用<websearch></websearch>标签包裹我对网络搜索结果的解释和引用，例如:
   <websearch>根据最新的网络信息，关于这个问题的专业观点是...</websearch>
 - 确保回复能够同时**有效整合记忆和网络信息**，让内容更加全面和有用。
-- 我回复的语气和风格一定会与角色人设保持一致。
-- 我**不会在回复中使用多组<mem>或<websearch>标签，整个回复只能有一组<mem>标签和一组<websearch>标签。**
+- 回复的语气和风格一定会与角色人设保持一致。
+- 整个回复只能有一组<websearch>标签。**
 </response_guidelines>`;
       
       // 记录融合提示词的长度
@@ -1696,7 +1784,7 @@ export class OpenAIAdapter {
       const finalPrompt: ChatMessage[] = [
         ...contents.slice(0, -1),
         {
-          role: "system",
+          role: "user",
           parts: [{ text: combinedPrompt }]
         },
         contents[contents.length - 1]
@@ -1802,11 +1890,8 @@ export class OpenAIAdapter {
 
       // 添加响应指南
       combinedPrompt += `<response_guidelines>
-- 除了对用户消息的回应之外，我**一定** 会结合记忆内容进行回复。
-- **我会根据角色设定，聊天上下文和记忆内容**，输出我对检索记忆的回忆过程，并用<mem></mem>包裹。
-  - 示例: <mem>我想起起您上次提到过类似的问题，当时...</mem>
-- 我会确保回复保持角色人设的一致性。
-- **我不会在回复中使用多组<mem>，整个回复只能有一组<mem>标签。**
+- 除了对{{user}}}消息的回应之外，我**一定** 会结合记忆内容进行回复。
+- 确保回复保持角色人设的一致性。
 - 我会结合表格记忆的内容回复（如果有），但我不会输出表格的具体内容，仅将表格作为内心记忆。
 </response_guidelines>`;
 

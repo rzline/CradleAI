@@ -607,23 +607,35 @@ private async executeGenerateContent(contents: ChatMessage[], modelId: string, c
     } else {
         console.log('[Gemini适配器] 未获取到表格记忆数据，使用原始消息内容');
     }
-    
-    return this.executeDirectGenerateContent(enhancedContents, modelId, url);
+
+    // 获取 temperature 和 max tokens
+    const apiSettings = getApiSettings();
+    const temperature = typeof apiSettings.geminiTemperature === 'number' ? apiSettings.geminiTemperature : 0.7;
+    const maxTokens = typeof apiSettings.geminiMaxTokens === 'number' ? apiSettings.geminiMaxTokens : 2048;
+
+    // config 参数
+    const config = {
+        temperature,
+        maxOutputTokens: maxTokens
+    };
+
+    return this.executeDirectGenerateContent(enhancedContents, modelId, url, config);
 }
 
             /**
              * 实际执行API调用的方法，从executeGenerateContent中抽取出来
              * 以便于在有无表格记忆的情况下复用
              */
-            private async executeDirectGenerateContent(contents: ChatMessage[], modelId: string, url: string): Promise<string> {
+            private async executeDirectGenerateContent(contents: ChatMessage[], modelId: string, url: string, config?: { temperature: number; maxOutputTokens: number }): Promise<string> {
+                // 获取 temperature 和 max tokens
+                const apiSettings = getApiSettings();
+                const temperature = typeof apiSettings.geminiTemperature === 'number' ? apiSettings.geminiTemperature : 0.7;
+                const maxTokens = typeof apiSettings.geminiMaxTokens === 'number' ? apiSettings.geminiMaxTokens : 2048;
+
+                // 直接将 temperature 和 maxOutputTokens 与 model 参数并列
                 const data = {
                     contents,
-                    generationConfig: {
-                        temperature: 0.7,
-                        topK: 40,
-                        topP: 0.95,
-                        maxOutputTokens: 8192,  // Increased token limit for character generation
-                    }
+                    model: modelId,
                 };
 
                 console.log(`[Gemini适配器] 发送请求到API: ${modelId}`);
@@ -1813,14 +1825,11 @@ private async executeGenerateContent(contents: ChatMessage[], modelId: string, c
                         combinedPrompt += searchSection;
                         
                         combinedPrompt += `<response_guidelines>
-                - 我会结合上面的记忆内容和联网搜索结果，全面回答用户的问题。
-                - **首先**，我会在回复中用<mem></mem>标签包裹我对记忆内容的引用和回忆过程，例如:
-                  <mem>我记得你之前提到过关于这个话题，当时我们讨论了...</mem>
-                - **然后**，我会用<websearch></websearch>标签包裹我对网络搜索结果的解释和引用，例如:
+                - 结合上面的记忆内容和联网搜索结果，全面回答{{user}}的问题。
+                - 用<websearch></websearch>标签包裹我对网络搜索结果的解释和引用，例如:
                   <websearch>根据最新的网络信息，关于这个问题的专业观点是...</websearch>
                 - 确保回复能够同时**有效整合记忆和网络信息**，让内容更加全面和有用。
-                - 我回复的语气和风格一定会与角色人设保持一致。
-                - 我**不会在回复中使用多组<mem>或<websearch>标签，整个回复只能有一组<mem>或<websearch>标签。**
+                - 回复的语气和风格一定会与角色人设保持一致。
                 </response_guidelines>`;
                         
                         // 记录融合提示词的长度
@@ -1831,7 +1840,7 @@ private async executeGenerateContent(contents: ChatMessage[], modelId: string, c
                         const finalPrompt: ChatMessage[] = [
                             ...contents.slice(0, -1),
                             {
-                                role: "model",
+                                role: "user",
                                 parts: [{ text: combinedPrompt }]
                             },
                             contents[contents.length - 1]
@@ -1920,14 +1929,12 @@ private async executeGenerateContent(contents: ChatMessage[], modelId: string, c
             combinedPrompt += searchSection;
             
             combinedPrompt += `<response_guidelines>
-            - 我会结合上面的记忆内容和联网搜索结果，全面回答用户的问题。
-            - **首先**，我会在回复中用<mem></mem>标签包裹我对记忆内容的引用和回忆过程，例如:
-              <mem>我记得你之前提到过关于这个话题，当时我们讨论了...</mem>
-            - **然后**，我会用<websearch></websearch>标签包裹我对网络搜索结果的解释和引用，例如:
+            - 结合上面的记忆内容和联网搜索结果，全面回答用户的问题。
+            - 用<websearch></websearch>标签包裹我对网络搜索结果的解释和引用，例如:
               <websearch>根据最新的网络信息，关于这个问题的专业观点是...</websearch>
             - 确保回复能够同时**有效整合记忆和网络信息**，让内容更加全面和有用。
-            - 我回复的语气和风格一定会与角色人设保持一致。
-            - 我**不会在回复中使用多组<mem>或<websearch>标签，整个回复只能有一组<mem>标签和一组<websearch>标签。**
+            - 回复的语气和风格一定会与角色人设保持一致。
+            - **不在回复中使用多组<websearch>标签，整个回复只能有一组<websearch>标签。**
       </response_guidelines>`;
             
             // 记录融合提示词的长度
@@ -1938,7 +1945,7 @@ private async executeGenerateContent(contents: ChatMessage[], modelId: string, c
             const finalPrompt: ChatMessage[] = [
                 ...contents.slice(0, -1),
                 {
-                    role: "model",
+                    role: "user",
                     parts: [{ text: combinedPrompt }]
                 },
                 contents[contents.length - 1]
@@ -2049,12 +2056,8 @@ private async executeGenerateContent(contents: ChatMessage[], modelId: string, c
 
             // 添加响应指南
             combinedPrompt += `<response_guidelines>
-- 除了对用户消息的回应之外，我**一定** 会结合记忆内容进行回复。
-- **我会根据角色设定，聊天上下文和记忆内容**，输出我对检索记忆的回忆过程，并用<mem></mem>包裹。
-  - 示例: <mem>我想起起您上次提到过类似的问题，当时...</mem>
-- 我会确保回复保持角色人设的一致性。
-- **我不会在回复中使用多组<mem>，整个回复只能有一组<mem>标签。**
-- 我会结合表格记忆的内容回复（如果有），但我不会输出表格的具体内容，仅将表格作为内心记忆。
+- 除了对{{user}}消息的回应之外，结合记忆内容进行回复。
+- 结合表格记忆的内容回复（如果有），但不输出表格的具体内容，仅将表格作为内心记忆。
 </response_guidelines>`;
 
             // Log prepared prompt
@@ -2065,7 +2068,7 @@ private async executeGenerateContent(contents: ChatMessage[], modelId: string, c
             const finalPrompt: ChatMessage[] = [
                 ...contents.slice(0, -1),
                 {
-                    role: "model",
+                    role: "user",
                     parts: [{ text: combinedPrompt }]
                 },
                 contents[contents.length - 1]

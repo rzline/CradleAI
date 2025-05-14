@@ -39,6 +39,7 @@ export interface ProcessChatRequest {
         geminiBackupModel?: string;
         retryDelay?: number;
     };
+    onStream?: (delta: string) => void; // 新增
 }
 
 // 新增：请求日志接口
@@ -47,6 +48,11 @@ export interface RequestLogData {
     response?: string;
     timestamp: number;
     adapter: string;
+    statusCode: number;
+    error?: string;
+    errorMessage?: string;
+    statusText?: string;
+
 }
 
 export class NodeST {
@@ -308,6 +314,7 @@ export class NodeST {
                     params.characterId,
                     params.customUserName,
                     params.useToolCalls,
+                    params.onStream // 新增，透传onStream
                 );
 
                 if (response) {
@@ -745,6 +752,7 @@ export class NodeST {
      * @param characterId 可选的角色ID，用于记忆服务
      * @param customUserName 可选的自定义用户名
      * @param apiSettings 可选的API设置
+     * @param onStream 可选的流式回调函数
      * @returns 新生成的回复或null
      */
     async regenerateFromMessage(
@@ -753,7 +761,8 @@ export class NodeST {
         apiKey: string,
         characterId?: string,
         customUserName?: string, // Add parameter for customUserName
-        apiSettings?: Partial<GlobalSettings['chat']> // <-- 新增参数
+        apiSettings?: Partial<GlobalSettings['chat']>, // <-- 新增参数
+        onStream?: (delta: string) => void // 新增参数
     ): Promise<string | null> {
         try {
             // 确保实例已初始化
@@ -777,7 +786,8 @@ export class NodeST {
                 apiKey,
                 characterId,
                 customUserName, // Pass customUserName to core.regenerateFromMessage
-                apiSettings // <-- 新增
+                apiSettings, // <-- 新增
+                onStream // 新增
             );
         } catch (error) {
             console.error('[NodeST] regenerateFromMessage失败:', error);
@@ -934,6 +944,13 @@ export class NodeST {
      * @returns 最新的请求/响应数据，如果没有则返回null
      */
     getLatestApiRequestLog(): RequestLogData | null {
-        return NodeSTCore.getLatestRequestData();
+        const data = NodeSTCore.getLatestRequestData();
+        if (!data) return null;
+        
+        return {
+            ...data,
+            statusCode: data.statusCode ?? 0, // Provide default value 0 if statusCode is undefined
+            error: data.errorMessage // Map errorMessage to error property
+        };
     }
 }

@@ -4,6 +4,20 @@ import { StatusBar } from 'expo-status-bar';
 import { useIsFocused } from '@react-navigation/native';
 import { NodeST, RequestLogData } from '@/NodeST/nodest';
 
+// 主题色与 global-settings 保持一致
+const theme = {
+  colors: {
+    background: '#18181c',
+    cardBackground: '#23232a',
+    primary: '#f7c325',
+    text: '#fff',
+    textSecondary: '#aaa',
+    danger: '#e74c3c',
+    success: '#27ae60',
+    black: '#18181c',
+  }
+};
+
 export default function LogScreen() {
   const [requestLog, setRequestLog] = useState<RequestLogData | null>(null);
   const [activeTab, setActiveTab] = useState<'request' | 'response'>('request');
@@ -71,22 +85,54 @@ export default function LogScreen() {
     }
   };
 
+  // 响应状态判断
+  const getResponseStatus = (requestLog: RequestLogData | null) => {
+    if (!requestLog) return { ok: false, msg: '无响应', code: undefined, text: undefined, error: undefined };
+    // 优先用结构化字段
+    if (typeof requestLog.statusCode !== 'undefined' || requestLog.statusText || requestLog.errorMessage) {
+      const ok = !requestLog.statusCode || (requestLog.statusCode >= 200 && requestLog.statusCode < 400);
+      let msg = '';
+      if (ok) {
+        msg = requestLog.statusText || '响应成功';
+      } else {
+        msg = requestLog.errorMessage || requestLog.statusText || '响应失败';
+      }
+      return {
+        ok,
+        msg,
+        code: requestLog.statusCode,
+        text: requestLog.statusText,
+        error: requestLog.errorMessage,
+      };
+    }
+    // fallback: 旧逻辑
+    if (!requestLog.response) return { ok: false, msg: '无响应', code: undefined, text: undefined, error: undefined };
+    if (typeof requestLog.response === 'object' && requestLog.response !== null && 'error' in requestLog.response) {
+      const response = requestLog.response as { error?: { message?: string } };
+      return { ok: false, msg: response.error?.message || '响应失败', code: undefined, text: undefined, error: undefined };
+    }
+    return { ok: true, msg: '响应成功', code: undefined, text: undefined, error: undefined };
+  };
+
   return (
     <SafeAreaView style={styles.safeArea}>
       <StatusBar style="auto" />
       {/* 顶部标签栏整体下移，避开状态栏 */}
-      <View style={[styles.tabBar, { width }]}>
+      <View style={[styles.header]}>
+        <Text style={styles.headerTitle}>API 日志</Text>
+      </View>
+      <View style={styles.tabs}>
         <TouchableOpacity
-          style={[styles.tab, activeTab === 'request' && styles.activeTab]}
+          style={[styles.tab, activeTab === 'request' && styles.tabActive]}
           onPress={() => setActiveTab('request')}
         >
-          <Text style={[styles.tabText, activeTab === 'request' && styles.activeTabText]}>请求体</Text>
+          <Text style={[styles.tabText, activeTab === 'request' && styles.tabTextActive]}>请求体</Text>
         </TouchableOpacity>
         <TouchableOpacity
-          style={[styles.tab, activeTab === 'response' && styles.activeTab]}
+          style={[styles.tab, activeTab === 'response' && styles.tabActive]}
           onPress={() => setActiveTab('response')}
         >
-          <Text style={[styles.tabText, activeTab === 'response' && styles.activeTabText]}>响应</Text>
+          <Text style={[styles.tabText, activeTab === 'response' && styles.tabTextActive]}>响应</Text>
         </TouchableOpacity>
       </View>
       {/* 内容区 */}
@@ -94,20 +140,40 @@ export default function LogScreen() {
         <ScrollView
           style={styles.scrollContainer}
           contentContainerStyle={styles.scrollContent}
-          // 无下拉刷新
         >
           {requestLog ? (
             activeTab === 'request' ? (
-              <View style={styles.section}>
-                <ScrollView style={styles.codeBlock} horizontal={false}>
+              <View style={styles.card}>
+                <ScrollView style={styles.codeBlock} contentContainerStyle={{ flexGrow: 1 }} >
                   <Text style={styles.codeText}>
                     {formatRequest(requestLog.request)}
                   </Text>
                 </ScrollView>
               </View>
             ) : (
-              <View style={styles.section}>
-                <ScrollView style={styles.codeBlock} horizontal={false}>
+              <View style={[styles.card, { flex: 1 }]}>
+                {/* 响应状态区域 */}
+                <View style={styles.statusRow}>
+                  {(() => {
+                    const status = getResponseStatus(requestLog);
+                    return (
+                      <>
+                        <View style={[
+                          styles.statusBadge,
+                          { backgroundColor: status.ok ? theme.colors.success : theme.colors.danger }
+                        ]}>
+                          <Text style={styles.statusText}>{status.ok ? '成功' : '失败'}</Text>
+                        </View>
+                        <Text style={styles.statusMsg}>
+                          {status.code ? `[${status.code}] ` : ''}
+                          {status.msg}
+                        </Text>
+                      </>
+                    );
+                  })()}
+                </View>
+                {/* 响应内容区域 */}
+                <ScrollView style={[styles.codeBlock, { flex: 1 }]} contentContainerStyle={{ flexGrow: 1 }}>
                   <Text style={styles.codeText}>
                     {requestLog.response ? formatResponse(requestLog.response) : '等待响应...'}
                   </Text>
@@ -129,36 +195,45 @@ export default function LogScreen() {
 const styles = StyleSheet.create({
   safeArea: {
     flex: 1,
-    backgroundColor: '#f0f0f5',
+    backgroundColor: theme.colors.background,
   },
-  tabBar: {
+  header: {
+    height: 56,
+    backgroundColor: theme.colors.black,
     flexDirection: 'row',
-    backgroundColor: '#fff',
-    paddingTop: Platform.OS === 'ios' ? 32 : 24, // 增加顶部内边距，避开状态栏
-    paddingBottom: 4,
-    borderBottomWidth: 1,
-    borderBottomColor: '#e0e0e0',
+    alignItems: 'center',
+    paddingHorizontal: 16,
     justifyContent: 'center',
-    alignItems: 'flex-end',
+    borderBottomWidth: 1,
+    borderBottomColor: '#222',
+  },
+  headerTitle: {
+    color: '#fff',
+    fontSize: 18,
+    fontWeight: 'bold',
+    letterSpacing: 1,
+  },
+  tabs: {
+    flexDirection: 'row',
+    backgroundColor: theme.colors.background,
+    borderBottomWidth: 1,
+    borderBottomColor: '#222',
   },
   tab: {
     flex: 1,
+    paddingVertical: 12,
     alignItems: 'center',
-    paddingVertical: 10,
-    borderBottomWidth: 2,
-    borderBottomColor: 'transparent',
   },
-  activeTab: {
-    borderBottomColor: '#4a6fa5',
-    backgroundColor: '#f5f8ff',
+  tabActive: {
+    borderBottomWidth: 2,
+    borderBottomColor: theme.colors.primary,
   },
   tabText: {
-    fontSize: 16,
     color: '#888',
-    fontWeight: '500',
+    fontSize: 16,
   },
-  activeTabText: {
-    color: '#4a6fa5',
+  tabTextActive: {
+    color: theme.colors.primary,
     fontWeight: 'bold',
   },
   flex1: {
@@ -166,34 +241,62 @@ const styles = StyleSheet.create({
   },
   scrollContainer: {
     flex: 1,
-    backgroundColor: '#f0f0f5',
+    backgroundColor: theme.colors.background,
   },
   scrollContent: {
     flexGrow: 1,
     justifyContent: 'flex-start',
     padding: 16,
   },
-  section: {
-    backgroundColor: 'white',
-    borderRadius: 8,
-    padding: 15,
+  card: {
+    backgroundColor: theme.colors.cardBackground,
+    borderRadius: 10,
+    padding: 0,
+    flex: 1,
+    minHeight: 200,
+    marginBottom: 12,
+    elevation: 1,
     shadowColor: '#000',
-    shadowOffset: { width: 0, height: 1 },
-    shadowOpacity: 0.1,
+    shadowOpacity: 0.05,
     shadowRadius: 2,
-    elevation: 2,
-    minHeight: 120,
+    shadowOffset: { width: 0, height: 1 },
+    overflow: 'hidden',
   },
   codeBlock: {
-    backgroundColor: '#f5f5f5',
-    padding: 10,
-    borderRadius: 5,
-    maxHeight: 400,
+    backgroundColor: '#23232a',
+    padding: 16,
+    flex: 1,
   },
   codeText: {
-    fontFamily: 'monospace',
+    fontFamily: Platform.OS === 'ios' ? 'Menlo' : 'monospace',
     fontSize: 13,
-    color: '#222',
+    color: theme.colors.text,
+    lineHeight: 20,
+  },
+  statusRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    padding: 16,
+    borderBottomWidth: 1,
+    borderBottomColor: '#222',
+    backgroundColor: theme.colors.cardBackground,
+  },
+  statusBadge: {
+    borderRadius: 8,
+    paddingHorizontal: 12,
+    paddingVertical: 4,
+    marginRight: 10,
+  },
+  statusText: {
+    color: '#fff',
+    fontWeight: 'bold',
+    fontSize: 14,
+  },
+  statusMsg: {
+    color: theme.colors.textSecondary,
+    fontSize: 14,
+    flex: 1,
+    flexWrap: 'wrap',
   },
   noDataContainer: {
     flex: 1,

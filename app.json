@@ -2,7 +2,7 @@
   "expo": {
     "name": "Cradle",
     "slug": "cradle",
-    "version": "1.0.0",
+    "version": "1.0.3",
     "orientation": "portrait",
     "icon": "./assets/images/icon.png",
     "scheme": "cradleapp",
@@ -71,7 +71,8 @@
           "packageInstance": "new ReactNativeVideoPackage()"
         }
       ],
-      "expo-video"
+      "expo-video",
+      "expo-sqlite"
     ],
     "experiments": {
       "typedRoutes": true

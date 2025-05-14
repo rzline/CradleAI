@@ -101,6 +101,16 @@ const ApiSettings = () => {
   const [retryDelay, setRetryDelay] = useState(
     user?.settings?.chat?.retryDelay || 5000
   );
+  const [geminiTemperature, setGeminiTemperature] = useState(
+    typeof user?.settings?.chat?.geminiTemperature === 'number'
+      ? user.settings.chat.geminiTemperature
+      : 0.7
+  );
+  const [geminiMaxTokens, setGeminiMaxTokens] = useState(
+    typeof user?.settings?.chat?.geminiMaxTokens === 'number'
+      ? user.settings.chat.geminiMaxTokens
+      : 2048
+  );
   const [isModelPickerVisible, setIsModelPickerVisible] = useState(false);
   const [modelPickerType, setModelPickerType] = useState<'primary' | 'backup'>('primary');
 
@@ -228,6 +238,9 @@ const ApiSettings = () => {
             apiKey: user?.settings?.chat?.OpenAIcompatible?.apiKey || '',
             model: user?.settings?.chat?.OpenAIcompatible?.model || '',
             endpoint: user?.settings?.chat?.OpenAIcompatible?.endpoint || '',
+            stream: false,
+            temperature: 0.7,
+            max_tokens: 8192,
           },
         ]
   );
@@ -243,7 +256,7 @@ const ApiSettings = () => {
   const currentOpenAIProvider = openAIProviders.find(p => p.id === selectedProviderId) || openAIProviders[0];
 
   // 编辑当前provider的字段
-  const updateCurrentOpenAIProvider = (field: keyof OpenAICompatibleProviderConfig, value: string) => {
+  const updateCurrentOpenAIProvider = (field: keyof OpenAICompatibleProviderConfig, value: any) => {
     setOpenAIProviders(providers =>
       providers.map(p =>
         p.id === selectedProviderId ? { ...p, [field]: value } : p
@@ -259,6 +272,9 @@ const ApiSettings = () => {
       apiKey: '',
       model: '',
       endpoint: '',
+      stream: false,
+      temperature: 0.7,
+      max_tokens: 8192,
     };
     setOpenAIProviders([...openAIProviders, newProvider]);
     setSelectedProviderId(newProvider.id);
@@ -644,8 +660,9 @@ const ApiSettings = () => {
         messages: [
           { role: 'user', content: 'Explain quantum computing in simple terms.' }
         ],
-        temperature: 0.7,
-        max_tokens: 500
+        temperature: currentOpenAIProvider.temperature ?? 0.7,
+        max_tokens: currentOpenAIProvider.max_tokens ?? 8192,
+        stream: !!currentOpenAIProvider.stream,
       });
 
       const resp = await fetch(url, {
@@ -653,8 +670,6 @@ const ApiSettings = () => {
         headers,
         body
       });
-
-
 
       if (!resp.ok) {
         let errMsg = '';
@@ -751,6 +766,8 @@ const ApiSettings = () => {
             geminiPrimaryModel,
             geminiBackupModel,
             retryDelay,
+            geminiTemperature,
+            geminiMaxTokens,
             xApiKey: user?.settings?.chat?.xApiKey || '',
             apiProvider: apiProvider,
             typingDelay: user?.settings?.chat?.typingDelay || 50,
@@ -784,6 +801,9 @@ const ApiSettings = () => {
               endpoint: openaiProvider?.endpoint || '',
               providers: openAIProviders,
               selectedProviderId: selectedProviderId,
+              stream: openaiProvider?.stream,
+              temperature: openaiProvider?.temperature,
+              max_tokens: openaiProvider?.max_tokens,
             }
           },
           search: {
@@ -888,6 +908,8 @@ const ApiSettings = () => {
             geminiPrimaryModel,
             geminiBackupModel,
             retryDelay,
+            geminiTemperature,
+            geminiMaxTokens,
             xApiKey: user?.settings?.chat?.xApiKey || '',
             apiProvider: apiProvider,
             typingDelay: user?.settings?.chat?.typingDelay || 50,
@@ -920,6 +942,9 @@ const ApiSettings = () => {
               endpoint: openaiProvider?.endpoint || '',
               providers: openAIProviders,
               selectedProviderId: selectedProviderId,
+              stream: openaiProvider?.stream,
+              temperature: openaiProvider?.temperature,
+              max_tokens: openaiProvider?.max_tokens,
             }
           },
           search: {
@@ -1274,6 +1299,42 @@ const ApiSettings = () => {
                     />
                   </View>
                 </View>
+
+                {/* 新增 temperature 和 max tokens 设置 */}
+                {/* <View style={{ marginTop: 24 }}>
+                  <Text style={styles.inputLabel}>Temperature</Text>
+                  <TextInput
+                    style={styles.input}
+                    value={String(geminiTemperature)}
+                    onChangeText={v => {
+                      // 允许输入小数点，但只允许一个
+                      let valStr = v.replace(/[^0-9.]|(?<=\..*)\./g, '');
+                      let val = parseFloat(valStr);
+                      if (isNaN(val)) val = 0.7;
+                      if (val < 0) val = 0;
+                      if (val > 2) val = 2;
+                      setGeminiTemperature(val);
+                    }}
+                    keyboardType="numeric"
+                    placeholder="1"
+                    placeholderTextColor="#999"
+                  />
+                  <Text style={styles.inputLabel}>Max Tokens</Text>
+                  <TextInput
+                    style={styles.input}
+                    value={String(geminiMaxTokens)}
+                    onChangeText={v => {
+                      let val = parseInt(v.replace(/[^0-9]/g, ''));
+                      if (isNaN(val)) val = 2048;
+                      if (val < 1) val = 1;
+                      if (val > 32768) val = 32768;
+                      setGeminiMaxTokens(val);
+                    }}
+                    keyboardType="numeric"
+                    placeholder="8192"
+                    placeholderTextColor="#999"
+                  />
+                </View> */}
               </View>
             </View>
           )}
@@ -1326,7 +1387,7 @@ const ApiSettings = () => {
               <View style={styles.sectionHeader}>
                 <Text style={styles.sectionTitle}>OpenAI兼容API</Text>
                 <View style={{ flexDirection: 'row', alignItems: 'center' }}>
-                <Text style={{ color: '#aaa', fontSize: 12, marginRight: 12 }}>无需填写v1后缀</Text>
+                  <Text style={{ color: '#aaa', fontSize: 12, marginRight: 12 }}>无需填写v1后缀</Text>
                   <TouchableOpacity
                     style={{ marginRight: 8 }}
                     onPress={addOpenAIProvider}
@@ -1455,7 +1516,38 @@ const ApiSettings = () => {
                         placeholder="输入模型名"
                         placeholderTextColor="#999"
                       />
-                      {/* 收起按钮已移至标题栏 */}
+                      <Text style={styles.inputLabel}>Temperature</Text>
+                      <TextInput
+                        style={styles.input}
+                        value={String(editingProvider.temperature ?? 0.7)}
+                        onChangeText={v => {
+                          // 允许输入小数点，但只允许一个
+                          let valStr = v.replace(/[^0-9.]|(?<=\..*)\./g, '');
+                          let val = parseFloat(valStr);
+                          if (isNaN(val)) val = 0.7;
+                          if (val < 0) val = 0;
+                          if (val > 2) val = 2;
+                          updateCurrentOpenAIProvider('temperature', val);
+                        }}
+                        keyboardType="numeric"
+                        placeholder="0.7"
+                        placeholderTextColor="#999"
+                      />
+                      <Text style={styles.inputLabel}>Max Tokens</Text>
+                      <TextInput
+                        style={styles.input}
+                        value={String(editingProvider.max_tokens ?? 8192)}
+                        onChangeText={v => {
+                          let val = parseInt(v.replace(/[^0-9]/g, ''));
+                          if (isNaN(val)) val = 8192;
+                          if (val < 1) val = 1;
+                          if (val > 32768) val = 32768;
+                          updateCurrentOpenAIProvider('max_tokens', val);
+                        }}
+                        keyboardType="numeric"
+                        placeholder="8192"
+                        placeholderTextColor="#999"
+                      />
                     </View>
                   );
                 })()}

@@ -1171,18 +1171,18 @@ export class CircleManager {
                 break;
                 
                 case 'replyToPost':
-                    // --- FIX LOGIC HERE ---
-                    if (hasImages) {
-                        scenePrompt = CirclePrompts.replyToPostWithImage(params);
-                    } else if (isOwnPost) {
-                        // 角色自己查看自己帖子
-                        scenePrompt = CirclePrompts.selfPost(params);
-                    } else if (isUserComment) {
-                        // 用户评论角色帖子，应该用 replyToComment
-                        scenePrompt = CirclePrompts.replyToComment(params);
-                    } else {
-                        scenePrompt = CirclePrompts.replyToPost(params);
-                    }
+                // 修正逻辑：用户发朋友圈时（authorId === 'user-1'），始终用 replyToPost/WithImage
+                if (hasImages) {
+                    scenePrompt = CirclePrompts.replyToPostWithImage(params);
+                } else if (isOwnPost) {
+                    scenePrompt = CirclePrompts.selfPost(params);
+                } else if (isUserComment && options.content.authorId !== 'user-1') {
+                    // 只有当是用户评论角色帖子时才用 replyToComment
+                    scenePrompt = CirclePrompts.replyToComment(params);
+                } else {
+                    // 用户发朋友圈（authorId === 'user-1'）或普通角色发帖
+                    scenePrompt = CirclePrompts.replyToPost(params);
+                }
                     break;
                 
             case 'replyToComment':

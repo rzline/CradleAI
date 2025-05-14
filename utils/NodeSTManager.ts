@@ -120,6 +120,7 @@ console.log(`[NodeSTManager] Setting search enabled to: ${enabled}`); // Add log
       geminiBackupModel?: string;
       retryDelay?: number;
     };
+    onStream?: (delta: string) => void; // 新增
   }): Promise<{
     success: boolean;
     text?: string;
@@ -212,6 +213,7 @@ console.log(`[NodeSTManager] Setting search enabled to: ${enabled}`); // Add log
         customUserName: params.character?.customUserName, // Pass the customUserName to NodeST
         useToolCalls: this.searchEnabled, // Pass the search preference flag
         geminiOptions: params.geminiOptions, // Pass geminiOptions
+        onStream: params.onStream // 新增，透传onStream
       });
 
       if (response.success) {
@@ -470,6 +472,7 @@ console.log(`[NodeSTManager] Setting search enabled to: ${enabled}`); // Add log
             customUserName: options.character?.customUserName,  // Pass the customUserName to NodeST
             useToolCalls: NodeSTManagerClass.instance?.searchEnabled || false, // Pass search flag
             geminiOptions: options.geminiOptions, // Pass geminiOptions
+            onStream: options.onStream // 新增，透传onStream
         });
         
         if (response.success) {
@@ -561,6 +564,7 @@ console.log(`[NodeSTManager] Setting search enabled to: ${enabled}`); // Add log
     apiSettings?: Pick<GlobalSettings['chat'], 'apiProvider' | 'openrouter'>;
     character?: Character;
     customUserName?: string;
+    onStream?: (delta: string) => void; // 新增
   }): Promise<Message> {
     try {
         console.log('[NodeSTManager] 从消息索引重新生成:', params.messageIndex);
@@ -595,13 +599,14 @@ console.log(`[NodeSTManager] Setting search enabled to: ${enabled}`); // Add log
             params.apiKey,
             params.character?.id, // 传递角色ID用于记忆服务
             params.character?.customUserName, // 传递自定义用户名
-            params.apiSettings // <--- 新增，传递apiSettings
+            params.apiSettings, // <--- 新增，传递apiSettings
+            params.onStream // 新增，透传onStream
         );
 
         console.log('[NodeSTManager] 重新生成成功');
         return {
             success: true,
-            text: response || '抱歉，重新生成没有返回有效内容。'
+            text: response || ''
         };
     } catch (error) {
         console.error('[NodeSTManager] 重新生成消息时出错:', error);
@@ -669,7 +674,7 @@ console.log(`[NodeSTManager] Setting search enabled to: ${enabled}`); // Add log
               content: msg.parts[0].text
             })),
             temperature: 0.7,
-            max_tokens: 2000
+            max_tokens: 8192
           })
         });
         
@@ -960,12 +965,14 @@ interface ProcessChatOptions {
   status?: "更新人设" | "新建角色" | "同一角色继续对话";
   conversationId: string;
   apiKey: string;
-  apiSettings?: Partial<GlobalSettings['chat']>;  character?: Character;
+  apiSettings?: Partial<GlobalSettings['chat']>;  
+  character?: Character;
   geminiOptions?: {
     geminiPrimaryModel?: string;
     geminiBackupModel?: string;
     retryDelay?: number;
   };
+  onStream?: (delta: string) => void; // 新增
 }
 
 interface Message {

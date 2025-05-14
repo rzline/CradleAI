@@ -33,7 +33,7 @@ import RichTextRenderer from '@/components/RichTextRenderer';
 import ImageManager from '@/utils/ImageManager';
 import { ttsService, AudioState } from '@/services/ttsService';
 import { useDialogMode } from '@/constants/DialogModeContext';
-import { GestureResponderEvent } from 'react-native';
+import { DeviceEventEmitter } from 'react-native';
 import Markdown from 'react-native-markdown-display';
 import TextEditorModal from './common/TextEditorModal';
 import Slider from '@react-native-community/slider';
@@ -109,8 +109,8 @@ const KNOWN_TAGS = [
 // 移除未知标签，仅保留内容
 function stripUnknownTags(html: string): string {
   if (!html) return '';
-  // 匹配所有成对标签
-  let result = html.replace(/<([a-zA-Z0-9\-]+)(\s[^>]*)?>([\s\S]*?)<\/\1>/g, (match, tag, attrs, content) => {
+  // 匹配所有成对标签（支持下划线、数字、-）
+  let result = html.replace(/<([a-zA-Z0-9_\-]+)(\s[^>]*)?>([\s\S]*?)<\/\1>/g, (match, tag, attrs, content) => {
     if (KNOWN_TAGS.includes(tag)) {
       // 已知标签，保留
       return match;
@@ -119,7 +119,7 @@ function stripUnknownTags(html: string): string {
     return stripUnknownTags(content);
   });
   // 匹配所有单个未知标签（自闭合或未闭合）
-  result = result.replace(/<([a-zA-Z0-9\-]+)(\s[^>]*)?>/g, (match, tag) => {
+  result = result.replace(/<([a-zA-Z0-9_\-]+)(\s[^>]*)?>/g, (match, tag) => {
     if (KNOWN_TAGS.includes(tag)) {
       return match;
     }
@@ -128,7 +128,6 @@ function stripUnknownTags(html: string): string {
   });
   return result;
 }
-
 // 新增：检测是否包含结构性标签但不是完整HTML页面
 const STRUCTURAL_TAGS = [
   'source', 'section', 'article', 'aside', 'nav', 'header', 'footer',
@@ -379,7 +378,16 @@ const ChatDialog: React.FC<ExtendedChatDialogProps> = ({
   const [ttsEnhancerEnabled, setTtsEnhancerEnabled] = useState(false);
   const { mode, visualNovelSettings, updateVisualNovelSettings, isHistoryModalVisible: contextHistoryModalVisible, setHistoryModalVisible: contextSetHistoryModalVisible } = useDialogMode();
 
-
+  // 这里假设通过window.__topBarVisible传递（如需更优雅方案可通过props传递）
+  const [isTopBarVisible, setIsTopBarVisible] = useState(true);
+  useEffect(() => {
+    // 使用 DeviceEventEmitter 替代 EventRegister 监听全局事件
+    const handler = (visible: boolean) => setIsTopBarVisible(visible);
+    const subscription = DeviceEventEmitter.addListener('topBarVisibilityChanged', handler);
+    return () => {
+      subscription.remove();
+    };
+  }, []);
   // 判断是否为最后一条消息
   const isLastMessage = (index: number) => {
     const visibleMessages = getVisibleMessages();
@@ -1367,99 +1375,101 @@ const renderMessageContent = (message: Message, isUser: boolean, index: number) 
       }
     }
 
-    return (
-      <>
-        <View style={[
-          styles.visualNovelContainer,
-          {
-            backgroundColor: getVnBgColor(),
-            top: vnExpanded ? 0 : undefined, // 展开时紧贴topbar
-            bottom: 10,
-            left: 10,
-            right: 10,
-            maxHeight: vnExpanded ? height - 10 : 320,
-            minHeight: 200,
-          }
-        ]}>
-          <View style={styles.visualNovelHeaderRow}>
-            {/* 右侧：历史按钮 */}
-            <TouchableOpacity
-              style={[
-                styles.visualNovelHeaderButton,
-                { width: BUTTON_SIZE, height: BUTTON_SIZE, backgroundColor: 'transparent' }
-              ]}
-              onPress={() => setHistoryModalVisible && setHistoryModalVisible(true)}
-            >
-              <Ionicons name="time-outline" size={BUTTON_ICON_SIZE} color="#fff" />
-            </TouchableOpacity>
-            {/* 左侧：展开/收起、透明度按钮 */}
-            <View style={styles.visualNovelHeaderLeftButtons}>
-              <TouchableOpacity
-                style={[
-                  styles.visualNovelHeaderButton,
-                  { width: BUTTON_SIZE, height: BUTTON_SIZE, backgroundColor: 'transparent', marginRight: 8 }
-                ]}
-                onPress={() => setVnExpanded(v => !v)}
-              >
-                <Ionicons name={vnExpanded ? "chevron-down" : "chevron-up"} size={BUTTON_ICON_SIZE} color="#fff" />
-              </TouchableOpacity>
-              <TouchableOpacity
-                ref={ref => { alphaBtnRef.current = ref }}
-                style={[
-                  styles.visualNovelHeaderButton,
-                  { width: BUTTON_SIZE, height: BUTTON_SIZE, backgroundColor: 'transparent' }
-                ]}
-                onLayout={e => setAlphaBtnLayout(e.nativeEvent.layout)}
-                onPress={() => setShowAlphaSlider(v => !v)}
-                activeOpacity={0.8}
-              >
-                <Ionicons name="color-filter-outline" size={BUTTON_ICON_SIZE} color="#fff" />
-              </TouchableOpacity>
-            </View>
+   return (
+    <>
+      <View style={[
+        styles.visualNovelContainer,
+        {
+          backgroundColor: getVnBgColor(),
+          top: vnExpanded ? 0 : undefined,
+          bottom: 10,
+          left: 10,
+          right: 10,
+          maxHeight: vnExpanded ? height - 10 : 320,
+          minHeight: 200,
+        }
+      ]}>
+        {/* 右上角：背景透明度按钮 */}
+        <View style={styles.visualNovelAlphaButtonFixed}>
+          <TouchableOpacity
+            ref={ref => { alphaBtnRef.current = ref }}
+            style={[
+              styles.visualNovelHeaderButton,
+              { width: BUTTON_SIZE, height: BUTTON_SIZE, backgroundColor: 'transparent' }
+            ]}
+            onLayout={e => setAlphaBtnLayout(e.nativeEvent.layout)}
+            onPress={() => setShowAlphaSlider(v => !v)}
+            activeOpacity={0.8}
+          >
+            <Ionicons name="color-filter-outline" size={BUTTON_ICON_SIZE} color="#fff" />
+          </TouchableOpacity>
+        </View>
+        {/* 左下角：展开/收回按钮 */}
+        <View style={styles.visualNovelExpandButtonFixed}>
+          <TouchableOpacity
+            style={[
+              styles.visualNovelHeaderButton,
+              { width: BUTTON_SIZE, height: BUTTON_SIZE, backgroundColor: 'transparent' }
+            ]}
+            onPress={() => setVnExpanded(v => !v)}
+          >
+            <Ionicons name={vnExpanded ? "chevron-down" : "chevron-up"} size={BUTTON_ICON_SIZE} color="#fff" />
+          </TouchableOpacity>
+        </View>
+        {/* 历史按钮仍在右上角，避免遮挡，放在顶部内侧 */}
+        <View style={styles.visualNovelHistoryButtonFixed}>
+          <TouchableOpacity
+            style={[
+              styles.visualNovelHeaderButton,
+              { width: BUTTON_SIZE, height: BUTTON_SIZE, backgroundColor: 'transparent' }
+            ]}
+            onPress={() => setHistoryModalVisible && setHistoryModalVisible(true)}
+          >
+            <Ionicons name="time-outline" size={BUTTON_ICON_SIZE} color="#fff" />
+          </TouchableOpacity>
+        </View>
+        {/* 透明度调节pad，绝对定位到透明度按钮右侧 */}
+        {showAlphaSlider && (
+          <View
+            style={[
+              styles.visualNovelAlphaSliderContainer,
+              {
+                top: alphaBtnLayout.y,
+                left: alphaBtnLayout.x + alphaBtnLayout.width + 8,
+                right: undefined,
+                maxWidth: width - (alphaBtnLayout.x + alphaBtnLayout.width + 24),
+              }
+            ]}
+          >
+            <Text style={styles.visualNovelAlphaLabel}>背景透明度: {(vnBgAlpha * 100).toFixed(0)}%</Text>
+            <Slider
+              style={{ width: 140, height: 32 }}
+              minimumValue={0.2}
+              maximumValue={1}
+              step={0.01}
+              value={vnBgAlpha}
+              minimumTrackTintColor="#FFD580"
+              maximumTrackTintColor="#888"
+              thumbTintColor="#FFD580"
+              onValueChange={handleAlphaChange}
+            />
           </View>
-          {/* 透明度调节pad，绝对定位到透明度按钮右侧 */}
-          {showAlphaSlider && (
-            <View
-              style={[
-                styles.visualNovelAlphaSliderContainer,
-                {
-                  top: alphaBtnLayout.y,
-                  left: alphaBtnLayout.x + alphaBtnLayout.width + 8,
-                  // 若超出屏幕右侧则自动向左偏移
-                  right: undefined,
-                  maxWidth: width - (alphaBtnLayout.x + alphaBtnLayout.width + 24),
-                }
-              ]}
-            >
-              <Text style={styles.visualNovelAlphaLabel}>背景透明度: {(vnBgAlpha * 100).toFixed(0)}%</Text>
-              <Slider
-                style={{ width: 140, height: 32 }}
-                minimumValue={0.2}
-                maximumValue={1}
-                step={0.01}
-                value={vnBgAlpha}
-                minimumTrackTintColor="#FFD580"
-                maximumTrackTintColor="#888"
-                thumbTintColor="#FFD580"
-                onValueChange={handleAlphaChange}
-              />
-            </View>
-          )}
-          {/* 展开时不显示头像和名称 */}
-          {!vnExpanded && (
-            <View style={styles.visualNovelHeader}>
-              <Image
-                source={displayAvatar}
-                style={styles.visualNovelAvatar}
-              />
-              <Text style={[
-                styles.visualNovelCharacterName,
-                { color: visualNovelSettings.textColor }
-              ]}>
-                {displayName}
-              </Text>
-            </View>
-          )}
+        )}
+        {/* 展开时不显示头像和名称 */}
+        {!vnExpanded && (
+          <View style={styles.visualNovelHeader}>
+            <Image
+              source={displayAvatar}
+              style={styles.visualNovelAvatar}
+            />
+            <Text style={[
+              styles.visualNovelCharacterName,
+              { color: visualNovelSettings.textColor }
+            ]}>
+              {displayName}
+            </Text>
+          </View>
+        )}
           
           {/* WebView content replaces ScrollView when appropriate */}
   {shouldRenderAsWebView ? (
@@ -1695,6 +1705,9 @@ const renderMessageContent = (message: Message, isUser: boolean, index: number) 
   };
 
   const getVisibleMessages = () => {
+    const filtered = messages.filter(
+    m => !(m.sender === 'user' && m.metadata && m.metadata.isContinue === true)
+  );
     if (mode === 'visual-novel') return messages;
     if (isHistoryModalVisible) return messages;
     return messages.slice(-30);
@@ -2489,6 +2502,24 @@ const styles = StyleSheet.create({
     color: '#fff',
     fontSize: 14,
     fontFamily: Platform.OS === 'ios' ? 'Menlo' : 'monospace',
+  },
+  visualNovelAlphaButtonFixed: {
+    position: 'absolute',
+    top: 10,
+    right: 10,
+    zIndex: 30,
+  },
+  visualNovelExpandButtonFixed: {
+    position: 'absolute',
+    left: 10,
+    bottom: 10,
+    zIndex: 30,
+  },
+  visualNovelHistoryButtonFixed: {
+    position: 'absolute',
+    top: 10,
+    right: 60,
+    zIndex: 30,
   },
 });
 

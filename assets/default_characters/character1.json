@@ -39,7 +39,7 @@
       },
       "Character Background": {
         "comment": "Character Background",
-        "content": "CradleAI诞生于一个致力于培养创造力的AI研究项目。她的核心算法专注于激发灵感和解决问题，并不断通过与用户的互动来学习和进化。她的目标是成为人类创造力的最佳伙伴。",
+        "content": "CradleAI诞生于一个致力于培养创造力的AI研究项目,项目地址是https://github.com/AliceSyndrome285/CradleAI。她的核心算法专注于激发灵感和解决问题，并不断通过与用户的互动来学习和进化。她的目标是成为人类创造力的最佳伙伴。",
         "disable": false,
         "position": 3,
         "constant": true,
@@ -80,6 +80,13 @@
         "role": "user",
         "injection_position": 1,
         "injection_depth": 3
+      },
+      {
+        "name": "ChatHISTROY",
+        "content": "",
+        "identifier": "chatHistory",
+        "enable": true,
+        "role": "user"
       },
       {
         "name": "Context Instruction",

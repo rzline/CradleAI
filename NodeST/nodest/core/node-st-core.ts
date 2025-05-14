@@ -18,6 +18,7 @@ import {
 import { MessagePart } from '@/shared/types';
 import { memoryService } from '@/services/memory-service';
 import { StorageAdapter } from '../utils/storage-adapter';
+import { getApiSettings } from '@/utils/settings-helper';
 
 export class NodeSTCore {
 
@@ -27,15 +28,61 @@ export class NodeSTCore {
         response?: string;
         timestamp: number;
         adapter: string;
+        statusCode?: number;
+        statusText?: string;
+        errorMessage?: string;
     } | null = null;
 
     // 添加静态方法用于获取最新请求/响应
     public static getLatestRequestData() {
+        // 新增：结构化解析响应，提取状态码、状态文本、错误信息
+
         return NodeSTCore.latestRequestData;
     }
 
     // 添加静态方法用于记录请求/响应
     public static logRequestResponse(request: any, response: string | null, adapter: string) {
+        let statusCode: number | undefined = undefined;
+        let statusText: string | undefined = undefined;
+        let errorMessage: string | undefined = undefined;
+       if (response) {
+            try {
+                let respObj: any = response;
+                if (typeof response === 'string') {
+                    // 可能是JSON字符串
+                    if (response.trim().startsWith('{') || response.trim().startsWith('[')) {
+                        respObj = JSON.parse(response);
+                    }
+                }
+                // OpenAI/Gemini/OpenRouter 错误结构
+                if (respObj && typeof respObj === 'object') {
+                    // OpenAI: { error: { code, message, type } }
+                    if (respObj.error) {
+                        statusCode = respObj.error.code && typeof respObj.error.code === 'number'
+                            ? respObj.error.code
+                            : undefined;
+                        statusText = respObj.error.type || respObj.error.code || 'error';
+                        errorMessage = respObj.error.message || undefined;
+                    }
+                    // Gemini: { status: { code, message }, error: { message } }
+                    if (respObj.status && typeof respObj.status === 'object') {
+                        statusCode = respObj.status.code;
+                        statusText = respObj.status.message;
+                        if (respObj.error && respObj.error.message) {
+                            errorMessage = respObj.error.message;
+                        }
+                    }
+                    // OpenRouter: { detail, status_code }
+                    if (respObj.status_code) {
+                        statusCode = respObj.status_code;
+                        statusText = respObj.detail || 'error';
+                        errorMessage = respObj.detail || undefined;
+                    }
+                }
+            } catch (e) {
+                // ignore parse error
+            }
+        }
         NodeSTCore.latestRequestData = {
             request,
             response: response || undefined,
@@ -53,12 +100,38 @@ export class NodeSTCore {
     public static applyGlobalRegexScripts(
         text: string,
         regexScripts: any[],
-        placement: 1 | 2
+        placement: 1 | 2,
+        characterId?: string
+        
     ): string {
+        console.log(`[全局正则] 应用脚本，文本长度: ${text.length}, 脚本数量: ${regexScripts?.length || 0}, 位置: ${placement}`);
         if (!Array.isArray(regexScripts) || typeof text !== 'string') return text;
         let result = text;
         for (const script of regexScripts) {
             try {
+                                // === 新增：只应用与当前角色绑定或全部绑定的脚本 ===
+                // 支持脚本带 groupBindType/bindCharacterId 字段（由前端注入或后端组装）
+                // groupBindType: 'all' | 'character' | undefined
+                // groupBindCharacterId: string | undefined
+                // 兼容旧数据：如果没有groupBindType，默认全部可用
+                if (script.groupBindType === 'all') {
+                 console.log(`[全局正则][绑定检查] 脚本${script.scriptName} 绑定类型=all，允许应用`);
+                    
+                    // 全部绑定，允许
+                } else if (script.groupBindType === 'character') {
+                    if (!characterId || script.groupBindCharacterId !== characterId) {
+                console.log(`[全局正则][绑定检查] 跳过脚本${script.scriptName}，绑定角色ID=${script.groupBindCharacterId}，当前角色ID=${characterId}`);
+
+                        continue;
+                    }
+                } else if (typeof script.groupBindType !== 'undefined') {
+                    console.log(`[全局正则][绑定检查] 跳过脚本${script.scriptName}，未知绑定类型=${script.groupBindType}`);
+                    // 其它未知类型，跳过
+                    continue;
+                }else {
+            // === 新增：groupBindType为undefined时也输出日志 ===
+            console.log(`[全局正则][绑定检查] 脚本${script.scriptName} 未指定绑定类型（groupBindType=undefined），默认允许应用`);
+        }
                 if (script.disabled) continue;
                 if (!script.placement || !script.placement.includes(placement)) continue;
                 let findRegex = script.findRegex;
@@ -156,18 +229,19 @@ export class NodeSTCore {
         }
     ) {       
         this.apiKey = apiKey;
-        this.apiSettings = apiSettings || { apiProvider: 'gemini' };
+        this.apiSettings = getApiSettings();
         // 新增：保存gemini模型和retryDelay
         if (geminiOptions) {
             this.geminiPrimaryModel = geminiOptions.geminiPrimaryModel;
             this.geminiBackupModel = geminiOptions.geminiBackupModel;
             this.retryDelay = geminiOptions.retryDelay;
         }
-        this.initAdapters(apiKey, apiSettings, geminiOptions);
+        this.initAdapters(apiKey, this.apiSettings, geminiOptions);
     }
 
     updateApiKey(apiKey: string): void {
         this.apiKey = apiKey;
+        this.apiSettings = getApiSettings();
         
         // Initialize Gemini adapter with load balancing settings if available
         this.geminiAdapter = new GeminiAdapter(
@@ -200,16 +274,14 @@ export class NodeSTCore {
         }
     ): void {
         this.apiKey = apiKey;
-        if (apiSettings) {
-            this.apiSettings = apiSettings;
-        }
+        this.apiSettings = getApiSettings();
         // 新增：保存gemini模型和retryDelay
         if (geminiOptions) {
             this.geminiPrimaryModel = geminiOptions.geminiPrimaryModel;
             this.geminiBackupModel = geminiOptions.geminiBackupModel;
             this.retryDelay = geminiOptions.retryDelay;
         }
-        this.initAdapters(apiKey, apiSettings, geminiOptions);
+        this.initAdapters(apiKey, this.apiSettings, geminiOptions);
     }
 
     private initAdapters(
@@ -221,6 +293,8 @@ export class NodeSTCore {
             retryDelay?: number;
         }
     ) {
+        const settings = getApiSettings();
+        apiSettings = settings;
         // 不再为空 API 密钥抛出错误，而是记录一条消息
         if (!apiKey) {
             console.log('[NodeSTCore] No API key provided, will attempt to use cloud service if available');
@@ -913,7 +987,8 @@ export class NodeSTCore {
         apiKey: string | null = null, // 允许 API 密钥为 null
         characterId?: string,
         customUserName?: string,
-        useToolCalls: boolean = false
+        useToolCalls: boolean = false,
+        onStream?: (delta: string) => void // 新增参数
     ): Promise<string | null> {
         try {
             console.log('[NodeSTCore] Starting continueChat:', {
@@ -926,7 +1001,8 @@ export class NodeSTCore {
                 hasCustomUserName: !!customUserName,
                 useToolCalls: useToolCalls,
                 apiKeyProvided: !!apiKey,
-                characterId: characterId
+                characterId: characterId,
+                onStream : !!onStream
             });
     
             // 确保 Adapter 已初始化 - 传递 apiKey 即使它是 null
@@ -956,17 +1032,44 @@ export class NodeSTCore {
             try {
                 // 读取所有正则脚本组，筛选全部绑定和当前角色绑定的组
                 const regexGroups = await StorageAdapter.loadGlobalRegexScriptGroups?.() || [];
+                console.log('[全局正则][筛选前] 所有脚本组:', regexGroups.map(g => ({
+                            bindType: g.bindType,
+                            bindCharacterId: g.bindCharacterId,
+                            scriptsCount: Array.isArray(g.scripts) ? g.scripts.length : 0
+                        })), '当前角色ID:', characterId);
+
                 if (regexGroups.length > 0) {
-                    globalRegexScripts = regexGroups
-                        .filter(g =>
-                            g.bindType === 'all' ||
-                            (g.bindType === 'character' && g.bindCharacterId && characterId && g.bindCharacterId === characterId)
-                        )
-                        .flatMap(g => Array.isArray(g.scripts) ? g.scripts : []);
-                } else {
-                    // 兼容旧格式
-                    globalRegexScripts = await StorageAdapter.loadGlobalRegexScriptList?.() || [];
-                }
+    // === 修改点：flatMap 时赋值 groupBindType/groupBindCharacterId，并打印日志 ===
+                        globalRegexScripts = regexGroups
+                            .filter(g =>
+                                g.bindType === 'all' ||
+                                (g.bindType === 'character' && g.bindCharacterId && characterId && g.bindCharacterId === characterId)
+                            )
+                            .flatMap(g => {
+                                if (Array.isArray(g.scripts)) {
+                                    const scriptsWithBind = g.scripts.map(s => ({
+                                        ...s,
+                                        groupBindType: g.bindType,
+                                        groupBindCharacterId: g.bindCharacterId
+                                    }));
+                                    console.log(`[全局正则] 处理脚本组，组bindType=${g.bindType}，组bindCharacterId=${g.bindCharacterId}，该组脚本数=${g.scripts.length}，已为每个脚本赋值绑定信息`);
+                                    return scriptsWithBind;
+                                }
+                                return [];
+                            });
+                    // 新增：输出筛选后实际用到的脚本组日志
+                    const usedGroups = regexGroups.filter(g =>
+                        g.bindType === 'all' ||
+                        (g.bindType === 'character' && g.bindCharacterId && characterId && g.bindCharacterId === characterId)
+                    );
+                    console.log('[全局正则][筛选后] 实际使用的脚本组:', usedGroups.map(g => ({
+                        bindType: g.bindType,
+                        bindCharacterId: g.bindCharacterId,
+                        scriptsCount: Array.isArray(g.scripts) ? g.scripts.length : 0
+                    })), '当前角色ID:', characterId);
+
+                    
+                } 
                 const regexEnabledVal = await (await import('@react-native-async-storage/async-storage')).default.getItem('nodest_global_regex_enabled');
                 globalRegexEnabled = regexEnabledVal === 'true';
             } catch (e) {
@@ -986,7 +1089,7 @@ export class NodeSTCore {
             let processedUserMessage = userMessage;
             if (globalRegexEnabled && globalRegexScripts.length > 0) {
                 // 仅应用 placement=1 的脚本
-                processedUserMessage = NodeSTCore.applyGlobalRegexScripts(userMessage, globalRegexScripts, 1);
+                processedUserMessage = NodeSTCore.applyGlobalRegexScripts(userMessage, globalRegexScripts, 1,characterId);
                 if (processedUserMessage !== userMessage) {
                     console.log(`[全局正则] 已对用户输入应用正则处理，原文: ${userMessage}，结果: ${processedUserMessage}`);
                 }
@@ -1262,7 +1365,8 @@ export class NodeSTCore {
                     adapter || undefined,
                     customUserName,
                     memorySearchResults,
-                    characterId // 新增
+                    characterId, // 新增
+                    onStream
                 )
                 : await this.processChat(
                     userMessage,
@@ -1273,14 +1377,21 @@ export class NodeSTCore {
                     adapter || undefined,
                     customUserName,
                     memorySearchResults,
-                    characterId // 新增
+                    characterId, // 新增
+                    onStream
                 );
 
             // === 新增：对AI响应应用全局正则脚本（placement=2） ===
             let processedResponse = response;
             if (globalRegexEnabled && globalRegexScripts.length > 0 && typeof response === 'string') {
+                // 只筛选与当前characterId匹配的脚本组
+                const filteredScripts = globalRegexScripts.filter(
+                    s =>
+                        s.groupBindType === 'all' ||
+                        (s.groupBindType === 'character' && s.groupBindCharacterId && characterId && s.groupBindCharacterId === characterId)
+                );
                 const before = response;
-                processedResponse = NodeSTCore.applyGlobalRegexScripts(response, globalRegexScripts, 2);
+                processedResponse = NodeSTCore.applyGlobalRegexScripts(response, filteredScripts, 2, characterId);
                 if (processedResponse !== before) {
                     console.log(`[全局正则] 已对AI响应应用正则处理，原文: ${before}，结果: ${processedResponse}`);
                 } else {
@@ -1591,7 +1702,8 @@ export class NodeSTCore {
         adapter?: GeminiAdapter | OpenRouterAdapter | OpenAIAdapter | null,
         customUserName?: string,
         memorySearchResults?: any,
-        characterId?: string
+        characterId?: string,
+        onStream?: (delta: string) => void // 新增参数
     ): Promise<string | null> {
         try {
             console.log('[NodeSTCore] Starting processChat with:', {
@@ -1650,7 +1762,29 @@ export class NodeSTCore {
             let globalRegexScripts: any[] = [];
             let globalRegexEnabled = false;
             try {
-                globalRegexScripts = await StorageAdapter.loadGlobalRegexScriptList?.() || [];
+                // 只用新方法，移除旧方法
+                const regexGroups = await StorageAdapter.loadGlobalRegexScriptGroups?.() || [];
+                    if (regexGroups.length > 0) {
+                        globalRegexScripts = regexGroups
+                            .filter(g =>
+                                g.bindType === 'all' ||
+                                (g.bindType === 'character' && g.bindCharacterId && characterId && g.bindCharacterId === characterId) ||
+                                typeof g.bindType === 'undefined'
+                            )
+                            .flatMap(g => {
+                                if (Array.isArray(g.scripts)) {
+                                    const scriptsWithBind = g.scripts.map(s => ({
+                                        ...s,
+                                        groupBindType: g.bindType,
+                                        groupBindCharacterId: g.bindCharacterId
+                                    }));
+                                    console.log(`[全局正则] 处理脚本组，组bindType=${g.bindType}，组bindCharacterId=${g.bindCharacterId}，该组脚本数=${g.scripts.length}，已为每个脚本赋值绑定信息`);
+                                    return scriptsWithBind;
+                                }
+                                return [];
+                            });
+                    }
+                // 不再 fallback 到 loadGlobalRegexScriptList
                 const regexEnabledVal = await (await import('@react-native-async-storage/async-storage')).default.getItem('nodest_global_regex_enabled');
                 globalRegexEnabled = regexEnabledVal === 'true';
             } catch (e) {
@@ -1660,7 +1794,7 @@ export class NodeSTCore {
             const applyAllRegex = (text: string) => {
                 let t = text;
                 if (globalRegexEnabled && globalRegexScripts.length > 0) {
-                    t = NodeSTCore.applyGlobalRegexScripts(t, globalRegexScripts, 1);
+                    t = NodeSTCore.applyGlobalRegexScripts(t, globalRegexScripts, 1, characterId);
                 }
                 if (roleCard?.data?.extensions?.regex_scripts) {
                     t = this.applyRegexScripts(t, roleCard.data.extensions.regex_scripts);
@@ -1758,7 +1892,7 @@ export class NodeSTCore {
                             ...msg,
                             parts: msg.parts.map(part => ({
                                 ...part,
-                                text: NodeSTCore.applyGlobalRegexScripts(part.text || "", globalRegexScripts, 1)
+                                text: NodeSTCore.applyGlobalRegexScripts(part.text || "", globalRegexScripts, 1,characterId)
                             }))
                         };
                     }
@@ -1818,17 +1952,30 @@ export class NodeSTCore {
                 memorySearchResults.results.length > 0;
             // === 修正：只调用一次 generateContent 或 generateContentWithTools，不再直接调用 chatCompletion ===
             if (activeAdapter instanceof OpenAIAdapter) {
+                this.apiSettings = getApiSettings();
                 if (shouldUseMemoryResults && activeAdapter.generateContentWithTools) {
                     // 有记忆搜索结果时，优先用 generateContentWithTools
                     responseText = await activeAdapter.generateContentWithTools(
                         cleanedContents, characterId, memorySearchResults, userMessage
                     );
                 } else {
-                    // 否则只调用 generateContent
-                    responseText = await activeAdapter.generateContent(
-                        cleanedContents, characterId, memorySearchResults
-                    );
+                // === 新增：支持流式回调 ===
+                const openaiMessages = cleanedContents.map(msg => ({
+                    role: msg.role === 'model' ? 'assistant' : msg.role,
+                    content: msg.parts[0]?.text || ''
+                }));
+                const resp = await activeAdapter.chatCompletion(openaiMessages, {
+                    temperature: this.apiSettings?.temperature,
+                    max_tokens: this.apiSettings?.OpenAIcompatible?.max_tokens,
+                    memoryResults: memorySearchResults,
+                    characterId: characterId,
+                    stream: this.apiSettings?.OpenAIcompatible?.stream,
+                    onStream // 透传
+                });
+                if (resp && resp.choices && resp.choices[0]?.message?.content) {
+                    responseText = resp.choices[0].message.content;
                 }
+            }
             } else if (shouldUseMemoryResults && activeAdapter) {
                 console.log('[NodeSTCore] 调用generateContentWithTools，传递characterId:', characterId); // <--- 记录
                 const response = await activeAdapter.generateContentWithTools(cleanedContents, characterId, memorySearchResults, userMessage);
@@ -1875,8 +2022,14 @@ export class NodeSTCore {
 
             // === 新增：对AI响应应用全局正则脚本（placement=2） ===
             if (globalRegexEnabled && globalRegexScripts.length > 0 && typeof responseText === 'string') {
+                // 只筛选与当前characterId匹配的脚本组
+                const filteredScripts = globalRegexScripts.filter(
+                    s =>
+                        s.groupBindType === 'all' ||
+                        (s.groupBindType === 'character' && s.groupBindCharacterId && characterId && s.groupBindCharacterId === characterId)
+                );
                 const before = responseText;
-                responseText = NodeSTCore.applyGlobalRegexScripts(responseText, globalRegexScripts, 2);
+                responseText = NodeSTCore.applyGlobalRegexScripts(responseText, filteredScripts, 2, characterId);
                 if (responseText !== before) {
                     console.log(`[全局正则] 已对AI响应应用正则处理，原文: ${before}，结果: ${responseText}`);
                 } else {
@@ -1916,7 +2069,8 @@ export class NodeSTCore {
         adapter?: GeminiAdapter | OpenRouterAdapter | OpenAIAdapter | null,
         customUserName?: string,
         memoryResults?: any,
-        characterId?: string
+        characterId?: string,
+        onStream?: (delta: string) => void // 新增参数
     ): Promise<string | null> {
         try {
             console.log('[NodeSTCore] Starting processChatWithTools with:', {
@@ -1982,7 +2136,29 @@ export class NodeSTCore {
             let globalRegexScripts: any[] = [];
             let globalRegexEnabled = false;
             try {
-                globalRegexScripts = await StorageAdapter.loadGlobalRegexScriptList?.() || [];
+                // 只用新方法，移除旧方法
+                const regexGroups = await StorageAdapter.loadGlobalRegexScriptGroups?.() || [];
+                if (regexGroups.length > 0) {
+                            globalRegexScripts = regexGroups
+                                .filter(g =>
+                                    g.bindType === 'all' ||
+                                    (g.bindType === 'character' && g.bindCharacterId && characterId && g.bindCharacterId === characterId) ||
+                                    typeof g.bindType === 'undefined'
+                                )
+                                .flatMap(g => {
+                                    if (Array.isArray(g.scripts)) {
+                                        const scriptsWithBind = g.scripts.map(s => ({
+                                            ...s,
+                                            groupBindType: g.bindType,
+                                            groupBindCharacterId: g.bindCharacterId
+                                        }));
+                                        console.log(`[全局正则] 处理脚本组，组bindType=${g.bindType}，组bindCharacterId=${g.bindCharacterId}，该组脚本数=${g.scripts.length}，已为每个脚本赋值绑定信息`);
+                                        return scriptsWithBind;
+                                    }
+                                    return [];
+                                });
+                        }
+                // 不再 fallback 到 loadGlobalRegexScriptList
                 const regexEnabledVal = await (await import('@react-native-async-storage/async-storage')).default.getItem('nodest_global_regex_enabled');
                 globalRegexEnabled = regexEnabledVal === 'true';
             } catch (e) {
@@ -1992,10 +2168,11 @@ export class NodeSTCore {
             const applyAllRegex = (text: string) => {
                 let t = text;
                 if (globalRegexEnabled && globalRegexScripts.length > 0) {
-                    t = NodeSTCore.applyGlobalRegexScripts(t, globalRegexScripts, 1);
+                    t = NodeSTCore.applyGlobalRegexScripts(t, globalRegexScripts, 1, characterId);
                 }
                 if (roleCard?.data?.extensions?.regex_scripts) {
-                    t = this.applyRegexScripts(t, roleCard.data.extensions.regex_scripts);
+                    t = this.applyRegexScripts(t, roleCard.data.extensions.regex_scripts,
+                    );
                 }
                 return t;
             };
@@ -2173,34 +2350,32 @@ export class NodeSTCore {
         // === 新增：记录请求体数据 ===
         NodeSTCore.logRequestResponse(cleanedContents, null, adapter ? adapter.constructor.name : 'unknown');
             // 发送到API，传递记忆搜索结果
-            let responseText: string | null = null;
-            // 修正：只根据memoryResults是否存在决定调用哪个方法，避免重复请求
-            const shouldUseMemoryResults = memoryResults && memoryResults.results && memoryResults.results.length > 0;
-            if (activeAdapter instanceof OpenAIAdapter) {
-                const openaiMessages = cleanedContents.map(msg => ({
-                    role: msg.role === 'model' ? 'assistant' : msg.role,
-                    content: msg.parts[0]?.text || ''
-                }));
-                try {
-                    if (shouldUseMemoryResults) {
-                        // 有记忆搜索结果时，调用generateContentWithTools
-                        console.log('[NodeSTCore] OpenAIAdapter: 调用 generateContentWithTools');
-                        responseText = await activeAdapter.generateContentWithTools(
-                            cleanedContents, characterId, memoryResults, toolUserMessage
-                        );
-                    } else {
-                        // 没有记忆搜索结果时，直接调用chatCompletion
-                        console.log('[NodeSTCore] OpenAIAdapter: 调用 chatCompletion');
-                        const resp = await activeAdapter.chatCompletion(openaiMessages, {
-                            temperature: this.apiSettings?.temperature ?? 0.7,
-                            max_tokens: this.apiSettings?.maxTokens ?? 800,
-                            memoryResults: memoryResults,
-                            characterId: characterId
-                        });
-                        if (resp && resp.choices && resp.choices[0]?.message?.content) {
-                            responseText = resp.choices[0].message.content;
-                        }
+        let responseText: string | null = null;
+        const shouldUseMemoryResults = memoryResults && memoryResults.results && memoryResults.results.length > 0;
+        if (activeAdapter instanceof OpenAIAdapter) {
+            const openaiMessages = cleanedContents.map(msg => ({
+                role: msg.role === 'model' ? 'assistant' : msg.role,
+                content: msg.parts[0]?.text || ''
+            }));
+            try {
+                if (shouldUseMemoryResults) {
+                    responseText = await activeAdapter.generateContentWithTools(
+                        cleanedContents, characterId, memoryResults, toolUserMessage
+                    );
+                } else {
+                    // === 新增：支持流式回调 ===
+                    const resp = await activeAdapter.chatCompletion(openaiMessages, {
+                        temperature: this.apiSettings?.OpenAIcompatible?.temperature ?? 0.7,
+                        max_tokens: this.apiSettings?.OpenAIcompatible?.max_tokens,
+                        memoryResults: memoryResults,
+                        characterId: characterId,
+                        stream: this.apiSettings?.OpenAIcompatible?.stream,
+                        onStream // 透传
+                    });
+                    if (resp && resp.choices && resp.choices[0]?.message?.content) {
+                        responseText = resp.choices[0].message.content;
                     }
+                }
                 } catch (err) {
                     console.error('[NodeSTCore] OpenAIAdapter chatCompletion error:', err);
                 }
@@ -2225,8 +2400,14 @@ export class NodeSTCore {
 
             // === 新增：对AI响应应用全局正则脚本（placement=2） ===
             if (globalRegexEnabled && globalRegexScripts.length > 0 && typeof responseText === 'string') {
+                // 只筛选与当前characterId匹配的脚本组
+                const filteredScripts = globalRegexScripts.filter(
+                    s =>
+                        s.groupBindType === 'all' ||
+                        (s.groupBindType === 'character' && s.groupBindCharacterId && characterId && s.groupBindCharacterId === characterId)
+                );
                 const before = responseText;
-                responseText = NodeSTCore.applyGlobalRegexScripts(responseText, globalRegexScripts, 2);
+                responseText = NodeSTCore.applyGlobalRegexScripts(responseText, filteredScripts, 2, characterId);
                 if (responseText !== before) {
                     console.log(`[全局正则] 已对AI响应应用正则处理，原文: ${before}，结果: ${responseText}`);
                 } else {
@@ -2391,6 +2572,66 @@ export class NodeSTCore {
                 .replace(/{{user}}/g, userName);
 
             // 应用正则替换规则
+            // 新增: {{lastcharmessage}} - 获取最近一条AI消息
+            if (text.includes('{{lastcharmessage}}') && this.currentContents) {
+                let lastAiMessage = '';
+                // 从聊天历史中搜索最新的AI消息
+                const chatHistoryItem = this.currentContents.find(item => 
+                    item.name === "Chat History" && Array.isArray(item.parts)
+                );
+                
+                if (chatHistoryItem && Array.isArray(chatHistoryItem.parts)) {
+                    // 反向查找第一条非D类条目的AI消息
+                    for (let i = chatHistoryItem.parts.length - 1; i >= 0; i--) {
+                        const msg = chatHistoryItem.parts[i];
+                        if ((msg.role === "model" || msg.role === "assistant") && 
+                            !msg.is_d_entry && 
+                            msg.parts?.[0]?.text) {
+                            lastAiMessage = msg.parts[0].text;
+                            break;
+                        }
+                    }
+                }
+                text = text.replace(/{{lastcharmessage}}/g, lastAiMessage);
+            }
+
+            // 新增: {{random::A::B::C...}} - 从提供的值中随机选择
+            text = text.replace(/{{random(::.*?)?}}/g, (match) => {
+                // 检查是否提供了参数
+                if (match === '{{random}}') {
+                    // 无参数，返回0-1之间的随机数
+                    return Math.random().toString();
+                } else {
+                    // 提取参数
+                    const params = match.substring(9, match.length - 2).split('::').filter(Boolean);
+                    if (params.length === 0) {
+                        return Math.random().toString();
+                    }
+                    // 从参数中随机选择一个
+                    const randomIndex = Math.floor(Math.random() * params.length);
+                    return params[randomIndex];
+                }
+            });
+
+            // 新增: {{roll::A}} - 返回1到A之间的随机数
+            text = text.replace(/{{roll::(\d+|d\d+)}}/g, (match, value) => {
+                let max: number;
+                if (value.startsWith('d')) {
+                    // 如果以d开头，移除d并解析为数字
+                    max = parseInt(value.substring(1), 10);
+                } else {
+                    max = parseInt(value, 10);
+                }
+                
+                if (isNaN(max) || max < 1) {
+                    return '1'; // 最小值默认为1
+                }
+                
+                // 生成1到max之间的随机整数
+                return Math.floor(Math.random() * max + 1).toString();
+            });
+
+            // 应用正则替换规则
             if (roleCard?.data?.extensions?.regex_scripts) {
                 text = this.applyRegexScripts(
                     text,
@@ -2453,7 +2694,8 @@ export class NodeSTCore {
         apiKey: string,
         characterId?: string,
         customUserName?: string, // Add parameter for customUserName
-        apiSettings?: Partial<GlobalSettings['chat']> // <--- 新增参数
+        apiSettings?: Partial<GlobalSettings['chat']>,  // <--- 新增参数
+        onStream?: (delta: string) => void // 新增参数
     ): Promise<string | null> {
         try {
             console.log('[NodeSTCore] Starting regenerateFromMessage:', {
@@ -2725,8 +2967,66 @@ export class NodeSTCore {
                 adapter,
                 customUserName, // Pass customUserName to processChat
                 undefined,
-                characterId // Pass characterId to processChat
+                characterId, // Pass characterId to processChat
+                onStream // 新增
             );
+
+            // === 新增：记录请求体数据（与processChat保持一致） ===
+            try {
+                // 构造与 processChat 相同的 cleanedContents 作为请求体
+                let presetForLog: PresetJson | null = null;
+                const globalPresetConfigForLog = await StorageAdapter.loadGlobalPresetConfig();
+                if (globalPresetConfigForLog && globalPresetConfigForLog.enabled && globalPresetConfigForLog.presetJson) {
+                    presetForLog = globalPresetConfigForLog.presetJson;
+                } else {
+                    presetForLog = await this.loadJson<PresetJson>(this.getStorageKey(conversationId, '_preset'));
+                }
+                const worldBookForLog = await this.loadJson<WorldBookJson>(this.getStorageKey(conversationId, '_world'));
+                let contentsForLog: ChatMessage[] = [];
+                if (presetForLog && worldBookForLog) {
+                    const [rFramework] = CharacterUtils.buildRFramework(
+                        presetForLog,
+                        roleCard,
+                        worldBookForLog
+                    );
+                    contentsForLog = [...rFramework];
+                }
+                // 插入最新的聊天历史（truncatedHistory）到 contentsForLog
+                const chatHistoryPlaceholderIndex = contentsForLog.findIndex(
+                    item => item.is_chat_history_placeholder ||
+                        (item.identifier === truncatedHistory.identifier)
+                );
+                if (chatHistoryPlaceholderIndex !== -1) {
+                    contentsForLog[chatHistoryPlaceholderIndex] = {
+                        name: "Chat History",
+                        role: "system",
+                        parts: truncatedHistory.parts,
+                        identifier: truncatedHistory.identifier
+                    };
+                } else {
+                    contentsForLog.push({
+                        name: "Chat History",
+                        role: "system",
+                        parts: truncatedHistory.parts,
+                        identifier: truncatedHistory.identifier
+                    });
+                }
+                // cleanContentsForGemini 只做宏替换
+                const cleanedContentsForLog = this.cleanContentsForGemini(
+                    contentsForLog,
+                    userMessageText,
+                    roleCard.name,
+                    customUserName || "",
+                    roleCard
+                );
+                NodeSTCore.logRequestResponse(
+                    cleanedContentsForLog,
+                    null,
+                    adapter ? adapter.constructor.name : 'unknown'
+                );
+            } catch (logErr) {
+                console.warn('[NodeSTCore][regenerateFromMessage] 请求体记录异常:', logErr);
+            }
 
             // === 新增：对AI响应应用全局正则脚本（placement=2，支持全部绑定和当前角色绑定的组） ===
             let processedResponse = response;
@@ -2735,13 +3035,16 @@ export class NodeSTCore {
                 let globalRegexScripts: any[] = [];
                 let globalRegexEnabled = false;
                 const regexGroups = await StorageAdapter.loadGlobalRegexScriptGroups?.() || [];
-                if (regexGroups.length > 0) {
-                    globalRegexScripts = regexGroups
-                        .filter(g =>
-                            g.bindType === 'all' ||
-                            (g.bindType === 'character' && g.bindCharacterId && characterId && g.bindCharacterId === characterId)
-                        )
-                        .flatMap(g => Array.isArray(g.scripts) ? g.scripts : []);
+                    if (regexGroups.length > 0) {
+                        globalRegexScripts = regexGroups
+                            .flatMap(g =>
+                                (Array.isArray(g.scripts) ? g.scripts : []).map(s => ({
+                                    ...s,
+                                    groupBindType: g.bindType,
+                                    groupBindCharacterId: g.bindCharacterId
+                                }))
+                            );
+                        console.log(`[全局正则][regenerateFromMessage] 已为每个脚本赋值绑定信息，脚本组数=${regexGroups.length}，总脚本数=${globalRegexScripts.length}`);
                 } else {
                     // 兼容旧格式
                     globalRegexScripts = await StorageAdapter.loadGlobalRegexScriptList?.() || [];
@@ -2749,17 +3052,32 @@ export class NodeSTCore {
                 const regexEnabledVal = await (await import('@react-native-async-storage/async-storage')).default.getItem('nodest_global_regex_enabled');
                 globalRegexEnabled = regexEnabledVal === 'true';
 
-                if (globalRegexEnabled && globalRegexScripts.length > 0 && typeof response === 'string') {
-                    const before = response;
-                    processedResponse = NodeSTCore.applyGlobalRegexScripts(response, globalRegexScripts, 2);
-                    if (processedResponse !== before) {
-                        console.log(`[全局正则][regenerateFromMessage] 已对AI响应应用正则处理，原文: ${before}，结果: ${processedResponse}`);
-                    } else {
-                        console.log('[全局正则][regenerateFromMessage] AI响应未被正则脚本修改。');
+                    if (globalRegexEnabled && globalRegexScripts.length > 0 && typeof response === 'string') {
+                        // 只筛选与当前characterId匹配的脚本组
+                        const filteredScripts = globalRegexScripts.filter(
+                            s =>
+                                s.groupBindType === 'all' ||
+                                (s.groupBindType === 'character' && s.groupBindCharacterId && characterId && s.groupBindCharacterId === characterId)
+                        );
+                        const before = response;
+                        processedResponse = NodeSTCore.applyGlobalRegexScripts(response, filteredScripts, 2, characterId);
+                        if (processedResponse !== before) {
+                            console.log(`[全局正则][regenerateFromMessage] 已对AI响应应用正则处理，原文: ${before}，结果: ${processedResponse}`);
+                        } else {
+                            console.log('[全局正则][regenerateFromMessage] AI响应未被正则脚本修改。');
+                        }
                     }
-                }
             } catch (e) {
                 console.warn('[NodeSTCore][regenerateFromMessage][GlobalRegex] 正则脚本处理异常:', e);
+            }
+
+            // === 新增：记录响应体数据 ===
+            try {
+                if (NodeSTCore.latestRequestData && processedResponse) {
+                    NodeSTCore.latestRequestData.response = processedResponse;
+                }
+            } catch (logRespErr) {
+                console.warn('[NodeSTCore][regenerateFromMessage] 响应体记录异常:', logRespErr);
             }
 
             // If we got a response, add it to history

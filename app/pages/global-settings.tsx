@@ -196,7 +196,12 @@ export default function GlobalSettingsPage() {
   const params = useLocalSearchParams();
   const characterId = params.characterId as string | undefined;
   const characterName = params.charactername as string | undefined;
-
+  // --- 新增：追踪 characterId ---
+  useEffect(() => {
+    if (characterId) {
+      console.log('[GlobalSettings] Received characterId:', characterId);
+    }
+  }, [characterId]);
   const [activeTab, setActiveTab] = useState<'preset' | 'worldbook' | 'regex'>('preset');
   const [presetConfig, setPresetConfig] = useState<GlobalPresetConfig>({
     enabled: false,
@@ -526,6 +531,14 @@ export default function GlobalSettingsPage() {
       const entries = { ...(cfg.worldbookJson?.entries || {}) };
       const key = detailSidebar.entryKey!;
       entries[key] = { ...entries[key], content: text };
+      // 同步到模板
+      setGlobalWorldbookList(list =>
+        list.map(tpl =>
+          tpl.id === selectedWorldbookId
+            ? { ...tpl, worldbookJson: { ...tpl.worldbookJson, entries } }
+            : tpl
+        )
+      );
       return {
         ...cfg,
         worldbookJson: { ...cfg.worldbookJson, entries },
@@ -541,6 +554,14 @@ export default function GlobalSettingsPage() {
       const entries = { ...(cfg.worldbookJson?.entries || {}) };
       const key = detailSidebar.entryKey!;
       entries[key] = { ...entries[key], comment: text };
+      // 同步到模板
+      setGlobalWorldbookList(list =>
+        list.map(tpl =>
+          tpl.id === selectedWorldbookId
+            ? { ...tpl, worldbookJson: { ...tpl.worldbookJson, entries } }
+            : tpl
+        )
+      );
       return {
         ...cfg,
         worldbookJson: { ...cfg.worldbookJson, entries },
@@ -562,6 +583,14 @@ export default function GlobalSettingsPage() {
         position: options.position,
         depth: options.depth
       };
+      // 同步到模板
+      setGlobalWorldbookList(list =>
+        list.map(tpl =>
+          tpl.id === selectedWorldbookId
+            ? { ...tpl, worldbookJson: { ...tpl.worldbookJson, entries } }
+            : tpl
+        )
+      );
       return {
         ...cfg,
         worldbookJson: { ...cfg.worldbookJson, entries },
@@ -631,6 +660,14 @@ export default function GlobalSettingsPage() {
           setWorldbookConfig(cfg => {
             const entries = { ...(cfg.worldbookJson?.entries || {}) };
             delete entries[detailSidebar.entryKey!];
+            // 同步到模板
+            setGlobalWorldbookList(list =>
+              list.map(tpl =>
+                tpl.id === selectedWorldbookId
+                  ? { ...tpl, worldbookJson: { ...tpl.worldbookJson, entries } }
+                  : tpl
+              )
+            );
             return {
               ...cfg,
               worldbookJson: { ...cfg.worldbookJson, entries },
@@ -655,6 +692,45 @@ export default function GlobalSettingsPage() {
       })
     );
     setShowDeleteRegexModal(false);
+  };
+
+  // 删除世界书条目（批量）
+  const handleDeleteWorldbookEntries = () => {
+    if (worldbookSelectedIndexes.length === 0) {
+      Alert.alert('未选中', '请选择要删除的世界书条目。');
+      return;
+    }
+    Alert.alert('删除世界书条目', `确定要删除选中的 ${worldbookSelectedIndexes.length} 个世界书条目吗？`, [
+      { text: '取消', style: 'cancel' },
+      {
+        text: '删除',
+        style: 'destructive',
+        onPress: () => {
+          setWorldbookConfig(cfg => {
+            const entries = { ...(cfg.worldbookJson?.entries || {}) };
+            const keys = Object.keys(entries);
+            worldbookSelectedIndexes.forEach(idx => {
+              const key = keys[idx];
+              delete entries[key];
+            });
+            // 同步到模板
+            setGlobalWorldbookList(list =>
+              list.map(tpl =>
+                tpl.id === selectedWorldbookId
+                  ? { ...tpl, worldbookJson: { ...tpl.worldbookJson, entries } }
+                  : tpl
+              )
+            );
+            return {
+              ...cfg,
+              worldbookJson: { ...cfg.worldbookJson, entries },
+            };
+          });
+          setWorldbookSelectedIndexes([]);
+          setWorldbookManaging(false);
+        },
+      },
+    ]);
   };
 
   // 切换管理模式
@@ -710,35 +786,7 @@ export default function GlobalSettingsPage() {
     ]);
   };
 
-  const handleDeleteWorldbookEntries = () => {
-    if (worldbookSelectedIndexes.length === 0) {
-      Alert.alert('未选中', '请选择要删除的世界书条目。');
-      return;
-    }
-    Alert.alert('删除世界书条目', `确定要删除选中的 ${worldbookSelectedIndexes.length} 个世界书条目吗？`, [
-      { text: '取消', style: 'cancel' },
-      {
-        text: '删除',
-        style: 'destructive',
-        onPress: () => {
-          setWorldbookConfig(cfg => {
-            const entries = { ...(cfg.worldbookJson?.entries || {}) };
-            const keys = Object.keys(entries);
-            worldbookSelectedIndexes.forEach(idx => {
-              const key = keys[idx];
-              delete entries[key];
-            });
-            return {
-              ...cfg,
-              worldbookJson: { ...cfg.worldbookJson, entries },
-            };
-          });
-          setWorldbookSelectedIndexes([]);
-          setWorldbookManaging(false);
-        },
-      },
-    ]);
-  };
+
 
   const handleDeleteRegexScripts = () => {
     if (regexSelectedIndexes.length === 0) {
@@ -949,6 +997,14 @@ export default function GlobalSettingsPage() {
       if (entries[key]) {
         entries[key] = { ...entries[key], disable: !entries[key].disable };
       }
+      // 同步到模板
+      setGlobalWorldbookList(list =>
+        list.map(tpl =>
+          tpl.id === selectedWorldbookId
+            ? { ...tpl, worldbookJson: { ...tpl.worldbookJson, entries } }
+            : tpl
+        )
+      );
       return {
         ...cfg,
         worldbookJson: { ...cfg.worldbookJson, entries },
@@ -1067,6 +1123,14 @@ export default function GlobalSettingsPage() {
     setWorldbookConfig(cfg => {
       const entries = { ...(cfg.worldbookJson?.entries || {}) };
       entries[key] = { ...entries[key], [field]: val };
+      // 同步到模板
+      setGlobalWorldbookList(list =>
+        list.map(tpl =>
+          tpl.id === selectedWorldbookId
+            ? { ...tpl, worldbookJson: { ...tpl.worldbookJson, entries } }
+            : tpl
+        )
+      );
       return {
         ...cfg,
         worldbookJson: { ...cfg.worldbookJson, entries },
@@ -1088,6 +1152,14 @@ export default function GlobalSettingsPage() {
         depth: 0,
         vectorized: false,
       };
+      // 同步到模板
+      setGlobalWorldbookList(list =>
+        list.map(tpl =>
+          tpl.id === selectedWorldbookId
+            ? { ...tpl, worldbookJson: { ...tpl.worldbookJson, entries } }
+            : tpl
+        )
+      );
       return {
         ...cfg,
         worldbookJson: { ...cfg.worldbookJson, entries },
@@ -1393,7 +1465,16 @@ export default function GlobalSettingsPage() {
       allEnabledScripts.forEach((s, idx) => {
         log += `脚本#${idx + 1}: 名称=${s.scriptName}, findRegex=${s.findRegex}, replaceString=${s.replaceString}, placement=${JSON.stringify(s.placement)}\n`;
       });
-
+        // === 关键：为每个脚本注入 groupBindType/groupBindCharacterId 字段 ===
+        const scriptsWithBindInfo = allEnabledScripts.map(script => {
+          // 找到所在组
+          const group = regexScriptGroups.find(g => g.scripts.some(s => s.id === script.id));
+          return {
+            ...script,
+            groupBindType: group?.bindType,
+            groupBindCharacterId: group?.bindCharacterId
+          };
+        });
       log += `\n【用户输入测试】\n原始: ${userInputSample}\n`;
       const processedUser = NodeSTCoreClass.applyGlobalRegexScripts(
         userInputSample,
@@ -1751,14 +1832,19 @@ export default function GlobalSettingsPage() {
       await StorageAdapter.saveSelectedGlobalPresetId?.(selectedPresetId);
       await StorageAdapter.saveGlobalWorldbookList?.(globalWorldbookList);
       await StorageAdapter.saveSelectedGlobalWorldbookId?.(selectedWorldbookId);
-      // === 关键：保存正则脚本组时带上bindType/bindCharacterId ===
-      await StorageAdapter.saveGlobalRegexScriptGroups?.(
-        regexScriptGroups.map(g => ({
-          ...g,
+
+      // === 关键：保存正则脚本组时给每个脚本加上bindType/bindCharacterId ===
+      const groupsWithBindInfo = regexScriptGroups.map(g => ({
+        ...g,
+        scripts: (g.scripts || []).map(s => ({
+          ...s,
           bindType: g.bindType,
           bindCharacterId: g.bindCharacterId
-        }))
-      );
+        })),
+        bindType: g.bindType,
+        bindCharacterId: g.bindCharacterId
+      }));
+      await StorageAdapter.saveGlobalRegexScriptGroups?.(groupsWithBindInfo);
       await StorageAdapter.saveSelectedGlobalRegexGroupId?.(selectedRegexGroupId);
 
       // 持久化开关状态

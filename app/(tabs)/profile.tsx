@@ -10,6 +10,7 @@ import {
   StatusBar,
   Platform,
   Alert,
+  Linking,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import * as ImagePicker from 'expo-image-picker';
@@ -144,7 +145,8 @@ const Profile: React.FC = () => {
           title="关于"
           leftIcon="information-circle-outline"
           chevron={false}
-          subtitle="GitHub | CradleAI | 1.0.2"
+          subtitle="GitHub | CradleAI | 1.0.3"
+          onPress={() => Linking.openURL('https://github.com/AliceSyndrome285/CradleAI')}
         />
       </ScrollView>
 

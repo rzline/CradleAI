@@ -82,11 +82,13 @@ export const UserProvider: React.FC<{ children: React.ReactNode }> = ({ children
                 useGeminiModelLoadBalancing: false,
                 additionalGeminiKeys: [],
                 temperature: 0.7,
-                maxTokens: 800,
-                maxtokens: 800,
+                maxTokens: 8192,
+                maxtokens: 8192,
                 useZhipuEmbedding: false,
                 useCloudService: false,
                 zhipuApiKey: '',
+                geminiTemperature: 0.7,
+                geminiMaxTokens: 2048,
                 openrouter: {
                   enabled: false,
                   apiKey: '',
@@ -153,6 +155,34 @@ export const UserProvider: React.FC<{ children: React.ReactNode }> = ({ children
       let openrouterEnabled = apiProvider === 'openrouter';
       let openaiCompatibleEnabled = apiProvider === 'openai-compatible';
 
+      // --- 修正：OpenAIcompatible多渠道流式参数同步 ---
+      let updatedOpenAIcompatible = {
+        ...(user.settings.chat.OpenAIcompatible || { enabled: false, apiKey: '', model: '', endpoint: '' }),
+        ...(settings.chat?.OpenAIcompatible || {})
+      };
+      // 如果有providers数组，更新selectedProviderId对应的provider的参数
+      if (
+        updatedOpenAIcompatible.providers &&
+        Array.isArray(updatedOpenAIcompatible.providers) &&
+        updatedOpenAIcompatible.selectedProviderId
+      ) {
+        updatedOpenAIcompatible.providers = updatedOpenAIcompatible.providers.map((p: any) => {
+          if (p.id === updatedOpenAIcompatible.selectedProviderId) {
+            return {
+              ...p,
+              // 只覆盖有传入的字段
+              ...(settings.chat?.OpenAIcompatible?.apiKey !== undefined ? { apiKey: settings.chat.OpenAIcompatible.apiKey } : {}),
+              ...(settings.chat?.OpenAIcompatible?.model !== undefined ? { model: settings.chat.OpenAIcompatible.model } : {}),
+              ...(settings.chat?.OpenAIcompatible?.endpoint !== undefined ? { endpoint: settings.chat.OpenAIcompatible.endpoint } : {}),
+              ...(settings.chat?.OpenAIcompatible?.stream !== undefined ? { stream: settings.chat.OpenAIcompatible.stream } : {}),
+              ...(settings.chat?.OpenAIcompatible?.temperature !== undefined ? { temperature: settings.chat.OpenAIcompatible.temperature } : {}),
+              ...(settings.chat?.OpenAIcompatible?.max_tokens !== undefined ? { max_tokens: settings.chat.OpenAIcompatible.max_tokens } : {}),
+            };
+          }
+          return p;
+        });
+      }
+
       const updatedUser = {
         ...user,
         settings: {
@@ -169,14 +199,15 @@ export const UserProvider: React.FC<{ children: React.ReactNode }> = ({ children
             geminiPrimaryModel: settings.chat?.geminiPrimaryModel ?? user.settings.chat.geminiPrimaryModel,
             geminiBackupModel: settings.chat?.geminiBackupModel ?? user.settings.chat.geminiBackupModel,
             retryDelay: settings.chat?.retryDelay ?? user.settings.chat.retryDelay,
+            geminiTemperature: settings.chat?.geminiTemperature ?? user.settings.chat.geminiTemperature ?? 0.7,
+            geminiMaxTokens: settings.chat?.geminiMaxTokens ?? user.settings.chat.geminiMaxTokens ?? 2048,
             openrouter: {
               ...(user.settings.chat.openrouter || {}),
               ...(settings.chat?.openrouter || {}),
               enabled: openrouterEnabled
             },
             OpenAIcompatible: {
-              ...(user.settings.chat.OpenAIcompatible || { enabled: false, apiKey: '', model: '', endpoint: '' }),
-              ...(settings.chat?.OpenAIcompatible || {}),
+              ...updatedOpenAIcompatible,
               enabled: openaiCompatibleEnabled
             }
           },

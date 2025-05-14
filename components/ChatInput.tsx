@@ -65,7 +65,7 @@ const ChatInput: React.FC<ChatInputProps> = ({
   const [showActions, setShowActions] = useState(false);
   const { user } = useUser();
   const inputRef = useRef<TextInput>(null);
-const { applyRegexTools } = useRegex();
+  const { applyRegexTools } = useRegex();
   
   const [selectedImage, setSelectedImage] = useState<string | null>(null);
   const [imageUrl, setImageUrl] = useState<string>('');
@@ -96,6 +96,7 @@ const { applyRegexTools } = useRegex();
  const [useSeed, setUseSeed] = useState<boolean>(false);
  const [novelAIConfig, setNovelAIConfig] = useState<any>(null);
  const [allPositiveTags, setAllPositiveTags] = useState<string[]>([]);
+ const [isContinuing, setIsContinuing] = useState(false); // 新增：继续说按钮loading状态
  
   useEffect(() => {
     const keyboardDidHideListener = Keyboard.addListener(
@@ -341,6 +342,57 @@ const { applyRegexTools } = useRegex();
       });
     } finally {
       setIsLoading(false);
+    }
+  };
+
+  const handleContinue = async () => {
+    if (!selectedConversationId) {
+      Alert.alert('错误', '请先选择一个角色');
+      return;
+    }
+    setIsContinuing(true);
+    try {
+      // 发送“继续”消息，带特殊标记
+      onSendMessage('继续', 'user', false, { isContinue: true });
+
+      // 直接复用主流程
+      const result = await NodeSTManager.processChatMessage({
+        userMessage: '继续',
+        status: '同一角色继续对话',
+        conversationId: conversationId,
+        apiKey: user?.settings?.chat.characterApiKey || '',
+        apiSettings: {
+          apiProvider: user?.settings?.chat.apiProvider || 'gemini',
+          openrouter: user?.settings?.chat.openrouter,
+          OpenAIcompatible: user?.settings?.chat.OpenAIcompatible,
+          useGeminiModelLoadBalancing: user?.settings?.chat.useGeminiModelLoadBalancing,
+          useGeminiKeyRotation: user?.settings?.chat.useGeminiKeyRotation,
+          additionalGeminiKeys: user?.settings?.chat.additionalGeminiKeys,
+        },
+        geminiOptions: {
+          geminiPrimaryModel: user?.settings?.chat.geminiPrimaryModel,
+          geminiBackupModel: user?.settings?.chat.geminiBackupModel,
+          retryDelay: user?.settings?.chat.retryDelay,
+        },
+        character: selectedCharacter,
+        characterId: selectedCharacter?.id,
+      });
+      setIsContinuing(false);
+      if (result.success) {
+        const processedResponse = applyRegexTools(result.text || '抱歉，未收到有效回复。', 'ai');
+        onSendMessage(processedResponse, 'bot');
+      } else {
+        onSendMessage('抱歉，处理消息时出现了错误，请重试。', 'bot', false, { 
+          isErrorMessage: true, 
+          error: result.error || 'Unknown NodeST error' 
+        });
+      }
+    } catch (error) {
+      setIsContinuing(false);
+      onSendMessage('抱歉，发送消息时出现了错误，请重试。', 'bot', false, { 
+        isErrorMessage: true, 
+        error: error instanceof Error ? error.message : 'Unknown error' 
+      });
     }
   };
 
@@ -1039,14 +1091,26 @@ ${recentMessagesContext ? `最近的对话记录:\n${recentMessagesContext}\n` :
 
       <View style={styles.inputContainer}>
         <TouchableOpacity
-          style={[styles.button, styles.plusButton, showActions && styles.activeButton]}
+          style={[styles.button, styles.plusButton, showActions && styles.activeButton, styles.smallButton]}
           onPress={toggleActionMenu}
         >
           <MaterialIcons
             name={showActions ? "add" : "add"}
-            size={24}
+            size={20}
             color={showActions ? theme.colors.primary : theme.colors.primary}
           />
+        </TouchableOpacity>
+
+        <TouchableOpacity
+          style={[styles.button, styles.continueButton, styles.smallButton, isContinuing && styles.disabledButton]}
+          onPress={handleContinue}
+          disabled={isLoading || isContinuing}
+        >
+          {isContinuing ? (
+            <ActivityIndicator size="small" color="#fff" />
+          ) : (
+            <Ionicons name="play-forward" size={18} color={theme.colors.primary} />
+          )}
         </TouchableOpacity>
 
         <TextInput
@@ -1066,16 +1130,16 @@ ${recentMessagesContext ? `最近的对话记录:\n${recentMessagesContext}\n` :
         />
 
         <TouchableOpacity
-          style={[styles.button, styles.sendButton]}
+          style={[styles.button, styles.sendButton, styles.smallButton]}
           onPress={handleSendPress}
           disabled={isLoading || text.trim() === ''}
         >
           {isLoading ? (
-            <Ionicons name="ellipsis-horizontal" size={24} color="#777" />
+            <Ionicons name="ellipsis-horizontal" size={20} color="#777" />
           ) : (
             <MaterialIcons
               name="send"
-              size={24}
+              size={20}
               color={text.trim() === '' ? '#777' : theme.colors.primary}
             />
           )}
@@ -1399,7 +1463,7 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     backgroundColor: 'rgba(40, 40, 40, 0.9)',
     borderRadius: 24,
-    padding: 4,
+    padding: 2, // 缩小padding
     borderWidth: 1,
     borderColor: 'rgba(255, 255, 255, 0.1)',
   },
@@ -1412,11 +1476,19 @@ const styles = StyleSheet.create({
     textAlignVertical: 'center', // Helps with alignment in multi-line mode
   },
   button: {
-    width: 40,
-    height: 40,
-    borderRadius: 20,
+    width: 32,
+    height: 32,
+    borderRadius: 16,
     justifyContent: 'center',
     alignItems: 'center',
+    marginHorizontal: 2,
+  },
+  smallButton: {
+    width: 32,
+    height: 32,
+    borderRadius: 16,
+    minWidth: 32,
+    minHeight: 32,
   },
   plusButton: {
     backgroundColor: 'rgba(255, 255, 255, 0.1)',
@@ -1426,6 +1498,10 @@ const styles = StyleSheet.create({
   },
   sendButton: {
     backgroundColor: 'rgba(255, 255, 255, 0.1)',
+  },
+  continueButton: {
+    backgroundColor: 'rgba(255, 255, 255, 0.1)',
+    marginHorizontal: 2,
   },
   
   // Redesigned compact action menu styles
