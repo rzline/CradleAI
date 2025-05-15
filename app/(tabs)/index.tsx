@@ -14,7 +14,8 @@ import {
   AppState,
   ActivityIndicator,
   Animated,
-  Easing
+  Easing,
+  Dimensions
 } from 'react-native';
 import { Video, ResizeMode, AVPlaybackStatus } from 'expo-av';
 import ChatDialog from '@/components/ChatDialog';
@@ -60,6 +61,7 @@ import { getWebViewExampleHtml } from '@/utils/webViewExample';
 import { Ionicons } from '@expo/vector-icons';
 import { DeviceEventEmitter } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import PostChatService from '@/services/PostChat-service';
 // Lazy load non-critical components to improve initial load time
 const NovelAITestModal = lazy(() => import('@/components/NovelAITestModal'));
 
@@ -191,7 +193,7 @@ const [hasRestoredLastConversation, setHasRestoredLastConversation] = useState(f
     setCharacters,
     addCharacter,
     addConversation,
-    clearTransientMessages,
+    removeMessage,
   } = useCharacters();
 
   // UI state - core functionality
@@ -267,13 +269,12 @@ const [hasRestoredLastConversation, setHasRestoredLastConversation] = useState(f
   const [transientError, setTransientError] = useState<string | null>(null);
 
   // Background image processing state
-  const [isExtraBgGenerating, setIsExtraBgGenerating] = useState(false);
-  const [extraBgTaskId, setExtraBgTaskId] = useState<string | null>(null);
-  const [extraBgError, setExtraBgError] = useState<string | null>(null);
-  const [extraBgImage, setExtraBgImage] = useState<string | null>(null);
-  const extraBgGenAbortRef = useRef<{ aborted: boolean }>({ aborted: false });
-  const extraBgGenCounter = useRef<number>(0);
-  const processedExtraBgMessageIds = useRef<Set<string>>(new Set());
+  const [extraBgStates, setExtraBgStates] = useState<Record<string, {
+    isGenerating: boolean;
+    taskId: string | null;
+    error: string | null;
+    image: string | null;
+  }>>({});
 
   // UI visibility state
   const [isTopBarVisible, setIsTopBarVisible] = useState(true);
@@ -432,36 +433,6 @@ const [hasRestoredLastConversation, setHasRestoredLastConversation] = useState(f
     }
   }, [isPreviewMode]);
 
-  // Save and load memory
-  const loadProcessedExtraBgMessageIds = useCallback(async (characterId: string) => {
-    try {
-      const key = `${EXTRA_BG_IDS_KEY_PREFIX}${characterId}`;
-      const stored = await AsyncStorage.getItem(key);
-      if (stored) {
-        const arr = JSON.parse(stored);
-        if (Array.isArray(arr)) {
-          processedExtraBgMessageIds.current = new Set(arr);
-          return;
-        }
-      }
-      processedExtraBgMessageIds.current = new Set();
-    } catch (e) {
-      processedExtraBgMessageIds.current = new Set();
-    }
-  }, [EXTRA_BG_IDS_KEY_PREFIX]);
-
-  const saveProcessedExtraBgMessageIds = useCallback(async (characterId: string) => {
-    try {
-      const key = `${EXTRA_BG_IDS_KEY_PREFIX}${characterId}`;
-      const operation = AsyncStorage.setItem(key, JSON.stringify(Array.from(processedExtraBgMessageIds.current)));
-      asyncStorageOperations.current.add(operation);
-      await operation;
-      asyncStorageOperations.current.delete(operation);
-    } catch (e) {
-      // Ignore errors
-    }
-  }, [EXTRA_BG_IDS_KEY_PREFIX]);
-
   // Preview save functionality
   const handlePreviewSave = useCallback((save: ChatSave) => {
     if (!isPreviewMode) {
@@ -549,10 +520,29 @@ const [hasRestoredLastConversation, setHasRestoredLastConversation] = useState(f
     if (isErrorMessage) {
       setTransientError("处理消息时出现了错误");
       setTimeout(() => setTransientError(null), 5000);
-      
-      if (selectedConversationId) {
-        await clearTransientMessages(selectedConversationId);
-      }
+      // 移除最后一个AI loading消息和其对应的user消息（UI和context）
+      setMessages(prev => {
+        let msgs = [...prev];
+        const lastAiIdx = msgs.map((m, i) => ({...m, i})).reverse().find(m => m.sender === 'bot' && m.isLoading);
+        if (lastAiIdx) {
+          const aiMsgId = msgs[lastAiIdx.i].id;
+          // 移除该AI消息
+          msgs.splice(lastAiIdx.i, 1);
+          // 移除其前面的最后一个user消息
+          let userMsgId: string | undefined;
+          for (let j = lastAiIdx.i - 1; j >= 0; j--) {
+            if (msgs[j].sender === 'user') {
+              userMsgId = msgs[j].id;
+              msgs.splice(j, 1);
+              break;
+            }
+          }
+          // 移除context中的消息
+          if (aiMsgId) removeMessage(selectedConversationId, aiMsgId);
+          if (userMsgId) removeMessage(selectedConversationId, userMsgId);
+        }
+        return msgs;
+      });
       return null;
     }
 
@@ -597,14 +587,29 @@ const [hasRestoredLastConversation, setHasRestoredLastConversation] = useState(f
     } catch (err) {
       setTransientError("处理消息时出现了错误");
       setTimeout(() => setTransientError(null), 5000);
-      
-      if (selectedConversationId) {
-        await clearTransientMessages(selectedConversationId);
-      }
+      setMessages(prev => {
+        let msgs = [...prev];
+        const lastAiIdx = msgs.map((m, i) => ({...m, i})).reverse().find(m => m.sender === 'bot' && m.isLoading);
+        if (lastAiIdx) {
+          const aiMsgId = msgs[lastAiIdx.i].id;
+          msgs.splice(lastAiIdx.i, 1);
+          let userMsgId: string | undefined;
+          for (let j = lastAiIdx.i - 1; j >= 0; j--) {
+            if (msgs[j].sender === 'user') {
+              userMsgId = msgs[j].id;
+              msgs.splice(j, 1);
+              break;
+            }
+          }
+          if (aiMsgId) removeMessage(selectedConversationId, aiMsgId);
+          if (userMsgId) removeMessage(selectedConversationId, userMsgId);
+        }
+        return msgs;
+      });
       return null;
     }
     return messageId;
-  }, [selectedConversationId, messages, clearTransientMessages, addMessage]);
+  }, [selectedConversationId, messages, addMessage, removeMessage]);
 
   const handleSendMessage = useCallback(async (newMessage: string, sender: 'user' | 'bot', isLoading = false, metadata?: Record<string, any>) => {
     // Exit preview mode if active
@@ -640,10 +645,25 @@ const [hasRestoredLastConversation, setHasRestoredLastConversation] = useState(f
     if (isTransientError) {
       setTransientError("处理消息时出现了错误");
       setTimeout(() => setTransientError(null), 5000);
-      
-      if (selectedConversationId) {
-        await clearTransientMessages(selectedConversationId);
-      }
+      setMessages(prev => {
+        let msgs = [...prev];
+        const lastAiIdx = msgs.map((m, i) => ({...m, i})).reverse().find(m => m.sender === 'bot' && m.isLoading);
+        if (lastAiIdx) {
+          const aiMsgId = msgs[lastAiIdx.i].id;
+          msgs.splice(lastAiIdx.i, 1);
+          let userMsgId: string | undefined;
+          for (let j = lastAiIdx.i - 1; j >= 0; j--) {
+            if (msgs[j].sender === 'user') {
+              userMsgId = msgs[j].id;
+              msgs.splice(j, 1);
+              break;
+            }
+          }
+          if (aiMsgId) removeMessage(selectedConversationId, aiMsgId);
+          if (userMsgId) removeMessage(selectedConversationId, userMsgId);
+        }
+        return msgs;
+      });
       return;
     }
 
@@ -654,10 +674,25 @@ const [hasRestoredLastConversation, setHasRestoredLastConversation] = useState(f
     } catch (err) {
       setTransientError("处理消息时出现了错误");
       setTimeout(() => setTransientError(null), 5000);
-      
-      if (selectedConversationId) {
-        await clearTransientMessages(selectedConversationId);
-      }
+      setMessages(prev => {
+        let msgs = [...prev];
+        const lastAiIdx = msgs.map((m, i) => ({...m, i})).reverse().find(m => m.sender === 'bot' && m.isLoading);
+        if (lastAiIdx) {
+          const aiMsgId = msgs[lastAiIdx.i].id;
+          msgs.splice(lastAiIdx.i, 1);
+          let userMsgId: string | undefined;
+          for (let j = lastAiIdx.i - 1; j >= 0; j--) {
+            if (msgs[j].sender === 'user') {
+              userMsgId = msgs[j].id;
+              msgs.splice(j, 1);
+              break;
+            }
+          }
+          if (aiMsgId) removeMessage(selectedConversationId, aiMsgId);
+          if (userMsgId) removeMessage(selectedConversationId, userMsgId);
+        }
+        return msgs;
+      });
       return;
     }
 
@@ -708,7 +743,7 @@ const [hasRestoredLastConversation, setHasRestoredLastConversation] = useState(f
     }
   }, [
     isPreviewMode, exitPreviewMode, selectedConversationId,
-    clearTransientMessages, sendMessageInternal, braveSearchEnabled
+    sendMessageInternal, braveSearchEnabled, removeMessage
   ]);
 
   // Handle group messages
@@ -873,9 +908,47 @@ const [hasRestoredLastConversation, setHasRestoredLastConversation] = useState(f
   ]);
 
   // Edit AI message
-  const handleEditAiMessage = useCallback(async (messageId: string, aiIndex: number, newContent: string) => {
+  const handleEditAiMessage = useCallback(async (messageId: string, _aiIndex: number, newContent: string) => {
     if (!selectedConversationId) return;
     try {
+      // === 修正：重新计算aiIndex，确保与NodeST一致 ===
+      // 获取first_mes内容
+      let firstMesText = '';
+      try {
+        const char = fallbackCharacter || selectedCharacter;
+        if (char?.jsonData) {
+          const characterData = JSON.parse(char.jsonData);
+          firstMesText = characterData.roleCard?.first_mes || '';
+        }
+      } catch (e) {
+        firstMesText = '';
+      }
+      // 过滤掉first_mes和错误消息，仅保留有效AI消息
+      const botMessages = messages.filter(msg =>
+        msg.sender === 'bot' &&
+        !msg.isLoading &&
+        !msg.metadata?.isErrorMessage &&
+        !msg.metadata?.error &&
+        (firstMesText ? msg.text !== firstMesText : true) &&
+        !msg.metadata?.isFirstMes
+      );
+      // 找到目标消息在botMessages中的index
+      const targetMsg = messages.find(msg => msg.id === messageId);
+      let aiIndex = -1;
+      if (targetMsg) {
+        aiIndex = botMessages.findIndex(m => m.id === targetMsg.id);
+      }
+      if (aiIndex === -1) {
+        // 如果是first_mes
+        if (firstMesText && targetMsg?.text === firstMesText) {
+          aiIndex = 0;
+        } else {
+          setTransientError("处理消息时出现了错误");
+          setTimeout(() => setTransientError(null), 5000);
+          return;
+        }
+      }
+      // === 传递修正后的aiIndex ===
       const result = await NodeSTManager.editAiMessageByIndex({
         conversationId: selectedConversationId,
         messageIndex: aiIndex + 1,
@@ -949,7 +1022,6 @@ const [hasRestoredLastConversation, setHasRestoredLastConversation] = useState(f
           
           // Update UI
           setMessages(newMessages);
-          Alert.alert('编辑成功', 'AI消息内容已更新');
         } else {
           setMessages([]);
         }
@@ -961,12 +1033,46 @@ const [hasRestoredLastConversation, setHasRestoredLastConversation] = useState(f
       setTransientError("处理消息时出现了错误");
       setTimeout(() => setTransientError(null), 5000);
     }
-  }, [selectedConversationId, clearMessages, addMessage]);
+  }, [selectedConversationId, clearMessages, addMessage, messages, fallbackCharacter, selectedCharacter]);
 
   // Delete AI message
-  const handleDeleteAiMessage = useCallback(async (messageId: string, aiIndex: number) => {
+  const handleDeleteAiMessage = useCallback(async (messageId: string, _aiIndex: number) => {
     if (!selectedConversationId) return;
     try {
+      // === 修正：重新计算aiIndex，确保与NodeST一致 ===
+      let firstMesText = '';
+      try {
+        const char = fallbackCharacter || selectedCharacter;
+        if (char?.jsonData) {
+          const characterData = JSON.parse(char.jsonData);
+          firstMesText = characterData.roleCard?.first_mes || '';
+        }
+      } catch (e) {
+        firstMesText = '';
+      }
+      const botMessages = messages.filter(msg =>
+        msg.sender === 'bot' &&
+        !msg.isLoading &&
+        !msg.metadata?.isErrorMessage &&
+        !msg.metadata?.error &&
+        (firstMesText ? msg.text !== firstMesText : true) &&
+        !msg.metadata?.isFirstMes
+      );
+      const targetMsg = messages.find(msg => msg.id === messageId);
+      let aiIndex = -1;
+      if (targetMsg) {
+        aiIndex = botMessages.findIndex(m => m.id === targetMsg.id);
+      }
+      if (aiIndex === -1) {
+        if (firstMesText && targetMsg?.text === firstMesText) {
+          aiIndex = 0;
+        } else {
+          setTransientError("处理消息时出现了错误");
+          setTimeout(() => setTransientError(null), 5000);
+          return;
+        }
+      }
+      // === 传递修正后的aiIndex ===
       const result = await NodeSTManager.deleteAiMessageByIndex({
         conversationId: selectedConversationId,
         messageIndex: aiIndex + 1
@@ -1040,7 +1146,6 @@ const [hasRestoredLastConversation, setHasRestoredLastConversation] = useState(f
           
           // Update UI
           setMessages(newMessages);
-          Alert.alert('删除成功', 'AI消息及其对应用户消息已删除');
         } else {
           setMessages([]);
         }
@@ -1052,7 +1157,7 @@ const [hasRestoredLastConversation, setHasRestoredLastConversation] = useState(f
       setTransientError("处理消息时出现了错误");
       setTimeout(() => setTransientError(null), 5000);
     }
-  }, [selectedConversationId, clearMessages, addMessage]);
+  }, [selectedConversationId, clearMessages, addMessage, messages, fallbackCharacter, selectedCharacter]);
 
   // Handle WebView test
   const handleWebViewTest = useCallback(async () => {
@@ -1099,8 +1204,8 @@ const [hasRestoredLastConversation, setHasRestoredLastConversation] = useState(f
 
   // Get background image
   const getBackgroundImage = useCallback(() => {
-    if (extraBgImage) {
-      return { uri: extraBgImage };
+    if (characterToUse?.id && extraBgStates[characterToUse.id]?.image) {
+      return { uri: extraBgStates[characterToUse.id].image! };
     }
     if (
       characterToUse?.enableAutoExtraBackground &&
@@ -1120,7 +1225,7 @@ const [hasRestoredLastConversation, setHasRestoredLastConversation] = useState(f
       }
     }
     return require('@/assets/images/default-background.jpg');
-  }, [extraBgImage, characterToUse]);
+  }, [characterToUse, extraBgStates]);
 
   // Get group background image
   const getGroupBackgroundImage = useCallback(() => {
@@ -1416,13 +1521,13 @@ const [hasRestoredLastConversation, setHasRestoredLastConversation] = useState(f
       AsyncStorage.setItem('braveSearchEnabled', JSON.stringify(newState))
         .catch(err => console.error('[App] Failed to save search preference:', err));
       
-      Alert.alert(
-        newState ? '已启用搜索' : '已禁用搜索',
-        newState 
-          ? '现在AI可以使用Brave搜索来回答需要最新信息的问题' 
-          : '已关闭网络搜索功能，AI将只使用已有知识回答问题',
-        [{ text: '确定', style: 'default' }]
-      );
+      // Alert.alert(
+      //   newState ? '已启用搜索' : '已禁用搜索',
+      //   newState 
+      //     ? '现在AI可以使用Brave搜索来回答需要最新信息的问题' 
+      //     : '已关闭网络搜索功能，AI将只使用已有知识回答问题',
+      //   [{ text: '确定', style: 'default' }]
+      // );
       
       return newState;
     });
@@ -1500,299 +1605,6 @@ const [hasRestoredLastConversation, setHasRestoredLastConversation] = useState(f
     autoMessageEnabled, characterToUse, selectedConversationId,
     messages, user, addMessage, updateUnreadMessagesCount
   ]);
-
-  // Background generation
-  const triggerExtraBackgroundGeneration = useCallback(async (character: Character, lastBotMessage: string) => {
-    if (!character || !character.backgroundImage) {
-      console.log('[后处理] 不触发：character/backgroundImage 不存在');
-      return;
-    }
-    
-    if (!character.enableAutoExtraBackground) {
-      console.log('[后处理] 不触发：enableAutoExtraBackground 为 false');
-      return;
-    }
-    
-    if (!character.backgroundImageConfig?.isNovelAI) {
-      console.log('[后处理] 不触发：backgroundImageConfig.isNovelAI 为 false');
-      return;
-    }
-
-    let novelaiConfig = character.backgroundImageConfig?.novelaiSettings || {};
-    
-    let seed: number | undefined;
-    if (
-      character.backgroundImageConfig?.seed !== undefined &&
-      character.backgroundImageConfig?.seed !== null &&
-      character.backgroundImageConfig?.seed !== ''
-    ) {
-      seed = Number(character.backgroundImageConfig.seed);
-    } else if (
-      novelaiConfig.seed !== undefined &&
-      novelaiConfig.seed !== null &&
-      novelaiConfig.seed !== ''
-    ) {
-      seed = Number(novelaiConfig.seed);
-    } else {
-      seed = Math.floor(Math.random() * 2 ** 32);
-    }
-
-    // Merge default prompts
-    let positiveTags: string[] = [
-      ...DEFAULT_POSITIVE_PROMPTS,
-      ...(character.backgroundImageConfig?.positiveTags || [])
-    ];
-    let negativeTags: string[] = [
-      ...DEFAULT_NEGATIVE_PROMPTS,
-      ...(character.backgroundImageConfig?.negativeTags || [])
-    ];
-
-    let fixedTags: string[] = character.backgroundImageConfig?.fixedTags || [];
-    let allPositiveTags = [
-      ...(character.backgroundImageConfig?.genderTags || []),
-      ...(character.backgroundImageConfig?.characterTags || []),
-      ...(character.backgroundImageConfig?.qualityTags || []),
-      ...(positiveTags || [])
-    ];
-    let artistTag = character.backgroundImageConfig?.artistPrompt || '';
-    console.log('[后处理] 参数准备:', {
-      seed, positiveTags, negativeTags, fixedTags, allPositiveTags, artistTag, novelaiConfig
-    });
-
-    // Get recent conversation context
-    let contextMessages: {role: string, content: string}[] = [];
-    try {
-      contextMessages = await StorageAdapter.exportConversation(character.id);
-      contextMessages = contextMessages.slice(-10);
-      console.log('[后处理] 获取到上下文:', contextMessages);
-    } catch (e) {
-      contextMessages = [];
-      console.warn('[后处理] 获取上下文失败:', e);
-    }
-
-    // Generate scene description using AI
-    let aiSceneDesc = '';
-    try {
-      // Check API settings for available providers
-      const apiSettings = getApiSettings();    
-      
-      if (
-        apiSettings.openrouter?.enabled &&
-        apiSettings.openrouter.apiKey &&
-        apiSettings.openrouter.model
-      ) {
-        // Use OpenRouterAdapter
-        const openrouterAdapter = new OpenRouterAdapter(
-          apiSettings.openrouter.apiKey,
-          apiSettings.openrouter.model
-        );
-        const prompt = `请根据以下对话内容，用一句不超过15个英文单词的连贯语句，描述角色当前的表情、动作、场景（时间、地点、画面），不要描述外观、服饰。输出英文短句。对话内容：\n${contextMessages.map(m=>`${m.role}: ${m.content}`).join('\n')}`;
-        aiSceneDesc = await openrouterAdapter.generateContent([
-          { role: 'user', parts: [{ text: prompt }] }
-        ]);
-        aiSceneDesc = (aiSceneDesc || '').replace(/[\r\n]+/g, ' ').trim();
-        console.log('[后处理] OpenRouterAdapter生成场景描述:', aiSceneDesc);
-      } else if (apiSettings.OpenAIcompatible?.enabled && apiSettings.OpenAIcompatible.apiKey && apiSettings.OpenAIcompatible.endpoint && apiSettings.OpenAIcompatible.model) {
-        // Dynamically import OpenAIAdapter
-        const { OpenAIAdapter } = await import('@/NodeST/nodest/utils/openai-adapter');
-        const openaiAdapter = new OpenAIAdapter({
-          endpoint: apiSettings.OpenAIcompatible.endpoint,
-          apiKey: apiSettings.OpenAIcompatible.apiKey,
-          model: apiSettings.OpenAIcompatible.model,
-        });
-        const prompt = `请根据以下对话内容，用一句不超过15个英文单词的连贯语句，描述角色当前的表情、动作、场景（时间、地点、画面），不要描述外观、服饰。输出英文短句。对话内容：\n${contextMessages.map(m=>`${m.role}: ${m.content}`).join('\n')}`;
-        aiSceneDesc = await openaiAdapter.generateContent([
-          { role: 'user', parts: [{ text: prompt }] }
-        ]);
-        aiSceneDesc = (aiSceneDesc || '').replace(/[\r\n]+/g, ' ').trim();
-        console.log('[后处理] OpenAICompatible生成场景描述:', aiSceneDesc);
-      } else {
-        // Fallback to GeminiAdapter
-        const prompt = `请根据以下对话内容，用一句不超过15个英文单词的连贯语句，描述角色当前的表情、动作、场景（时间、地点、画面），不要描述外观、服饰。输出英文短句。对话内容：\n${contextMessages.map(m=>`${m.role}: ${m.content}`).join('\n')}`;
-        console.log('[后处理] 发送GeminiAdapter prompt:', prompt);
-        aiSceneDesc = await GeminiAdapter.executeDirectGenerateContent(prompt);
-        aiSceneDesc = (aiSceneDesc || '').replace(/[\r\n]+/g, ' ').trim();
-        console.log('[后处理] Gemini生成场景描述:', aiSceneDesc);
-      }
-    } catch (e) {
-      aiSceneDesc = '';
-      console.warn('[后处理] 场景描述生成失败:', e);
-      // Fallback to CloudServiceProvider
-      try {
-        const cloudResp = await (CloudServiceProvider.constructor as typeof CloudServiceProviderClass).generateChatCompletionStatic(
-          [
-            { role: 'user', content: `Based on the dialogue, describe the character's current expression, action, and setting (time, place, visuals) in one coherent sentence of no more than 20 words. Exclude appearance, clothing, and names. Use "he/she" to refer to the character. Output the sentence enclosed in curly braces: { }. Dialogue:\n${contextMessages.map(m=>`${m.role}: ${m.content}`).join('\n')}` }
-          ],
-          { max_tokens: 32, temperature: 0.7 }
-        );
-        if (cloudResp && cloudResp.ok) {
-          const data = await cloudResp.json();
-          if (data && data.choices && data.choices[0]?.message?.content) {
-            aiSceneDesc = data.choices[0].message.content.replace(/[\r\n]+/g, ' ').trim();
-            console.log('[后处理] CloudServiceProvider生成场景描述:', aiSceneDesc);
-          }
-        }
-      } catch (cloudErr) {
-        aiSceneDesc = '';
-        console.warn('[后处理] CloudServiceProvider生成场景描述失败:', cloudErr);
-      }
-    }
-
-    // Process normalTags with AI scene description
-    let newNormalTags: string[] = [];
-    if (fixedTags && fixedTags.length > 0) {
-      newNormalTags = [...fixedTags];
-      if (aiSceneDesc) newNormalTags.push(aiSceneDesc);
-    } else if (aiSceneDesc) {
-      newNormalTags = [aiSceneDesc];
-    }
-    console.log('[后处理] 处理后normalTags:', newNormalTags);
-
-    // Build final positive tags
-    let finalPositiveTags = [
-      ...(character.backgroundImageConfig?.genderTags || []),
-      ...(character.backgroundImageConfig?.characterTags || []),
-      ...(character.backgroundImageConfig?.qualityTags || []),
-      ...(artistTag ? [artistTag] : []),
-      ...DEFAULT_POSITIVE_PROMPTS,
-      ...newNormalTags
-    ].filter(Boolean);
-
-    // Ensure negative prompts aren't empty
-    let finalNegativePrompt = [
-      ...DEFAULT_NEGATIVE_PROMPTS,
-      ...(character.backgroundImageConfig?.negativeTags || [])
-    ].filter(Boolean).join(', ');
-
-    // NovelAI parameters
-    const novelaiToken = user?.settings?.chat?.novelai?.token || '';
-    const sizePreset = character.backgroundImageConfig?.sizePreset || { width: 832, height: 1216 };
-    const model = novelaiConfig.model || 'NAI Diffusion V4 Curated';
-    const steps = novelaiConfig.steps || 28;
-    const scale = novelaiConfig.scale || 5;
-    const sampler = novelaiConfig.sampler || 'k_euler_ancestral';
-    const noiseSchedule = novelaiConfig.noiseSchedule || 'karras';
-
-    // Character prompts positioning
-    let characterPrompts: { prompt: string; positions: { x: number; y: number }[] }[] = [];
-    if (character.backgroundImageConfig?.characterTags && character.backgroundImageConfig.characterTags.length > 0) {
-      characterPrompts = [
-        {
-          prompt: character.backgroundImageConfig.characterTags.join(', '),
-          positions: [{ x: 0, y: 0 }]
-        }
-      ];
-    }
-
-    // Additional parameters
-    const useCoords = typeof novelaiConfig.useCoords === 'boolean' ? novelaiConfig.useCoords : false;
-    const useOrder = typeof novelaiConfig.useOrder === 'boolean' ? novelaiConfig.useOrder : true;
-
-    console.log('[后处理] NovelAI请求参数:', {
-      token: novelaiToken ? '(已设置)' : '(未设置)',
-      prompt: finalPositiveTags.join(', '),
-      negativePrompt: finalNegativePrompt,
-      model, width: sizePreset.width, height: sizePreset.height,
-      steps, scale, sampler, seed, noiseSchedule, characterPrompts, useCoords, useOrder
-    });
-
-    // Set loading states
-    setIsExtraBgGenerating(true);
-    setExtraBgError(null);
-    setExtraBgImage(null);
-    const myGenId = ++extraBgGenCounter.current;
-    extraBgGenAbortRef.current.aborted = false;
-
-    // Function to generate image with retry support
-    const generateNovelAIImage = async (): Promise<{ url?: string; error?: any }> => {
-      try {
-        const result = await NovelAIService.generateImage({
-          token: novelaiToken,
-          prompt: finalPositiveTags.join(', '),
-          characterPrompts: characterPrompts.length > 0 ? characterPrompts : undefined,
-          negativePrompt: finalNegativePrompt,
-          model,
-          width: sizePreset.width,
-          height: sizePreset.height,
-          steps,
-          scale,
-          sampler,
-          seed,
-          noiseSchedule,
-          useCoords,
-          useOrder
-        });
-        const url = result?.imageUrls?.[0];
-        return { url };
-      } catch (e: any) {
-        return { error: e };
-      }
-    };
-
-    // Retry logic for 429 errors
-    let retryCount = 0;
-    let maxRetry = 1;
-    let retryDelayMs = 8000;
-    let lastError: any = null;
-    let url: string | undefined = undefined;
-
-    while (retryCount <= maxRetry) {
-      const { url: genUrl, error } = await generateNovelAIImage();
-      if (extraBgGenAbortRef.current.aborted || myGenId !== extraBgGenCounter.current) {
-        console.log('[后处理] 生成被覆盖或中断，终止流程');
-        return;
-      }
-      if (genUrl) {
-        url = genUrl;
-        break;
-      }
-      // Check for 429 rate limit error
-      if (error && error.message && typeof error.message === 'string' && error.message.includes('429')) {
-        lastError = error;
-        if (retryCount < maxRetry) {
-          console.warn(`[后处理] NovelAI 429错误，${retryDelayMs / 1000}秒后自动重试...`);
-          await new Promise(res => setTimeout(res, retryDelayMs));
-          retryCount++;
-          continue;
-        } else {
-          break;
-        }
-      } else {
-        // Other errors, abort immediately
-        lastError = error;
-        break;
-      }
-    }
-
-    if (url) {
-      setExtraBgImage(url);
-      console.log('[后处理] setExtraBgImage:', url);
-      // Update character's extrabackgroundimage
-      await updateCharacterExtraBackgroundImage(character.id, url);
-      console.log('[后处理] updateCharacterExtraBackgroundImage已调用:', character.id, url);
-      // Auto-switch background for current character
-      if (characterToUse?.id === character.id) {
-        setExtraBgImage(url);
-        console.log('[后处理] 当前角色，触发setExtraBgImage:', url);
-      }
-      // Add AI message ID to processed set to prevent duplicate generation
-      if (messages && messages.length > 0) {
-        const lastMsg = messages[messages.length - 1];
-        if (lastMsg && lastMsg.sender === 'bot') {
-          processedExtraBgMessageIds.current.add(lastMsg.id);
-          // Persist processed IDs
-          saveProcessedExtraBgMessageIds(character.id);
-        }
-      }
-      setIsExtraBgGenerating(false);
-      console.log('[后处理] 图片生成流程结束');
-    } else {
-      // Failed, show error
-      setExtraBgError(lastError?.message || '生成失败');
-      setIsExtraBgGenerating(false);
-      console.error('[后处理] 图片生成异常:', lastError);
-    }
-  }, [user, characterToUse, updateCharacterExtraBackgroundImage, messages, saveProcessedExtraBgMessageIds]);
 
   // Initialize default characters and load preferences
   useEffect(() => {
@@ -2328,123 +2140,6 @@ useEffect(() => {
     }
   }, [isKeyboardVisible, router]);
 
-  // Background image generation handling
-  useEffect(() => {
-    if (!characterToUse) {
-      return;
-    }
-    
-    if (!characterToUse.enableAutoExtraBackground) {
-      console.log('[后处理] 不触发：enableAutoExtraBackground 为 false');
-      return;
-    }
-    
-    const isNovelAI =
-      characterToUse.backgroundImageConfig?.isNovelAI === true ||
-      (typeof characterToUse.backgroundImage === 'object' &&
-        characterToUse.backgroundImage !== null &&
-        (characterToUse.backgroundImage as any).isNovelAI === true);
-        
-    if (!isNovelAI) {
-      console.log('[后处理] 不触发：backgroundImageConfig.isNovelAI 为 false');
-      return;
-    }
-    
-    if (!characterToUse.backgroundImage) {
-      console.log('[后处理] 不触发：backgroundImage 为空');
-      return;
-    }
-    
-    if (!messages || messages.length === 0) {
-      console.log('[后处理] 不触发：messages 为空');
-      return;
-    }
-    
-    const lastMsg = messages[messages.length - 1];
-    if (!lastMsg) {
-      console.log('[后处理] 不触发：lastMsg 不存在');
-      return;
-    }
-    
-    if (lastMsg.sender !== 'bot') {
-      console.log('[后处理] 不触发：最后一条消息 sender 不是 bot');
-      return;
-    }
-    
-    if (lastMsg.isLoading) {
-      console.log('[后处理] 不触发：最后一条消息 isLoading 为 true');
-      return;
-    }
-    
-    if (lastMsg.metadata && lastMsg.metadata.isErrorMessage) {
-      console.log('[后处理] 不触发：最后一条消息为 error message');
-      return;
-    }
-
-    // Check if this message has already been processed
-    if (processedExtraBgMessageIds.current.has(lastMsg.id)) {
-      return;
-    }
-
-    console.log('触发后处理，最后一条AI消息:', lastMsg.text);
-    triggerExtraBackgroundGeneration(characterToUse, lastMsg.text);
-    extraBgGenAbortRef.current.aborted = true;
-  }, [messages, characterToUse, characterToUse?.enableAutoExtraBackground, triggerExtraBackgroundGeneration]);
-
-  // Clear processed message IDs when conversation is reset
-  useEffect(() => {
-    if ((!messages || messages.length === 0) && characterToUse?.id) {
-      processedExtraBgMessageIds.current.clear();
-      saveProcessedExtraBgMessageIds(characterToUse.id);
-    }
-  }, [messages, characterToUse?.id, saveProcessedExtraBgMessageIds]);
-
-  // Load processed message IDs when character changes
-  useEffect(() => {
-    if (characterToUse?.id) {
-      loadProcessedExtraBgMessageIds(characterToUse.id);
-    }
-  }, [characterToUse?.id, loadProcessedExtraBgMessageIds]);
-
-  // Reset extraBgImage when auto background is disabled
-  useEffect(() => {
-    if (characterToUse && !characterToUse.enableAutoExtraBackground) {
-      setExtraBgImage(null);
-    }
-  }, [characterToUse?.enableAutoExtraBackground]);
-
-  // Clean up extraBgImage when character changes
-  useEffect(() => {
-    if (
-      !characterToUse ||
-      !characterToUse.enableAutoExtraBackground ||
-      (extraBgImage && characterToUse?.extrabackgroundimage !== extraBgImage)
-    ) {
-      setExtraBgImage(null);
-    }
-  }, [characterToUse, characterToUse?.enableAutoExtraBackground, characterToUse?.extrabackgroundimage, extraBgImage]);
-
-  // Trigger background generation when auto background is enabled
-  useEffect(() => {
-    if (
-      characterToUse &&
-      characterToUse.enableAutoExtraBackground &&
-      !extraBgImage
-    ) {
-      if (messages && messages.length > 0) {
-        const lastMsg = messages[messages.length - 1];
-        if (
-          lastMsg &&
-          lastMsg.sender === 'bot' &&
-          !lastMsg.isLoading &&
-          !(lastMsg.metadata && lastMsg.metadata.isErrorMessage)
-        ) {
-          triggerExtraBackgroundGeneration(characterToUse, lastMsg.text);
-        }
-      }
-    }
-  }, [characterToUse?.enableAutoExtraBackground, characterToUse, extraBgImage, messages, triggerExtraBackgroundGeneration]);
-
   // Listen for top bar visibility changes
   useEffect(() => {
     const listener = EventRegister.addEventListener('toggleTopBarVisibility', (visible: boolean) => {
@@ -2461,11 +2156,140 @@ useEffect(() => {
     if (
       transientError &&
       transientError.includes('处理消息时出现了错误') &&
-      selectedConversationId
+      selectedConversationId &&
+      messages.length > 0
     ) {
-      clearTransientMessages(selectedConversationId);
+      // Do nothing
     }
-  }, [transientError, selectedConversationId, clearTransientMessages]);
+  }, [transientError, selectedConversationId, messages]);
+
+  // 计算顶部栏内容高度（与TopBarWithBackground一致）
+  const { width } = Dimensions.get('window');
+  const AVATAR_SIZE = Math.max(Math.min(width * 0.09, 36), 32);
+  const topBarContentHeight = Math.max(AVATAR_SIZE + 16, 48);
+  const navbarHeight = Platform.OS === 'ios' ? 44 : StatusBar.currentHeight || 0;
+  const computedTopBarHeight = navbarHeight + topBarContentHeight;
+  // === 新增：PostChatService 实例 ===
+  const postChatService = useRef(PostChatService.getInstance()).current;
+
+  // === 新增：同步每个会话的背景生成状态 ===
+  useEffect(() => {
+    if (!characterToUse?.id) return;
+    const updateState = () => {
+      const state = postChatService.getCurrentState(characterToUse.id);
+      setExtraBgStates(prev => ({
+        ...prev,
+        [characterToUse.id]: {
+          isGenerating: state.isGenerating,
+          taskId: state.taskId,
+          error: state.error,
+          image: state.image
+        }
+      }));
+    };
+    updateState();
+    const interval = setInterval(updateState, 800);
+    return () => clearInterval(interval);
+  }, [characterToUse?.id, postChatService]);
+
+  // === 新增：每次切换characterId时加载已处理消息ID ===
+  useEffect(() => {
+    if (characterToUse?.id) {
+      postChatService.loadProcessedMessageIds(characterToUse.id);
+    }
+  }, [characterToUse?.id, postChatService]);
+
+  // === 新增：触发背景生成的 useEffect ===
+  useEffect(() => {
+    if (
+      characterToUse &&
+      characterToUse.enableAutoExtraBackground &&
+      characterToUse.backgroundImageConfig?.isNovelAI &&
+      characterToUse.backgroundImage &&
+      messages &&
+      messages.length > 0
+    ) {
+      const lastMsg = messages[messages.length - 1];
+      if (
+        lastMsg &&
+        lastMsg.sender === 'bot' &&
+        !lastMsg.isLoading &&
+        !(lastMsg.metadata && lastMsg.metadata.isErrorMessage)
+      ) {
+        if (!postChatService.hasProcessedMessage(characterToUse.id, lastMsg.id)) {
+          const state = postChatService.getCurrentState(characterToUse.id);
+          if (!state.isGenerating) {
+            postChatService.triggerBackgroundGeneration(
+              characterToUse,
+              lastMsg.text,
+              messages,
+              user,
+              async (characterId: string, imageUrl: string) => {
+                await updateCharacterExtraBackgroundImage(characterId, imageUrl);
+              }
+            );
+          }
+        }
+      }
+    }
+  }, [
+    characterToUse,
+    characterToUse?.enableAutoExtraBackground,
+    characterToUse?.backgroundImageConfig?.isNovelAI,
+    characterToUse?.backgroundImage,
+    messages,
+    user,
+    updateCharacterExtraBackgroundImage,
+    postChatService
+  ]);
+
+  // === 清理状态：切换characterToUse时只保留当前会话的状态 ===
+  useEffect(() => {
+    if (!characterToUse?.id) return;
+    setExtraBgStates(prev => {
+      const newState: typeof prev = {};
+      if (prev[characterToUse.id]) {
+        newState[characterToUse.id] = prev[characterToUse.id];
+      }
+      return newState;
+    });
+  }, [characterToUse?.id]);
+
+  // === 清理状态：关闭自动背景时清理当前会话的生成图片 ===
+  useEffect(() => {
+    if (characterToUse && !characterToUse.enableAutoExtraBackground && characterToUse.id) {
+      setExtraBgStates(prev => ({
+        ...prev,
+        [characterToUse.id]: {
+          isGenerating: false,
+          taskId: null,
+          error: null,
+          image: null
+        }
+      }));
+    }
+  }, [characterToUse?.enableAutoExtraBackground, characterToUse?.id]);
+
+  // === 清理状态：背景图片变更时清理 ===
+  useEffect(() => {
+    if (
+      characterToUse &&
+      characterToUse.id &&
+      (!characterToUse.enableAutoExtraBackground ||
+        (extraBgStates[characterToUse.id]?.image &&
+          characterToUse.extrabackgroundimage !== extraBgStates[characterToUse.id]?.image))
+    ) {
+      setExtraBgStates(prev => ({
+        ...prev,
+        [characterToUse.id]: {
+          isGenerating: false,
+          taskId: null,
+          error: null,
+          image: null
+        }
+      }));
+    }
+  }, [characterToUse, characterToUse?.enableAutoExtraBackground, characterToUse?.extrabackgroundimage]);
 
   return (
     <View style={styles.outerContainer}>
@@ -2574,7 +2398,7 @@ useEffect(() => {
         </View>
 
         {/* Background generation indicator */}
-        {isExtraBgGenerating && (
+        {characterToUse?.id && extraBgStates[characterToUse.id]?.isGenerating && (
           <View style={{
             position: 'absolute',
             top: 90,
@@ -2670,7 +2494,8 @@ useEffect(() => {
                 styles.safeArea,
                 (characterToUse || isGroupMode) && styles.transparentBackground,
                 mode === 'background-focus' && styles.backgroundFocusSafeArea,
-                !isTopBarVisible && { marginTop: 10 } // 顶部栏隐藏时顶部留10px间隙
+                !isTopBarVisible && { marginTop: 10 }, // 顶部栏隐藏时顶部留10px间隙
+                isTopBarVisible && { marginTop: computedTopBarHeight }
               ]}>
                 {/* Transient error display */}
                 {transientError && (
@@ -2842,6 +2667,15 @@ useEffect(() => {
                   />
                 )} */}
               </Suspense>
+
+                            {/* 浮动WebView测试按钮 */}
+              <TouchableOpacity
+                style={styles.floatingLogButton}
+                onPress={handleWebViewTest}
+                activeOpacity={0.85}
+              >
+                <Text style={styles.floatingLogButtonText}>Web</Text>
+              </TouchableOpacity>
             </View>
           </KeyboardAvoidingView>
         </Animated.View>
@@ -2942,7 +2776,6 @@ const styles = StyleSheet.create({
   },
   safeArea: {
     flex: 1,
-    marginTop: 90,
     color: 'rgba(26, 26, 26, 0.8)',
   },
   contentContainer: {

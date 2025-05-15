@@ -440,6 +440,18 @@ const CharacterInteractionSettings: React.FC<CharacterInteractionSettingsProps> 
               
               // Clear memory by setting empty array
               await AsyncStorage.setItem(storageKey, JSON.stringify([]));
+
+              // Also clear FileSystem file if it exists (bugfix)
+              const fsDir = FileSystem.documentDirectory + 'nodest_characters/';
+              const fsPath = fsDir + storageKey + '.json';
+              try {
+                const fileInfo = await FileSystem.getInfoAsync(fsPath);
+                if (fileInfo.exists) {
+                  await FileSystem.writeAsStringAsync(fsPath, JSON.stringify([]), { encoding: FileSystem.EncodingType.UTF8 });
+                }
+              } catch (e) {
+                // ignore
+              }
               
               // Update state
               setCircleMemories([]);

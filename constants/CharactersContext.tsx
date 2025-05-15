@@ -593,30 +593,7 @@ const updateCharacter = async (character: Character) => {
     }
   };
 
-  // 新增：清理最后一条用户消息和最后一条isLoading bot消息（用于报错时同步本地和context）
-  const clearTransientMessages = async (conversationId: string) => {
-    setMessagesMap(prevMap => {
-      const currentMessages = prevMap[conversationId] || [];
-      let arr = [...currentMessages];
-      // 移除最后一条用户消息
-      for (let i = arr.length - 1; i >= 0; i--) {
-        if (arr[i].sender === 'user') {
-          arr.splice(i, 1);
-          break;
-        }
-      }
-      // 移除最后一条isLoading的bot消息
-      for (let i = arr.length - 1; i >= 0; i--) {
-        if (arr[i].sender === 'bot' && arr[i].isLoading) {
-          arr.splice(i, 1);
-          break;
-        }
-      }
-      const updatedMap = { ...prevMap, [conversationId]: arr };
-      saveMessages(updatedMap);
-      return updatedMap;
-    });
-  };
+
 
   // Add loadMemos function
   const loadMemos = async () => {
@@ -1247,23 +1224,6 @@ const generateCharacterFromCradle = async (cradleIdOrCharacter: string | CradleC
       console.log(`[摇篮生成] 使用传入的完整角色对象生成角色: ${cradleId}`);
     }
     
-    // 日志输出找到的角色基本信息，确认数据正确
-    console.log('[摇篮生成] 找到摇篮角色:', {
-      id: cradleCharacter.id,
-      name: cradleCharacter.name,
-      inCradleSystem: cradleCharacter.inCradleSystem,
-      createdAt: new Date(cradleCharacter.createdAt).toISOString()
-    });
-    
-    // Log character data for debugging
-    console.log('[摇篮生成] 摇篮角色基本信息:', {
-      id: cradleCharacter.id,
-      name: cradleCharacter.name,
-      description: cradleCharacter.description?.substring(0, 30) + '...',
-      feedsCount: cradleCharacter.feedHistory?.length || 0,
-      hasJsonData: !!cradleCharacter.jsonData,
-      jsonDataLength: cradleCharacter.jsonData?.length || 0
-    });
     
     // Get user API settings
     const userSettings = user?.settings;
@@ -1433,12 +1393,6 @@ const generateCharacterFromCradle = async (cradleIdOrCharacter: string | CradleC
       
       // 记录完整的JSON数据字符串，用于排查问题
       const jsonDataString = JSON.stringify(characterJsonData);
-      console.log('[摇篮生成] 生成的JSON数据长度:', jsonDataString.length);
-      
-      // Log the structure of the JSON data to help with debugging
-      console.log('[摇篮生成] JSON数据包含以下顶级字段:', Object.keys(characterJsonData).join(', '));
-      console.log('[摇篮生成] roleCard包含字段:', Object.keys(characterJsonData.roleCard).join(', '));
-      console.log('[摇篮生成] worldBook包含条目:', Object.keys(characterJsonData.worldBook.entries).length);
       
       // 校验JSON数据
       try {
@@ -1782,8 +1736,6 @@ const generateCharacterFromCradle = async (cradleIdOrCharacter: string | CradleC
         addMessage,
         clearMessages,
         removeMessage, // Add the new function to the context
-        clearTransientMessages, // 新增
-        memos,
         addMemo,
         updateMemo,
         deleteMemo,

@@ -13,7 +13,9 @@ import {
   Platform,
   StatusBar,
   Modal,
+  Dimensions,
 } from 'react-native';
+import Slider from '@react-native-community/slider';
 import { useRouter } from 'expo-router';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
@@ -29,6 +31,8 @@ import { updateCloudServiceStatus } from '@/utils/settings-helper';
 import { mcpAdapter } from '@/NodeST/nodest/utils/mcp-adapter';
 import { NovelAIService } from '@/components/NovelAIService';
 import { v4 as uuidv4 } from 'uuid'; // For unique ids
+
+const screenWidth = Dimensions.get('window').width;
 
 const ApiSettings = () => {
   const router = useRouter();
@@ -1276,7 +1280,6 @@ const ApiSettings = () => {
                             const value = parseInt(text.replace(/[^0-9]/g, ''));
                             setRetryDelay(isNaN(value) ? 5000 : value);
                           }}
-                          keyboardType="numeric"
                           placeholder="输入延迟时间 (毫秒)"
                           placeholderTextColor="#999"
                         />
@@ -1301,7 +1304,7 @@ const ApiSettings = () => {
                 </View>
 
                 {/* 新增 temperature 和 max tokens 设置 */}
-                {/* <View style={{ marginTop: 24 }}>
+                <View style={{ marginTop: 24 }}>
                   <Text style={styles.inputLabel}>Temperature</Text>
                   <TextInput
                     style={styles.input}
@@ -1315,7 +1318,6 @@ const ApiSettings = () => {
                       if (val > 2) val = 2;
                       setGeminiTemperature(val);
                     }}
-                    keyboardType="numeric"
                     placeholder="1"
                     placeholderTextColor="#999"
                   />
@@ -1330,11 +1332,10 @@ const ApiSettings = () => {
                       if (val > 32768) val = 32768;
                       setGeminiMaxTokens(val);
                     }}
-                    keyboardType="numeric"
                     placeholder="8192"
                     placeholderTextColor="#999"
                   />
-                </View> */}
+                </View>
               </View>
             </View>
           )}
@@ -1462,6 +1463,7 @@ const ApiSettings = () => {
                 ))}
 
                 {/* 展开编辑区域 */}
+                {/* 展开编辑区域 */}
                 {openAIExpandedId && (() => {
                   const editingProvider = openAIProviders.find(p => p.id === openAIExpandedId);
                   if (!editingProvider) return null;
@@ -1516,37 +1518,35 @@ const ApiSettings = () => {
                         placeholder="输入模型名"
                         placeholderTextColor="#999"
                       />
-                      <Text style={styles.inputLabel}>Temperature</Text>
-                      <TextInput
-                        style={styles.input}
-                        value={String(editingProvider.temperature ?? 0.7)}
-                        onChangeText={v => {
-                          // 允许输入小数点，但只允许一个
-                          let valStr = v.replace(/[^0-9.]|(?<=\..*)\./g, '');
-                          let val = parseFloat(valStr);
-                          if (isNaN(val)) val = 0.7;
-                          if (val < 0) val = 0;
-                          if (val > 2) val = 2;
-                          updateCurrentOpenAIProvider('temperature', val);
-                        }}
-                        keyboardType="numeric"
-                        placeholder="0.7"
-                        placeholderTextColor="#999"
+                      {/* Temperature 滑块 */}
+                      <Text style={styles.inputLabel}>
+                        Temperature <Text style={{ color: theme.colors.primary }}>{editingProvider.temperature ?? 0.7}</Text>
+                      </Text>
+                      <Slider
+                        style={{ width: '100%', height: 40 }}
+                        minimumValue={0}
+                        maximumValue={2}
+                        step={0.01}
+                        value={editingProvider.temperature ?? 0.7}
+                        minimumTrackTintColor={theme.colors.primary}
+                        maximumTrackTintColor="#888"
+                        thumbTintColor={theme.colors.primary}
+                        onValueChange={val => updateCurrentOpenAIProvider('temperature', parseFloat(val.toFixed(2)))}
                       />
-                      <Text style={styles.inputLabel}>Max Tokens</Text>
-                      <TextInput
-                        style={styles.input}
-                        value={String(editingProvider.max_tokens ?? 8192)}
-                        onChangeText={v => {
-                          let val = parseInt(v.replace(/[^0-9]/g, ''));
-                          if (isNaN(val)) val = 8192;
-                          if (val < 1) val = 1;
-                          if (val > 32768) val = 32768;
-                          updateCurrentOpenAIProvider('max_tokens', val);
-                        }}
-                        keyboardType="numeric"
-                        placeholder="8192"
-                        placeholderTextColor="#999"
+                      {/* Max Tokens 滑块 */}
+                      <Text style={styles.inputLabel}>
+                        Max Tokens <Text style={{ color: theme.colors.primary }}>{editingProvider.max_tokens ?? 8192}</Text>
+                      </Text>
+                      <Slider
+                        style={{ width: '100%', height: 40 }}
+                        minimumValue={512}
+                        maximumValue={8192}
+                        step={1}
+                        value={editingProvider.max_tokens ?? 8192}
+                        minimumTrackTintColor={theme.colors.primary}
+                        maximumTrackTintColor="#888"
+                        thumbTintColor={theme.colors.primary}
+                        onValueChange={val => updateCurrentOpenAIProvider('max_tokens', Math.round(val))}
                       />
                     </View>
                   );
@@ -1797,7 +1797,10 @@ const ApiSettings = () => {
           activeOpacity={1}
           onPress={() => setShowProviderDropdown(false)}
         >
-          <View style={styles.dropdownContent}>
+          <View style={[
+            styles.dropdownContent,
+            { width: Math.min(screenWidth * 0.9, 400) }
+          ]}>
             <TouchableOpacity
               style={[
                 styles.dropdownItem,
@@ -1857,13 +1860,15 @@ const ApiSettings = () => {
             <Text style={styles.modalTitle}>选择模型</Text>
             <View style={styles.modalHeaderRight} />
           </View>
-          <ModelSelector
-            apiKey={openRouterKey || ''}
-            selectedModelId={useCloudService ? cloudModel : selectedModel}
-            onSelectModel={handleModelSelection}
-            useCloudService={useCloudService}
-            allowedCloudModels={allowedCloudModels}
-          />
+          <View style={{ flex: 1 }}>
+            <ModelSelector
+              apiKey={openRouterKey || ''}
+              selectedModelId={useCloudService ? cloudModel : selectedModel}
+              onSelectModel={handleModelSelection}
+              useCloudService={useCloudService}
+              allowedCloudModels={allowedCloudModels}
+            />
+          </View>
         </SafeAreaView>
       </Modal>
 
@@ -1874,7 +1879,10 @@ const ApiSettings = () => {
         onRequestClose={() => setIsModelPickerVisible(false)}
       >
         <View style={styles.modelPickerOverlay}>
-          <View style={styles.modelPickerContent}>
+          <View style={[
+            styles.modelPickerContent,
+            { width: Math.min(screenWidth * 0.95, 400), maxHeight: Math.min(screenWidth * 1.2, 500) }
+          ]}>
             <View style={styles.modelPickerHeader}>
               <Text style={styles.modelPickerTitle}>
                 选择{modelPickerType === 'primary' ? '主' : '备用'}模型
@@ -1931,7 +1939,7 @@ const styles = StyleSheet.create({
     borderBottomColor: '#444',
   },
   headerTitle: {
-    fontSize: 18,
+    fontSize: Math.max(16, screenWidth * 0.045),
     fontWeight: 'bold',
     color: '#fff',
   },
@@ -1965,7 +1973,7 @@ const styles = StyleSheet.create({
     borderBottomColor: 'rgba(255, 255, 255, 0.1)',
   },
   sectionTitle: {
-    fontSize: 18,
+    fontSize: Math.max(16, screenWidth * 0.045),
     fontWeight: 'bold',
     color: '#fff',
   },
@@ -1973,7 +1981,7 @@ const styles = StyleSheet.create({
     padding: 16,
   },
   inputLabel: {
-    fontSize: 14,
+    fontSize: Math.max(13, screenWidth * 0.035),
     color: '#ddd',
     marginBottom: 8,
   },
@@ -1984,7 +1992,8 @@ const styles = StyleSheet.create({
     borderRadius: 8,
     padding: 12,
     color: '#fff',
-    fontSize: 16,
+    fontSize: Math.max(15, screenWidth * 0.04),
+    width: '100%',
   },
   helperText: {
     fontSize: 12,
@@ -2007,6 +2016,7 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
+    width: '100%',
   },
   modelButtonText: {
     color: '#fff',
@@ -2094,14 +2104,14 @@ const styles = StyleSheet.create({
   },
   modalContent: {
     backgroundColor: '#333',
-    width: '90%',
+    width: Math.min(screenWidth * 0.95, 400),
     height: '70%',
     borderRadius: 12,
     overflow: 'hidden',
   },
   modalHeader: {
     backgroundColor: '#444',
-    padding: 16,
+    padding: Math.max(12, screenWidth * 0.03),
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
@@ -2109,12 +2119,9 @@ const styles = StyleSheet.create({
     borderBottomColor: '#555',
   },
   modalTitle: {
-    fontSize: 18,
+    fontSize: Math.max(16, screenWidth * 0.045),
     fontWeight: 'bold',
     color: '#fff',
-  },
-  modalCloseButton: {
-    padding: 4,
   },
   zhipuTestButton: {
     backgroundColor: '#8e44ad',
@@ -2325,14 +2332,14 @@ const styles = StyleSheet.create({
   },
   modelPickerContent: {
     backgroundColor: '#333',
-    width: '90%',
-    maxHeight: '70%',
+    width: Math.min(screenWidth * 0.95, 400),
+    maxHeight: Math.min(screenWidth * 1.2, 500),
     borderRadius: 12,
     overflow: 'hidden',
   },
   modelPickerHeader: {
     backgroundColor: '#444',
-    padding: 16,
+    padding: Math.max(12, screenWidth * 0.03),
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
@@ -2340,7 +2347,7 @@ const styles = StyleSheet.create({
     borderBottomColor: '#555',
   },
   modelPickerTitle: {
-    fontSize: 18,
+    fontSize: Math.max(16, screenWidth * 0.045),
     fontWeight: 'bold',
     color: '#fff',
   },
@@ -2351,7 +2358,7 @@ const styles = StyleSheet.create({
     padding: 8,
   },
   modelPickerItem: {
-    padding: 16,
+    padding: Math.max(12, screenWidth * 0.03),
     borderRadius: 8,
     marginVertical: 4,
     flexDirection: 'row',
@@ -2362,7 +2369,7 @@ const styles = StyleSheet.create({
     backgroundColor: 'rgba(100, 210, 255, 0.2)',
   },
   modelPickerItemText: {
-    fontSize: 16,
+    fontSize: Math.max(15, screenWidth * 0.04),
     color: '#fff',
   },
   providerDropdown: {
@@ -2374,6 +2381,7 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
+    width: '100%',
   },
   providerDropdownText: {
     color: '#fff',
@@ -2387,14 +2395,13 @@ const styles = StyleSheet.create({
   },
   dropdownContent: {
     backgroundColor: '#333',
-    width: '80%',
     borderRadius: 12,
     overflow: 'hidden',
     borderWidth: 1,
     borderColor: 'rgba(255, 255, 255, 0.1)',
   },
   dropdownItem: {
-    padding: 16,
+    padding: Math.max(12, screenWidth * 0.03),
     borderBottomWidth: 1,
     borderBottomColor: 'rgba(255, 255, 255, 0.1)',
     flexDirection: 'row',
@@ -2405,7 +2412,7 @@ const styles = StyleSheet.create({
     backgroundColor: 'rgba(255, 255, 255, 0.1)',
   },
   dropdownItemText: {
-    fontSize: 16,
+    fontSize: Math.max(15, screenWidth * 0.04),
     color: '#fff',
   },
 });

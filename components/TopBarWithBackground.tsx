@@ -46,8 +46,6 @@ interface TopBarWithBackgroundProps {
   onGroupSettingsPress?: () => void; // Add this for group settings sidebar
 }
 
-// Updated constants for smaller dimensions
-const HEADER_HEIGHT = 70; // Reduced from 90
 const { width } = Dimensions.get('window');
 const BUTTON_SIZE = 22; // Match ChatInput button size
 const AVATAR_SIZE = Math.max(Math.min(width * 0.09, 36), 32); // Smaller avatar between 32-36dp
@@ -112,6 +110,7 @@ const TopBarWithBackground: React.FC<TopBarWithBackgroundProps> = ({
     }
   }, []);
 
+  const topBarContentHeight = Math.max(AVATAR_SIZE + 16, 48); // Avatar + padding
 
   return (
     <>
@@ -120,7 +119,7 @@ const TopBarWithBackground: React.FC<TopBarWithBackgroundProps> = ({
           styles.container,
           {
             opacity: headerOpacity,
-            height: HEADER_HEIGHT,
+            height: navbarHeight + topBarContentHeight,
             paddingTop: navbarHeight,
           },
         ]}
@@ -150,7 +149,7 @@ const TopBarWithBackground: React.FC<TopBarWithBackgroundProps> = ({
 
         {showBackground && <View style={styles.overlay} />}
 
-        <View style={styles.content}>
+        <View style={[styles.content, { height: topBarContentHeight }]}>
           <TouchableOpacity
             style={styles.menuButton}
             onPress={onMenuPress}
@@ -327,7 +326,6 @@ const styles = StyleSheet.create({
     backgroundColor: 'rgba(0, 0, 0, 0.3)',
   },
   content: {
-    flex: 1,
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',

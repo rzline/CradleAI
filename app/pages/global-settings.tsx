@@ -10,6 +10,7 @@ import {
   Platform,
   Modal,
   TextInput,
+  useWindowDimensions,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { useRouter, useLocalSearchParams } from 'expo-router';
@@ -158,40 +159,44 @@ function presetEntryUIToPrompts(entries: PresetEntryUI[]): PresetJson['prompts']
 }
 
 export default function GlobalSettingsPage() {
-    // 新增：全局世界书导入
-    const handleImportWorldbook = async () => {
-      try {
-        const result = await DocumentPicker.getDocumentAsync({
-          type: 'application/json',
-          copyToCacheDirectory: true,
-          multiple: false,
-        });
-        if (result.canceled || !result.assets?.[0]?.uri) return;
-        const fileUri = result.assets[0].uri;
-        const fileName = result.assets[0].name || '';
-        // 用CharacterImporter解析（改为只导入世界书结构）
-        const worldBook = await CharacterImporter.importWorldBookOnlyFromJson(fileUri);
-        // 名称为文件名（去扩展名）
-        const baseName = fileName.replace(/\.[^/.]+$/, '') || `导入世界书_${Date.now()}`;
-        const timestamp = Date.now();
-        const newId = `worldbook_${timestamp}`;
-        const newWorldbook: GlobalWorldbookTemplate = {
-          id: newId,
-          name: baseName,
-          worldbookJson: worldBook,
-        };
-        setGlobalWorldbookList(list => [...list, newWorldbook]);
-        setSelectedWorldbookId(newId);
-        setWorldbookConfig({
-          enabled: false,
-          priority: '全局优先',
-          worldbookJson: newWorldbook.worldbookJson,
-        });
-        Alert.alert('导入成功', '已成功导入世界书JSON');
-      } catch (e) {
-        Alert.alert('导入失败', String(e));
-      }
-    };
+  // 新增：响应式布局
+  const { width: windowWidth, height: windowHeight } = useWindowDimensions();
+  const isWide = windowWidth >= 900;
+
+  // 新增：全局世界书导入
+  const handleImportWorldbook = async () => {
+    try {
+      const result = await DocumentPicker.getDocumentAsync({
+        type: 'application/json',
+        copyToCacheDirectory: true,
+        multiple: false,
+      });
+      if (result.canceled || !result.assets?.[0]?.uri) return;
+      const fileUri = result.assets[0].uri;
+      const fileName = result.assets[0].name || '';
+      // 用CharacterImporter解析（改为只导入世界书结构）
+      const worldBook = await CharacterImporter.importWorldBookOnlyFromJson(fileUri);
+      // 名称为文件名（去扩展名）
+      const baseName = fileName.replace(/\.[^/.]+$/, '') || `导入世界书_${Date.now()}`;
+      const timestamp = Date.now();
+      const newId = `worldbook_${timestamp}`;
+      const newWorldbook: GlobalWorldbookTemplate = {
+        id: newId,
+        name: baseName,
+        worldbookJson: worldBook,
+      };
+      setGlobalWorldbookList(list => [...list, newWorldbook]);
+      setSelectedWorldbookId(newId);
+      setWorldbookConfig({
+        enabled: false,
+        priority: '全局优先',
+        worldbookJson: newWorldbook.worldbookJson,
+      });
+      Alert.alert('导入成功', '已成功导入世界书JSON');
+    } catch (e) {
+      Alert.alert('导入失败', String(e));
+    }
+  };
   const router = useRouter();
   const params = useLocalSearchParams();
   const characterId = params.characterId as string | undefined;
@@ -985,6 +990,7 @@ export default function GlobalSettingsPage() {
   const handleTogglePresetEnable = (idx: number) => {
     setPresetEntries(prev => {
       const arr = [...prev];
+      
       arr[idx] = { ...arr[idx], enable: !arr[idx].enable };
       return arr;
     });
@@ -1018,12 +1024,14 @@ export default function GlobalSettingsPage() {
       <TouchableOpacity
         style={styles.compactName}
         onPress={() => handlePresetEntryClick(entry, idx)}
+        hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
       >
         <Text style={styles.compactNameText} numberOfLines={1}>{entry.name || '未命名'}</Text>
       </TouchableOpacity>
       <TouchableOpacity
         style={styles.compactSwitch}
         onPress={() => handleTogglePresetEnable(idx)}
+        hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
       >
         <Ionicons
           name={entry.enable ? 'checkmark-circle' : 'close-circle'}
@@ -1304,6 +1312,7 @@ export default function GlobalSettingsPage() {
           onPress={() => handleBindCharacter(group.id)}
           disabled={!characterId || group.bindType === 'all'}
           style={{ padding: 4, opacity: group.bindType === 'all' ? 0.4 : 1 }}
+          hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
         >
           {group.bindType === 'character' && group.bindCharacterId ? (
             boundName ? (
@@ -1336,6 +1345,7 @@ export default function GlobalSettingsPage() {
           onPress={() => handleBindAll(group.id)}
           disabled={group.bindType === 'character'}
           style={{ padding: 4, opacity: group.bindType === 'character' ? 0.4 : 1 }}
+          hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
         >
           {group.bindType === 'all' ? (
             <Ionicons name="star" size={18} color="#f7c325" />
@@ -1570,6 +1580,7 @@ export default function GlobalSettingsPage() {
           paddingHorizontal: 8,
           height: 40,
         }}
+        hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
       >
         <Ionicons name="list" size={18} color={theme.colors.primary} style={{ marginRight: 6 }} />
         <Text style={{ flex: 1, color: theme.colors.text }}>
@@ -1585,6 +1596,7 @@ export default function GlobalSettingsPage() {
           borderRadius: 6,
           zIndex: 10,
           maxHeight: 200,
+          maxWidth: 360,
           marginTop: 4,
         }}>
           <ScrollView nestedScrollEnabled={true}>
@@ -1597,6 +1609,7 @@ export default function GlobalSettingsPage() {
                     padding: 10,
                     backgroundColor: tpl.id === selectedId ? '#333' : theme.colors.cardBackground,
                   }}
+                  hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
                 >
                   <Text style={{
                     color: tpl.id === selectedId ? theme.colors.primary : theme.colors.text
@@ -1608,6 +1621,7 @@ export default function GlobalSettingsPage() {
                 <TouchableOpacity
                   onPress={() => handleRenameTemplate(type, tpl.id, tpl.name)}
                   style={{ padding: 6 }}
+                  hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
                 >
                   <Ionicons name="pencil-outline" size={18} color={theme.colors.primary} />
                 </TouchableOpacity>
@@ -1699,6 +1713,7 @@ export default function GlobalSettingsPage() {
         <TouchableOpacity
           style={styles.compactName}
           onPress={() => handleRegexScriptClick(script, idx)}
+          hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
         >
           <Text style={styles.compactNameText} numberOfLines={1}>{script.scriptName || '未命名'}</Text>
         </TouchableOpacity>
@@ -1716,6 +1731,7 @@ export default function GlobalSettingsPage() {
         <TouchableOpacity
           style={styles.compactSwitch}
           onPress={() => handleToggleRegexEnable(idx)}
+          hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
         >
           <Ionicons
             name={!script.disabled ? 'checkmark-circle' : 'close-circle'}
@@ -1742,6 +1758,7 @@ export default function GlobalSettingsPage() {
           paddingHorizontal: 8,
           height: 40,
         }}
+        hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
       >
         <Ionicons name="list" size={18} color={theme.colors.primary} style={{ marginRight: 6 }} />
         <Text style={{ flex: 1, color: theme.colors.text }}>
@@ -1757,6 +1774,7 @@ export default function GlobalSettingsPage() {
           borderRadius: 6,
           zIndex: 10,
           maxHeight: 200,
+          maxWidth: 360,
           marginTop: 4,
         }}>
           <ScrollView nestedScrollEnabled={true}>
@@ -1769,6 +1787,7 @@ export default function GlobalSettingsPage() {
                     padding: 10,
                     backgroundColor: group.id === selectedRegexGroupId ? '#333' : theme.colors.cardBackground,
                   }}
+                  hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
                 >
                   <Text style={{
                     color: group.id === selectedRegexGroupId ? theme.colors.primary : theme.colors.text
@@ -1780,6 +1799,7 @@ export default function GlobalSettingsPage() {
                 <TouchableOpacity
                   onPress={() => handleRenameTemplate('preset', group.id, group.name)}
                   style={{ padding: 6 }}
+                  hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
                 >
                   <Ionicons name="pencil-outline" size={18} color={theme.colors.primary} />
                 </TouchableOpacity>
@@ -1880,12 +1900,14 @@ export default function GlobalSettingsPage() {
       <TouchableOpacity
         style={styles.compactName}
         onPress={() => handleWorldbookEntryClick(key, entry)}
+        hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
       >
         <Text style={styles.compactNameText} numberOfLines={1}>{entry.comment || '未命名'}</Text>
       </TouchableOpacity>
       <TouchableOpacity
         style={styles.compactSwitch}
         onPress={() => handleToggleWorldbookDisable(key)}
+        hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
       >
         <Ionicons
           name={entry.disable ? 'close-circle' : 'checkmark-circle'}
@@ -1900,11 +1922,18 @@ export default function GlobalSettingsPage() {
     <View style={{ flex: 1, backgroundColor: theme.colors.background }}>
       {/* 顶部导航栏 */}
       <View style={styles.header}>
-        <TouchableOpacity onPress={() => router.back()} style={styles.headerBtn}>
+        <TouchableOpacity 
+          onPress={() => router.back()} 
+          style={styles.headerBtn} 
+          hitSlop={{ top: 15, bottom: 15, left: 15, right: 15 }}
+        >
           <Ionicons name="arrow-back" size={22} color="#fff" />
         </TouchableOpacity>
         <Text style={styles.headerTitle}>全局设置</Text>
-        <TouchableOpacity style={styles.headerBtn}>
+        <TouchableOpacity 
+          style={styles.headerBtn} 
+          hitSlop={{ top: 15, bottom: 15, left: 15, right: 15 }}
+        >
           <Ionicons name="cloud-upload-outline" size={22} color="#fff" />
         </TouchableOpacity>
       </View>
@@ -1916,328 +1945,124 @@ export default function GlobalSettingsPage() {
             key={tab.key}
             style={[styles.tab, activeTab === tab.key && styles.tabActive]}
             onPress={() => setActiveTab(tab.key as any)}
+            hitSlop={{ top: 10, bottom: 10, left: 20, right: 20 }}
           >
             <Text style={[styles.tabText, activeTab === tab.key && styles.tabTextActive]}>{tab.label}</Text>
           </TouchableOpacity>
         ))}
       </View>
 
-      {/* 内容区 */}
-      <ScrollView style={{ flex: 1 }}>
-        {activeTab === 'preset' && (
-          <View style={{ padding: 16 }}>
-            <View style={styles.row}>
-              <Text style={styles.label}>启用全局预设</Text>
-              <Switch
-                value={presetConfig.enabled}
-                onValueChange={handlePresetSwitch}
-                trackColor={{ false: '#ccc', true: theme.colors.primary }}
-                thumbColor={worldbookConfig.enabled ? theme.colors.primary : '#eee'}
-              />
-            </View>
-            {/* 全局预设补充说明 */}
-            <Text style={{ color: '#c77c00', fontSize: 13, marginBottom: 8 }}>
-              关闭全局预设后，需在角色卡详情页面重新设置和保存单角色的预设。
-            </Text>
-            {/* 预设下拉选择器 - 使用新的renderDropdown组件 */}
-            {renderDropdown(
-              globalPresetList,
-              selectedPresetId,
-              handlePresetTemplateChange,
-              '选择全局预设模板',
-              showPresetDropdown,
-              () => {
-                setShowPresetDropdown(!showPresetDropdown);
-                setShowWorldbookDropdown(false);
-              },
-              'preset'
-            )}
-
-            <View style={styles.sectionHeader}>
-              <Text style={styles.sectionHeaderText}>预设条目</Text>
-              <View style={{ flexDirection: 'row', alignItems: 'center' }}>
-                {/* 新增：显示/隐藏被禁用条目按钮 */}
-                <TouchableOpacity
-                  onPress={() => setShowDisabledPreset(v => !v)}
-                  style={{ marginRight: 8 }}
-                >
-                  <Ionicons
-                    name={showDisabledPreset ? 'eye-outline' : 'eye-off-outline'}
-                    size={22}
-                    color={theme.colors.primary}
-                  />
-                </TouchableOpacity>
-                {/* 视图切换按钮 */}
-                <TouchableOpacity
-                  onPress={() => setPresetViewMode(v => v === 'compact' ? 'regular' : 'compact')}
-                  style={{ marginRight: 8 }}
-                >
-                  <Ionicons
-                    name={presetViewMode === 'compact' ? 'list' : 'grid'}
-                    size={22}
-                    color={theme.colors.primary}
-                  />
-                </TouchableOpacity>
-                {/* 新增管理按钮 */}
-                <TouchableOpacity onPress={handlePresetManage} style={{ marginRight: 8 }}>
-                  <Ionicons
-                    name="construct-outline"
-                    size={22}
-                    color={presetManaging ? theme.colors.primary : '#888'}
-                  />
-                </TouchableOpacity>
-                {/* 新增模板删除按钮 */}
-                <TouchableOpacity
-                  onPress={handleDeleteCurrentPresetTemplate}
-                  style={{ marginRight: 8 }}
-                  disabled={!selectedPresetId}
-                >
-                  <Ionicons name="trash-outline" size={22} color={selectedPresetId ? theme.colors.danger : '#ccc'} />
-                </TouchableOpacity>
-                <TouchableOpacity onPress={handleCreatePresetTemplate} style={{ marginRight: 8 }}>
-                  <Ionicons name="duplicate-outline" size={22} color={theme.colors.primary} />
-                </TouchableOpacity>
-                <TouchableOpacity onPress={handleImportPreset} style={{ marginRight: 8 }}>
-                  <Ionicons name="download-outline" size={22} color={theme.colors.primary} />
-                </TouchableOpacity>
-                <TouchableOpacity onPress={handleAddPrompt}>
-                  <Ionicons name="add-circle-outline" size={22} color={theme.colors.primary} />
-                </TouchableOpacity>
+      {/* 响应式主内容区 */}
+      <View style={[isWide ? styles.responsiveRow : { flex: 1 }]}>
+        {/* 主内容 */}
+        <ScrollView 
+          style={[{ flex: 1, minWidth: 0 }, isWide && { maxWidth: 600 }]} 
+          contentContainerStyle={{ paddingBottom: 32 }}
+        >
+          {activeTab === 'preset' && (
+            <View style={{ padding: 16 }}>
+              <View style={styles.row}>
+                <Text style={styles.label}>启用全局预设</Text>
+                <Switch
+                  value={presetConfig.enabled}
+                  onValueChange={handlePresetSwitch}
+                  trackColor={{ false: '#ccc', true: theme.colors.primary }}
+                  thumbColor={worldbookConfig.enabled ? theme.colors.primary : '#eee'}
+                />
               </View>
-            </View>
-            {/* 条目列表 */}
-            {presetViewMode === 'compact'
-              ? presetEntries
-                .filter(entry => showDisabledPreset || entry.enable)
-                .map((entry, idx) => renderCompactPresetEntry(entry, idx))
-              : presetEntries
-                .filter(entry => showDisabledPreset || entry.enable)
-                .map((entry, idx) => (
+              {/* 全局预设补充说明 */}
+              <Text style={{ color: '#c77c00', fontSize: 13, marginBottom: 8 }}>
+                关闭全局预设后，需在角色卡详情页面重新设置和保存单角色的预设。
+              </Text>
+              {/* 预设下拉选择器 - 使用新的renderDropdown组件 */}
+              {renderDropdown(
+                globalPresetList,
+                selectedPresetId,
+                handlePresetTemplateChange,
+                '选择全局预设模板',
+                showPresetDropdown,
+                () => {
+                  setShowPresetDropdown(!showPresetDropdown);
+                  setShowWorldbookDropdown(false);
+                },
+                'preset'
+              )}
+
+              <View style={styles.sectionHeader}>
+                <Text style={styles.sectionHeaderText}>预设条目</Text>
+                <View style={{ flexDirection: 'row', alignItems: 'center', flexWrap: 'wrap', gap: 4 }}>
+                  {/* 新增：显示/隐藏被禁用条目按钮 */}
                   <TouchableOpacity
-                    key={entry.id}
-                    style={styles.promptCard}
-                    onPress={() => handlePresetEntryClick(entry, idx)}
-                    activeOpacity={0.7}
+                    onPress={() => setShowDisabledPreset(v => !v)}
+                    style={{ marginRight: 8 }}
+                    hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
                   >
-                    <View style={{ flexDirection: 'row', alignItems: 'center' }}>
-                      {/* 管理模式下显示多选框 */}
-                      {presetManaging && (
-                        <TouchableOpacity
-                          onPress={() => togglePresetSelect(idx)}
-                          style={{
-                            marginRight: 10,
-                            width: 22,
-                            height: 22,
-                            borderRadius: 11,
-                            borderWidth: 2,
-                            borderColor: theme.colors.primary,
-                            backgroundColor: presetSelectedIndexes.includes(idx) ? theme.colors.primary : '#fff',
-                            alignItems: 'center',
-                            justifyContent: 'center',
-                          }}
-                        >
-                          {presetSelectedIndexes.includes(idx) && (
-                            <Ionicons name="checkmark" size={14} color="#fff" />
-                          )}
-                        </TouchableOpacity>
-                      )}
-                      <View style={{ flex: 1 }}>
-                        <View style={styles.promptRow}>
-                          <Text style={styles.promptLabel}>名称</Text>
-                          <Text style={styles.promptValue}>{entry.name}</Text>
-                        </View>
-                        <View style={styles.promptRow}>
-                          <Text style={styles.promptLabel}>启用</Text>
-                          <Ionicons name={entry.enable !== false ? 'checkmark-circle' : 'close-circle'} size={18} color={entry.enable !== false ? theme.colors.primary : '#ccc'} />
-                        </View>
-                        <View style={styles.promptRow}>
-                          <Text style={styles.promptLabel}>角色</Text>
-                          <Text style={styles.promptValue}>{entry.role}</Text>
-                        </View>
-                        <View style={styles.promptRow}>
-                          <Text style={styles.promptLabel}>插入类型</Text>
-                          <Text style={styles.promptValue}>{entry.insertType === 'chat' ? '对话式' : '相对位置'}</Text>
-                        </View>
-                        {entry.insertType === 'chat' && (
-                          <View style={styles.promptRow}>
-                            <Text style={styles.promptLabel}>深度</Text>
-                            <Text style={styles.promptValue}>{entry.depth}</Text>
-                          </View>
-                        )}
-                      </View>
-                      {/* 排序按钮 */}
-                      {!presetManaging && (
-                        <View style={{ flexDirection: 'column', marginLeft: 8 }}>
-                          <TouchableOpacity
-                            onPress={() => movePresetEntry(idx, idx - 1)}
-                            disabled={idx === 0}
-                            style={{ opacity: idx === 0 ? 0.3 : 1, padding: 2 }}
-                          >
-                            <Ionicons name="arrow-up" size={18} color={theme.colors.primary} />
-                          </TouchableOpacity>
-                          <TouchableOpacity
-                            onPress={() => movePresetEntry(idx, idx + 1)}
-                            disabled={idx === presetEntries.length - 1}
-                            style={{ opacity: idx === presetEntries.length - 1 ? 0.3 : 1, padding: 2 }}
-                          >
-                            <Ionicons name="arrow-down" size={18} color={theme.colors.primary} />
-                          </TouchableOpacity>
-                        </View>
-                      )}
-                    </View>
+                    <Ionicons
+                      name={showDisabledPreset ? 'eye-outline' : 'eye-off-outline'}
+                      size={22}
+                      color={theme.colors.primary}
+                    />
                   </TouchableOpacity>
-                ))
-            }
-            {/* 管理模式下显示删除按钮 */}
-            {presetManaging && (
-              <View style={{ marginTop: 12, alignItems: 'flex-end' }}>
-                <TouchableOpacity
-                  style={{
-                    backgroundColor: theme.colors.danger,
-                    borderRadius: 8,
-                    paddingVertical: 10,
-                    paddingHorizontal: 24,
-                  }}
-                  onPress={handleDeletePresetEntries}
-                >
-                  <Text style={{ color: '#fff', fontWeight: 'bold', fontSize: 16 }}>删除选中条目</Text>
-                </TouchableOpacity>
+                  {/* 视图切换按钮 */}
+                  <TouchableOpacity
+                    onPress={() => setPresetViewMode(v => v === 'compact' ? 'regular' : 'compact')}
+                    style={{ marginRight: 8 }}
+                    hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+                  >
+                    <Ionicons
+                      name={presetViewMode === 'compact' ? 'list' : 'grid'}
+                      size={22}
+                      color={theme.colors.primary}
+                    />
+                  </TouchableOpacity>
+                  {/* 新增管理按钮 */}
+                  <TouchableOpacity onPress={handlePresetManage} style={{ marginRight: 8 }} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
+                    <Ionicons
+                      name="construct-outline"
+                      size={22}
+                      color={presetManaging ? theme.colors.primary : '#888'}
+                    />
+                  </TouchableOpacity>
+                  {/* 新增模板删除按钮 */}
+                  <TouchableOpacity
+                    onPress={handleDeleteCurrentPresetTemplate}
+                    style={{ marginRight: 8 }}
+                    disabled={!selectedPresetId}
+                    hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+                  >
+                    <Ionicons name="trash-outline" size={22} color={selectedPresetId ? theme.colors.danger : '#ccc'} />
+                  </TouchableOpacity>
+                  <TouchableOpacity onPress={handleCreatePresetTemplate} style={{ marginRight: 8 }} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
+                    <Ionicons name="duplicate-outline" size={22} color={theme.colors.primary} />
+                  </TouchableOpacity>
+                  <TouchableOpacity onPress={handleImportPreset} style={{ marginRight: 8 }} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
+                    <Ionicons name="download-outline" size={22} color={theme.colors.primary} />
+                  </TouchableOpacity>
+                  <TouchableOpacity onPress={handleAddPrompt} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
+                    <Ionicons name="add-circle-outline" size={22} color={theme.colors.primary} />
+                  </TouchableOpacity>
+                </View>
               </View>
-            )}
-          </View>
-        )}
-
-        {activeTab === 'worldbook' && (
-          <View style={{ padding: 16 }}>
-            <View style={styles.row}>
-              <Text style={styles.label}>启用全局世界书</Text>
-              <Switch
-                value={worldbookConfig.enabled}
-                onValueChange={handleWorldbookSwitch}
-                trackColor={{ false: '#ccc', true: theme.colors.primary }}
-                thumbColor={presetConfig.enabled ? theme.colors.primary : '#eee'}
-              />
-            </View>
-
-            {/* 世界书下拉选择器 - 使用新的renderDropdown组件 */}
-            {renderDropdown(
-              globalWorldbookList,
-              selectedWorldbookId,
-              handleWorldbookTemplateChange,
-              '选择全局世界书模板',
-              showWorldbookDropdown,
-              () => {
-                setShowWorldbookDropdown(!showWorldbookDropdown);
-                setShowPresetDropdown(false);
-              },
-              'worldbook'
-            )}
-
-            <View style={styles.row}>
-              <Text style={styles.label}>优先级</Text>
-              <TouchableOpacity
-                style={[
-                  styles.priorityBtn,
-                  worldbookConfig.priority === '全局优先' && styles.priorityBtnActive,
-                ]}
-                onPress={() => handleWorldbookPriorityChange('全局优先')}
-              >
-                <Text style={worldbookConfig.priority === '全局优先' ? styles.priorityTextActive : styles.priorityText}>全局优先</Text>
-              </TouchableOpacity>
-              <TouchableOpacity
-                style={[
-                  styles.priorityBtn,
-                  worldbookConfig.priority === '角色优先' && styles.priorityBtnActive,
-                ]}
-                onPress={() => handleWorldbookPriorityChange('角色优先')}
-              >
-                <Text style={worldbookConfig.priority === '角色优先' ? styles.priorityTextActive : styles.priorityText}>角色优先</Text>
-              </TouchableOpacity>
-            </View>
-            <View style={styles.sectionHeader}>
-              <Text style={styles.sectionHeaderText}>世界书条目</Text>
-              <View style={{ flexDirection: 'row', alignItems: 'center' }}>
-                {/* 新增：显示/隐藏被禁用条目按钮 */}
-                <TouchableOpacity
-                  onPress={() => setShowDisabledWorldbook(v => !v)}
-                  style={{ marginRight: 8 }}
-                >
-                  <Ionicons
-                    name={showDisabledWorldbook ? 'eye-outline' : 'eye-off-outline'}
-                    size={22}
-                    color={theme.colors.primary}
-                  />
-                </TouchableOpacity>
-                {/* 视图切换按钮 */}
-                <TouchableOpacity
-                  onPress={() => setWorldbookViewMode(v => v === 'compact' ? 'regular' : 'compact')}
-                  style={{ marginRight: 8 }}
-                >
-                  <Ionicons
-                    name={worldbookViewMode === 'compact' ? 'list' : 'grid'}
-                    size={22}
-                    color={theme.colors.primary}
-                  />
-                </TouchableOpacity>
-                {/* 新增管理按钮 */}
-                <TouchableOpacity onPress={handleWorldbookManage} style={{ marginRight: 8 }}>
-                  <Ionicons
-                    name="construct-outline"
-                    size={22}
-                    color={worldbookManaging ? theme.colors.primary : '#888'}
-                  />
-                </TouchableOpacity>
-                {/* 新增模板删除按钮 */}
-                <TouchableOpacity
-                  onPress={handleDeleteCurrentWorldbookTemplate}
-                  style={{ marginRight: 8 }}
-                  disabled={!selectedWorldbookId}
-                >
-                  <Ionicons name="trash-outline" size={22} color={selectedWorldbookId ? theme.colors.danger : '#ccc'} />
-                </TouchableOpacity>
-                <TouchableOpacity onPress={handleCreateWorldbookTemplate} style={{ marginRight: 8 }}>
-                  <Ionicons name="duplicate-outline" size={22} color={theme.colors.primary} />
-                </TouchableOpacity>
-                {/* 新增：导入按钮 */}
-                <TouchableOpacity onPress={handleImportWorldbook} style={{ marginRight: 8 }}>
-                  <Ionicons name="download-outline" size={22} color={theme.colors.primary} />
-                </TouchableOpacity>
-                <TouchableOpacity onPress={handleAddWorldbookEntry}>
-                  <Ionicons name="add-circle-outline" size={22} color={theme.colors.primary} />
-                </TouchableOpacity>
-              </View>
-            </View>
-            {/* 条目列表 */}
-            {worldbookViewMode === 'compact'
-              ? worldbookEntryOrder
-                .filter(key => {
-                  const entry = worldbookConfig.worldbookJson?.entries?.[key];
-                  return showDisabledWorldbook || !entry?.disable;
-                })
-                .map((key, idx) => {
-                  const entry = worldbookConfig.worldbookJson?.entries?.[key];
-                  if (!entry) return null;
-                  return renderCompactWorldbookEntry(key, entry, idx);
-                })
-              : worldbookEntryOrder
-                .filter(key => {
-                  const entry = worldbookConfig.worldbookJson?.entries?.[key];
-                  return showDisabledWorldbook || !entry?.disable;
-                })
-                .map((key, idx) => {
-                  const entry = worldbookConfig.worldbookJson?.entries?.[key];
-                  if (!entry) return null;
-                  return (
+              {/* 条目列表 */}
+              {presetViewMode === 'compact'
+                ? presetEntries
+                  .filter(entry => showDisabledPreset || entry.enable)
+                  .map((entry, idx) => renderCompactPresetEntry(entry, idx))
+                : presetEntries
+                  .filter(entry => showDisabledPreset || entry.enable)
+                  .map((entry, idx) => (
                     <TouchableOpacity
-                      key={key}
+                      key={entry.id}
                       style={styles.promptCard}
-                      onPress={() => handleWorldbookEntryClick(key, entry)}
+                      onPress={() => handlePresetEntryClick(entry, idx)}
                       activeOpacity={0.7}
+                      hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
                     >
                       <View style={{ flexDirection: 'row', alignItems: 'center' }}>
-                        {worldbookManaging && (
+                        {/* 管理模式下显示多选框 */}
+                        {presetManaging && (
                           <TouchableOpacity
-                            onPress={() => toggleWorldbookSelect(idx)}
+                            onPress={() => togglePresetSelect(idx)}
                             style={{
                               marginRight: 10,
                               width: 22,
@@ -2245,12 +2070,13 @@ export default function GlobalSettingsPage() {
                               borderRadius: 11,
                               borderWidth: 2,
                               borderColor: theme.colors.primary,
-                              backgroundColor: worldbookSelectedIndexes.includes(idx) ? theme.colors.primary : '#fff',
+                              backgroundColor: presetSelectedIndexes.includes(idx) ? theme.colors.primary : '#fff',
                               alignItems: 'center',
                               justifyContent: 'center',
                             }}
+                            hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
                           >
-                            {worldbookSelectedIndexes.includes(idx) && (
+                            {presetSelectedIndexes.includes(idx) && (
                               <Ionicons name="checkmark" size={14} color="#fff" />
                             )}
                           </TouchableOpacity>
@@ -2258,38 +2084,43 @@ export default function GlobalSettingsPage() {
                         <View style={{ flex: 1 }}>
                           <View style={styles.promptRow}>
                             <Text style={styles.promptLabel}>名称</Text>
-                            <Text style={styles.promptValue}>{entry.comment}</Text>
+                            <Text style={styles.promptValue}>{entry.name}</Text>
                           </View>
                           <View style={styles.promptRow}>
-                            <Text style={styles.promptLabel}>禁用</Text>
-                            <Ionicons name={entry.disable ? 'close-circle' : 'checkmark-circle'} size={18} color={entry.disable ? '#ccc' : theme.colors.primary} />
+                            <Text style={styles.promptLabel}>启用</Text>
+                            <Ionicons name={entry.enable !== false ? 'checkmark-circle' : 'close-circle'} size={18} color={entry.enable !== false ? theme.colors.primary : '#ccc'} />
                           </View>
                           <View style={styles.promptRow}>
-                            <Text style={styles.promptLabel}>常量</Text>
-                            <Ionicons name={entry.constant ? 'checkmark-circle' : 'close-circle'} size={18} color={entry.constant ? theme.colors.primary : '#ccc'} />
+                            <Text style={styles.promptLabel}>角色</Text>
+                            <Text style={styles.promptValue}>{entry.role}</Text>
                           </View>
                           <View style={styles.promptRow}>
-                            <Text style={styles.promptLabel}>位置</Text>
-                            <Text style={styles.promptValue}>{entry.position}</Text>
+                            <Text style={styles.promptLabel}>插入类型</Text>
+                            <Text style={styles.promptValue}>{entry.insertType === 'chat' ? '对话式' : '相对位置'}</Text>
                           </View>
-                          <View style={styles.promptRow}>
-                            <Text style={styles.promptLabel}>深度</Text>
-                            <Text style={styles.promptValue}>{entry.depth}</Text>
-                          </View>
+                          {entry.insertType === 'chat' && (
+                            <View style={styles.promptRow}>
+                              <Text style={styles.promptLabel}>深度</Text>
+                              <Text style={styles.promptValue}>{entry.depth}</Text>
+                            </View>
+                          )}
                         </View>
-                        {!worldbookManaging && (
+                        {/* 排序按钮 */}
+                        {!presetManaging && (
                           <View style={{ flexDirection: 'column', marginLeft: 8 }}>
                             <TouchableOpacity
-                              onPress={() => moveWorldbookEntry(idx, idx - 1)}
+                              onPress={() => movePresetEntry(idx, idx - 1)}
                               disabled={idx === 0}
                               style={{ opacity: idx === 0 ? 0.3 : 1, padding: 2 }}
+                              hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
                             >
                               <Ionicons name="arrow-up" size={18} color={theme.colors.primary} />
                             </TouchableOpacity>
                             <TouchableOpacity
-                              onPress={() => moveWorldbookEntry(idx, idx + 1)}
-                              disabled={idx === worldbookEntryOrder.length - 1}
-                              style={{ opacity: idx === worldbookEntryOrder.length - 1 ? 0.3 : 1, padding: 2 }}
+                              onPress={() => movePresetEntry(idx, idx + 1)}
+                              disabled={idx === presetEntries.length - 1}
+                              style={{ opacity: idx === presetEntries.length - 1 ? 0.3 : 1, padding: 2 }}
+                              hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
                             >
                               <Ionicons name="arrow-down" size={18} color={theme.colors.primary} />
                             </TouchableOpacity>
@@ -2297,226 +2128,677 @@ export default function GlobalSettingsPage() {
                         )}
                       </View>
                     </TouchableOpacity>
-                  );
-                })
-            }
-            {worldbookManaging && (
-              <View style={{ marginTop: 12, alignItems: 'flex-end' }}>
+                  ))
+              }
+              {/* 管理模式下显示删除按钮 */}
+              {presetManaging && (
+                <View style={{ marginTop: 12, alignItems: 'flex-end' }}>
+                  <TouchableOpacity
+                    style={{
+                      backgroundColor: theme.colors.danger,
+                      borderRadius: 8,
+                      paddingVertical: 10,
+                      paddingHorizontal: 24,
+                    }}
+                    onPress={handleDeletePresetEntries}
+                    hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+                  >
+                    <Text style={{ color: '#fff', fontWeight: 'bold', fontSize: 16 }}>删除选中条目</Text>
+                  </TouchableOpacity>
+                </View>
+              )}
+            </View>
+          )}
+
+          {activeTab === 'worldbook' && (
+            <View style={{ padding: 16 }}>
+              <View style={styles.row}>
+                <Text style={styles.label}>启用全局世界书</Text>
+                <Switch
+                  value={worldbookConfig.enabled}
+                  onValueChange={handleWorldbookSwitch}
+                  trackColor={{ false: '#ccc', true: theme.colors.primary }}
+                  thumbColor={presetConfig.enabled ? theme.colors.primary : '#eee'}
+                />
+              </View>
+
+              {/* 世界书下拉选择器 - 使用新的renderDropdown组件 */}
+              {renderDropdown(
+                globalWorldbookList,
+                selectedWorldbookId,
+                handleWorldbookTemplateChange,
+                '选择全局世界书模板',
+                showWorldbookDropdown,
+                () => {
+                  setShowWorldbookDropdown(!showWorldbookDropdown);
+                  setShowPresetDropdown(false);
+                },
+                'worldbook'
+              )}
+
+              <View style={styles.row}>
+                <Text style={styles.label}>优先级</Text>
                 <TouchableOpacity
-                  style={{
-                    backgroundColor: theme.colors.danger,
-                    borderRadius: 8,
-                    paddingVertical: 10,
-                    paddingHorizontal: 24,
-                  }}
-                  onPress={handleDeleteWorldbookEntries}
+                  style={[
+                    styles.priorityBtn,
+                    worldbookConfig.priority === '全局优先' && styles.priorityBtnActive,
+                  ]}
+                  onPress={() => handleWorldbookPriorityChange('全局优先')}
+                  hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
                 >
-                  <Text style={{ color: '#fff', fontWeight: 'bold', fontSize: 16 }}>删除选中条目</Text>
+                  <Text style={worldbookConfig.priority === '全局优先' ? styles.priorityTextActive : styles.priorityText}>全局优先</Text>
+                </TouchableOpacity>
+                <TouchableOpacity
+                  style={[
+                    styles.priorityBtn,
+                    worldbookConfig.priority === '角色优先' && styles.priorityBtnActive,
+                  ]}
+                  onPress={() => handleWorldbookPriorityChange('角色优先')}
+                  hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+                >
+                  <Text style={worldbookConfig.priority === '角色优先' ? styles.priorityTextActive : styles.priorityText}>角色优先</Text>
                 </TouchableOpacity>
               </View>
-            )}
-          </View>
-        )}
-
-        {activeTab === 'regex' && (
-          <View style={{ padding: 16 }}>
-            <View style={styles.row}>
-              <Text style={styles.label}>启用全局正则</Text>
-              <Switch
-                value={regexEnabled}
-                onValueChange={handleRegexSwitch}
-                trackColor={{ false: '#ccc', true: theme.colors.primary }}
-                thumbColor={regexEnabled ? theme.colors.primary : '#eee'}
-              />
-            </View>
-
-            {/* 正则脚本组下拉选择器 */}
-            {renderRegexGroupDropdown()}
-
-            <View style={styles.sectionHeader}>
-              <Text style={styles.sectionHeaderText}>正则脚本列表</Text>
-              <View style={{ flexDirection: 'row', alignItems: 'center' }}>
-                {/* 视图切换按钮 */}
-                <TouchableOpacity
-                  onPress={() => setRegexViewMode(v => v === 'compact' ? 'regular' : 'compact')}
-                  style={{ marginRight: 8 }}
-                >
-                  <Ionicons
-                    name={regexViewMode === 'compact' ? 'list' : 'grid'}
-                    size={22}
-                    color={theme.colors.primary}
-                  />
-                </TouchableOpacity>
-                {/* 管理按钮 */}
-                <TouchableOpacity onPress={handleRegexManage} style={{ marginRight: 8 }}>
-                  <Ionicons
-                    name="construct-outline"
-                    size={22}
-                    color={regexManaging ? theme.colors.primary : '#888'}
-                  />
-                </TouchableOpacity>
-                {/* 删除按钮 - 删除当前组 */}
-                <TouchableOpacity
-                  onPress={handleDeleteCurrentRegexGroup}
-                  style={{ marginRight: 8 }}
-                  disabled={!selectedRegexGroupId}
-                >
-                  <Ionicons name="trash-outline" size={22} color={selectedRegexGroupId ? theme.colors.danger : '#ccc'} />
-                </TouchableOpacity>
-                {/* 新建组按钮 */}
-                <TouchableOpacity onPress={handleCreateRegexGroup} style={{ marginRight: 8 }}>
-                  <Ionicons name="folder-outline" size={22} color={theme.colors.primary} />
-                </TouchableOpacity>
-                {/* 新建脚本按钮 */}
-                <TouchableOpacity onPress={handleCreateRegexScript} style={{ marginRight: 8 }}>
-                  <Ionicons name="duplicate-outline" size={22} color={theme.colors.primary} />
-                </TouchableOpacity>
-                {/* 导入按钮 */}
-                <TouchableOpacity onPress={handleImportRegexScript} style={{ marginRight: 8 }}>
-                  <Ionicons name="download-outline" size={22} color={theme.colors.primary} />
-                </TouchableOpacity>
-                {/* 测试按钮 */}
-                <TouchableOpacity onPress={handleTestRegex}>
-                  <Ionicons name="flask-outline" size={22} color={theme.colors.primary} />
-                </TouchableOpacity>
+              <View style={styles.sectionHeader}>
+                <Text style={styles.sectionHeaderText}>世界书条目</Text>
+                <View style={{ flexDirection: 'row', alignItems: 'center', flexWrap: 'wrap', gap: 4 }}>
+                  {/* 新增：显示/隐藏被禁用条目按钮 */}
+                  <TouchableOpacity
+                    onPress={() => setShowDisabledWorldbook(v => !v)}
+                    style={{ marginRight: 8 }}
+                    hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+                  >
+                    <Ionicons
+                      name={showDisabledWorldbook ? 'eye-outline' : 'eye-off-outline'}
+                      size={22}
+                      color={theme.colors.primary}
+                    />
+                  </TouchableOpacity>
+                  {/* 视图切换按钮 */}
+                  <TouchableOpacity
+                    onPress={() => setWorldbookViewMode(v => v === 'compact' ? 'regular' : 'compact')}
+                    style={{ marginRight: 8 }}
+                    hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+                  >
+                    <Ionicons
+                      name={worldbookViewMode === 'compact' ? 'list' : 'grid'}
+                      size={22}
+                      color={theme.colors.primary}
+                    />
+                  </TouchableOpacity>
+                  {/* 新增管理按钮 */}
+                  <TouchableOpacity onPress={handleWorldbookManage} style={{ marginRight: 8 }} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
+                    <Ionicons
+                      name="construct-outline"
+                      size={22}
+                      color={worldbookManaging ? theme.colors.primary : '#888'}
+                    />
+                  </TouchableOpacity>
+                  {/* 新增模板删除按钮 */}
+                  <TouchableOpacity
+                    onPress={handleDeleteCurrentWorldbookTemplate}
+                    style={{ marginRight: 8 }}
+                    disabled={!selectedWorldbookId}
+                    hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+                  >
+                    <Ionicons name="trash-outline" size={22} color={selectedWorldbookId ? theme.colors.danger : '#ccc'} />
+                  </TouchableOpacity>
+                  <TouchableOpacity onPress={handleCreateWorldbookTemplate} style={{ marginRight: 8 }} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
+                    <Ionicons name="duplicate-outline" size={22} color={theme.colors.primary} />
+                  </TouchableOpacity>
+                  {/* 新增：导入按钮 */}
+                  <TouchableOpacity onPress={handleImportWorldbook} style={{ marginRight: 8 }} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
+                    <Ionicons name="download-outline" size={22} color={theme.colors.primary} />
+                  </TouchableOpacity>
+                  <TouchableOpacity onPress={handleAddWorldbookEntry} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
+                    <Ionicons name="add-circle-outline" size={22} color={theme.colors.primary} />
+                  </TouchableOpacity>
+                </View>
               </View>
-            </View>
-
-            {/* 正则脚本列表 */}
-            {regexViewMode === 'compact'
-              ? getCurrentGroupScripts().map((script, idx) => renderCompactRegexScript(script, idx))
-              : getCurrentGroupScripts().map((script, idx) => (
-                <TouchableOpacity
-                  key={script.id}
-                  style={styles.promptCard}
-                  onPress={() => handleRegexScriptClick(script, idx)}
-                  activeOpacity={0.7}
-                >
-                  <View style={{ flexDirection: 'row', alignItems: 'center' }}>
-                    {regexManaging && (
+              {/* 条目列表 */}
+              {worldbookViewMode === 'compact'
+                ? worldbookEntryOrder
+                  .filter(key => {
+                    const entry = worldbookConfig.worldbookJson?.entries?.[key];
+                    return showDisabledWorldbook || !entry?.disable;
+                  })
+                  .map((key, idx) => {
+                    const entry = worldbookConfig.worldbookJson?.entries?.[key];
+                    if (!entry) return null;
+                    return renderCompactWorldbookEntry(key, entry, idx);
+                  })
+                : worldbookEntryOrder
+                  .filter(key => {
+                    const entry = worldbookConfig.worldbookJson?.entries?.[key];
+                    return showDisabledWorldbook || !entry?.disable;
+                  })
+                  .map((key, idx) => {
+                    const entry = worldbookConfig.worldbookJson?.entries?.[key];
+                    if (!entry) return null;
+                    return (
                       <TouchableOpacity
-                        onPress={() => toggleRegexSelect(idx)}
-                        style={{
-                          marginRight: 10,
-                          width: 22,
-                          height: 22,
-                          borderRadius: 11,
-                          borderWidth: 2,
-                          borderColor: theme.colors.primary,
-                          backgroundColor: regexSelectedIndexes.includes(idx) ? theme.colors.primary : '#fff',
-                          alignItems: 'center',
-                          justifyContent: 'center',
-                        }}
+                        key={key}
+                        style={styles.promptCard}
+                        onPress={() => handleWorldbookEntryClick(key, entry)}
+                        activeOpacity={0.7}
+                        hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
                       >
-                        {regexSelectedIndexes.includes(idx) && (
-                          <Ionicons name="checkmark" size={14} color="#fff" />
-                        )}
+                        <View style={{ flexDirection: 'row', alignItems: 'center' }}>
+                          {worldbookManaging && (
+                            <TouchableOpacity
+                              onPress={() => toggleWorldbookSelect(idx)}
+                              style={{
+                                marginRight: 10,
+                                width: 22,
+                                height: 22,
+                                borderRadius: 11,
+                                borderWidth: 2,
+                                borderColor: theme.colors.primary,
+                                backgroundColor: worldbookSelectedIndexes.includes(idx) ? theme.colors.primary : '#fff',
+                                alignItems: 'center',
+                                justifyContent: 'center',
+                              }}
+                              hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+                            >
+                              {worldbookSelectedIndexes.includes(idx) && (
+                                <Ionicons name="checkmark" size={14} color="#fff" />
+                              )}
+                            </TouchableOpacity>
+                          )}
+                          <View style={{ flex: 1 }}>
+                            <View style={styles.promptRow}>
+                              <Text style={styles.promptLabel}>名称</Text>
+                              <Text style={styles.promptValue}>{entry.comment}</Text>
+                            </View>
+                            <View style={styles.promptRow}>
+                              <Text style={styles.promptLabel}>禁用</Text>
+                              <Ionicons name={entry.disable ? 'close-circle' : 'checkmark-circle'} size={18} color={entry.disable ? '#ccc' : theme.colors.primary} />
+                            </View>
+                            <View style={styles.promptRow}>
+                              <Text style={styles.promptLabel}>常量</Text>
+                              <Ionicons name={entry.constant ? 'checkmark-circle' : 'close-circle'} size={18} color={entry.constant ? theme.colors.primary : '#ccc'} />
+                            </View>
+                            <View style={styles.promptRow}>
+                              <Text style={styles.promptLabel}>位置</Text>
+                              <Text style={styles.promptValue}>{entry.position}</Text>
+                            </View>
+                            <View style={styles.promptRow}>
+                              <Text style={styles.promptLabel}>深度</Text>
+                              <Text style={styles.promptValue}>{entry.depth}</Text>
+                            </View>
+                          </View>
+                          {!worldbookManaging && (
+                            <View style={{ flexDirection: 'column', marginLeft: 8 }}>
+                              <TouchableOpacity
+                                onPress={() => moveWorldbookEntry(idx, idx - 1)}
+                                disabled={idx === 0}
+                                style={{ opacity: idx === 0 ? 0.3 : 1, padding: 2 }}
+                                hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+                              >
+                                <Ionicons name="arrow-up" size={18} color={theme.colors.primary} />
+                              </TouchableOpacity>
+                              <TouchableOpacity
+                                onPress={() => moveWorldbookEntry(idx, idx + 1)}
+                                disabled={idx === worldbookEntryOrder.length - 1}
+                                style={{ opacity: idx === worldbookEntryOrder.length - 1 ? 0.3 : 1, padding: 2 }}
+                                hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+                              >
+                                <Ionicons name="arrow-down" size={18} color={theme.colors.primary} />
+                              </TouchableOpacity>
+                            </View>
+                          )}
+                        </View>
                       </TouchableOpacity>
-                    )}
-                    <View style={{ flex: 1 }}>
-                      <View style={styles.promptRow}>
-                        <Text style={styles.promptLabel}>名称</Text>
-                        <Text style={styles.promptValue}>{script.scriptName}</Text>
+                    );
+                  })
+              }
+              {worldbookManaging && (
+                <View style={{ marginTop: 12, alignItems: 'flex-end' }}>
+                  <TouchableOpacity
+                    style={{
+                      backgroundColor: theme.colors.danger,
+                      borderRadius: 8,
+                      paddingVertical: 10,
+                      paddingHorizontal: 24,
+                    }}
+                    onPress={handleDeleteWorldbookEntries}
+                    hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+                  >
+                    <Text style={{ color: '#fff', fontWeight: 'bold', fontSize: 16 }}>删除选中条目</Text>
+                  </TouchableOpacity>
+                </View>
+              )}
+            </View>
+          )}
+
+          {activeTab === 'regex' && (
+            <View style={{ padding: 16 }}>
+              <View style={styles.row}>
+                <Text style={styles.label}>启用全局正则</Text>
+                <Switch
+                  value={regexEnabled}
+                  onValueChange={handleRegexSwitch}
+                  trackColor={{ false: '#ccc', true: theme.colors.primary }}
+                  thumbColor={regexEnabled ? theme.colors.primary : '#eee'}
+                />
+              </View>
+
+              {/* 正则脚本组下拉选择器 */}
+              {renderRegexGroupDropdown()}
+
+              <View style={styles.sectionHeader}>
+                <Text style={styles.sectionHeaderText}>正则脚本列表</Text>
+                <View style={{ flexDirection: 'row', alignItems: 'center', flexWrap: 'wrap', gap: 4 }}>
+                  {/* 视图切换按钮 */}
+                  <TouchableOpacity
+                    onPress={() => setRegexViewMode(v => v === 'compact' ? 'regular' : 'compact')}
+                    style={{ marginRight: 8 }}
+                    hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+                  >
+                    <Ionicons
+                      name={regexViewMode === 'compact' ? 'list' : 'grid'}
+                      size={22}
+                      color={theme.colors.primary}
+                    />
+                  </TouchableOpacity>
+                  {/* 管理按钮 */}
+                  <TouchableOpacity onPress={handleRegexManage} style={{ marginRight: 8 }} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
+                    <Ionicons
+                      name="construct-outline"
+                      size={22}
+                      color={regexManaging ? theme.colors.primary : '#888'}
+                    />
+                  </TouchableOpacity>
+                  {/* 删除按钮 - 删除当前组 */}
+                  <TouchableOpacity
+                    onPress={handleDeleteCurrentRegexGroup}
+                    style={{ marginRight: 8 }}
+                    disabled={!selectedRegexGroupId}
+                    hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+                  >
+                    <Ionicons name="trash-outline" size={22} color={selectedRegexGroupId ? theme.colors.danger : '#ccc'} />
+                  </TouchableOpacity>
+                  {/* 新建组按钮 */}
+                  <TouchableOpacity onPress={handleCreateRegexGroup} style={{ marginRight: 8 }} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
+                    <Ionicons name="folder-outline" size={22} color={theme.colors.primary} />
+                  </TouchableOpacity>
+                  {/* 新建脚本按钮 */}
+                  <TouchableOpacity onPress={handleCreateRegexScript} style={{ marginRight: 8 }} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
+                    <Ionicons name="duplicate-outline" size={22} color={theme.colors.primary} />
+                  </TouchableOpacity>
+                  {/* 导入按钮 */}
+                  <TouchableOpacity onPress={handleImportRegexScript} style={{ marginRight: 8 }} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
+                    <Ionicons name="download-outline" size={22} color={theme.colors.primary} />
+                  </TouchableOpacity>
+                  {/* 测试按钮 */}
+                  <TouchableOpacity onPress={handleTestRegex} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
+                    <Ionicons name="flask-outline" size={22} color={theme.colors.primary} />
+                  </TouchableOpacity>
+                </View>
+              </View>
+
+              {/* 正则脚本列表 */}
+              {regexViewMode === 'compact'
+                ? getCurrentGroupScripts().map((script, idx) => renderCompactRegexScript(script, idx))
+                : getCurrentGroupScripts().map((script, idx) => (
+                  <TouchableOpacity
+                    key={script.id}
+                    style={styles.promptCard}
+                    onPress={() => handleRegexScriptClick(script, idx)}
+                    activeOpacity={0.7}
+                    hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+                  >
+                    <View style={{ flexDirection: 'row', alignItems: 'center' }}>
+                      {regexManaging && (
+                        <TouchableOpacity
+                          onPress={() => toggleRegexSelect(idx)}
+                          style={{
+                            marginRight: 10,
+                            width: 22,
+                            height: 22,
+                            borderRadius: 11,
+                            borderWidth: 2,
+                            borderColor: theme.colors.primary,
+                            backgroundColor: regexSelectedIndexes.includes(idx) ? theme.colors.primary : '#fff',
+                            alignItems: 'center',
+                            justifyContent: 'center',
+                          }}
+                          hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+                        >
+                          {regexSelectedIndexes.includes(idx) && (
+                            <Ionicons name="checkmark" size={14} color="#fff" />
+                          )}
+                        </TouchableOpacity>
+                      )}
+                      <View style={{ flex: 1 }}>
+                        <View style={styles.promptRow}>
+                          <Text style={styles.promptLabel}>名称</Text>
+                          <Text style={styles.promptValue}>{script.scriptName}</Text>
+                        </View>
+                        <View style={styles.promptRow}>
+                          <Text style={styles.promptLabel}>启用</Text>
+                          <Ionicons name={!script.disabled ? 'checkmark-circle' : 'close-circle'} size={18} color={!script.disabled ? theme.colors.primary : '#ccc'} />
+                        </View>
+                        <View style={styles.promptRow}>
+                          <Text style={styles.promptLabel}>正则</Text>
+                          <Text style={styles.promptValue} numberOfLines={1}>{script.findRegex}</Text>
+                        </View>
+                        <View style={styles.promptRow}>
+                          <Text style={styles.promptLabel}>替换</Text>
+                          <Text style={styles.promptValue} numberOfLines={1}>{script.replaceString}</Text>
+                        </View>
+                        <View style={styles.promptRow}>
+                          <Text style={styles.promptLabel}>作用域</Text>
+                          <Text style={styles.promptValue}>
+                            {script.placement?.includes(1) && '用户 '}
+                            {script.placement?.includes(2) && 'AI'}
+                          </Text>
+                        </View>
                       </View>
-                      <View style={styles.promptRow}>
-                        <Text style={styles.promptLabel}>启用</Text>
-                        <Ionicons name={!script.disabled ? 'checkmark-circle' : 'close-circle'} size={18} color={!script.disabled ? theme.colors.primary : '#ccc'} />
-                      </View>
-                      <View style={styles.promptRow}>
-                        <Text style={styles.promptLabel}>正则</Text>
-                        <Text style={styles.promptValue} numberOfLines={1}>{script.findRegex}</Text>
-                      </View>
-                      <View style={styles.promptRow}>
-                        <Text style={styles.promptLabel}>替换</Text>
-                        <Text style={styles.promptValue} numberOfLines={1}>{script.replaceString}</Text>
-                      </View>
-                      <View style={styles.promptRow}>
-                        <Text style={styles.promptLabel}>作用域</Text>
-                        <Text style={styles.promptValue}>
-                          {script.placement?.includes(1) && '用户 '}
-                          {script.placement?.includes(2) && 'AI'}
-                        </Text>
-                      </View>
+                      {/* 启用/禁用按钮 */}
+                      <TouchableOpacity
+                        style={{ marginLeft: 8 }}
+                        onPress={() => handleToggleRegexEnable(idx)}
+                        hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+                      >
+                        <Ionicons
+                          name={!script.disabled ? 'checkmark-circle' : 'close-circle'}
+                          size={22}
+                          color={!script.disabled ? theme.colors.primary : '#888'}
+                        />
+                      </TouchableOpacity>
                     </View>
-                    {/* 启用/禁用按钮 */}
-                    <TouchableOpacity
-                      style={{ marginLeft: 8 }}
-                      onPress={() => handleToggleRegexEnable(idx)}
-                    >
-                      <Ionicons
-                        name={!script.disabled ? 'checkmark-circle' : 'close-circle'}
-                        size={22}
-                        color={!script.disabled ? theme.colors.primary : '#888'}
-                      />
-                    </TouchableOpacity>
-                  </View>
-                </TouchableOpacity>
-              ))
-            }
+                  </TouchableOpacity>
+                ))
+              }
 
-            {/* 当前组没有脚本时显示提示 */}
-            {getCurrentGroupScripts().length === 0 && selectedRegexGroupId && (
-              <View style={{ padding: 20, alignItems: 'center' }}>
-                <Ionicons name="document-text-outline" size={40} color="#666" />
-                <Text style={{ color: '#666', marginTop: 10, textAlign: 'center' }}>
-                  当前脚本组没有脚本
-                </Text>
-                <TouchableOpacity
-                  style={{
-                    marginTop: 16,
-                    backgroundColor: theme.colors.primary,
-                    paddingHorizontal: 16,
-                    paddingVertical: 8,
-                    borderRadius: 8
-                  }}
-                  onPress={handleCreateRegexScript}
-                >
-                  <Text style={{ color: 'black', fontWeight: '500' }}>创建新脚本</Text>
-                </TouchableOpacity>
-              </View>
+              {/* 当前组没有脚本时显示提示 */}
+              {getCurrentGroupScripts().length === 0 && selectedRegexGroupId && (
+                <View style={{ padding: 20, alignItems: 'center' }}>
+                  <Ionicons name="document-text-outline" size={40} color="#666" />
+                  <Text style={{ color: '#666', marginTop: 10, textAlign: 'center' }}>
+                    当前脚本组没有脚本
+                  </Text>
+                  <TouchableOpacity
+                    style={{
+                      marginTop: 16,
+                      backgroundColor: theme.colors.primary,
+                      paddingHorizontal: 16,
+                      paddingVertical: 8,
+                      borderRadius: 8
+                    }}
+                    onPress={handleCreateRegexScript}
+                    hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+                  >
+                    <Text style={{ color: 'black', fontWeight: '500' }}>创建新脚本</Text>
+                  </TouchableOpacity>
+                </View>
+              )}
+
+              {/* 没有任何脚本组时显示提示 */}
+              {regexScriptGroups.length === 0 && (
+                <View style={{ padding: 20, alignItems: 'center' }}>
+                  <Ionicons name="folder-open-outline" size={40} color="#666" />
+                  <Text style={{ color: '#666', marginTop: 10, textAlign: 'center' }}>
+                    请先创建一个脚本组
+                  </Text>
+                  <TouchableOpacity
+                    style={{
+                      marginTop: 16,
+                      backgroundColor: theme.colors.primary,
+                      paddingHorizontal: 16,
+                      paddingVertical: 8,
+                      borderRadius: 8
+                    }}
+                    onPress={handleCreateRegexGroup}
+                    hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+                  >
+                    <Text style={{ color: 'black', fontWeight: '500' }}>创建脚本组</Text>
+                  </TouchableOpacity>
+                </View>
+              )}
+
+              {/* 管理模式下显示删除按钮 */}
+              {regexManaging && getCurrentGroupScripts().length > 0 && (
+                <View style={{ marginTop: 12, alignItems: 'flex-end' }}>
+                  <TouchableOpacity
+                    style={{
+                      backgroundColor: theme.colors.danger,
+                      borderRadius: 8,
+                      paddingVertical: 10,
+                      paddingHorizontal: 24,
+                    }}
+                    onPress={handleDeleteRegexScripts}
+                    hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+                  >
+                    <Text style={{ color: '#fff', fontWeight: 'bold', fontSize: 16 }}>删除选中脚本</Text>
+                  </TouchableOpacity>
+                </View>
+              )}
+            </View>
+          )}
+        </ScrollView>
+
+        {/* 侧边栏（宽屏时内联，窄屏时用Modal） */}
+        {isWide && (detailSidebar.isVisible || regexDetailSidebar.isVisible) && (
+          <View style={styles.sidebarContainer}>
+            {detailSidebar.isVisible && (
+              <GlobalDetailSidebar
+                isVisible={true}
+                onClose={handleCloseSidebar}
+                title={detailSidebar.title}
+                content={detailSidebar.content}
+                entryType={detailSidebar.entryType}
+                entryOptions={detailSidebar.entryOptions}
+                name={detailSidebar.name}
+                onContentChange={
+                  detailSidebar.entryType === 'preset'
+                    ? handlePresetContentChange
+                    : handleWorldbookContentChange
+                }
+                onNameChange={
+                  detailSidebar.entryType === 'preset'
+                    ? handlePresetNameChange
+                    : handleWorldbookNameChange
+                }
+                onOptionsChange={
+                  detailSidebar.entryType === 'preset'
+                    ? handlePresetOptionsChange
+                    : handleWorldbookOptionsChange
+                }
+                onDelete={
+                  detailSidebar.entryType === 'preset'
+                    ? handleDeletePresetEntry
+                    : handleDeleteWorldbookEntry
+                }
+                inline // 新增：标记为内联模式
+              />
             )}
+            {regexDetailSidebar.isVisible && (
+              <GlobalDetailSidebar
+                isVisible={true}
+                onClose={handleCloseRegexSidebar}
+                title="编辑正则脚本"
+                content={
+                  typeof regexDetailSidebar.index === 'number'
+                    ? getCurrentGroupScripts()[regexDetailSidebar.index]?.findRegex || ''
+                    : ''
+                }
+                entryType="regex"
+                entryOptions={
+                  typeof regexDetailSidebar.index === 'number'
+                    ? getCurrentGroupScripts()[regexDetailSidebar.index]
+                    : undefined
+                }
+                name={
+                  typeof regexDetailSidebar.index === 'number'
+                    ? getCurrentGroupScripts()[regexDetailSidebar.index]?.scriptName
+                    : undefined
+                }
+                flags={
+                  typeof regexDetailSidebar.index === 'number'
+                    ? getCurrentGroupScripts()[regexDetailSidebar.index]?.flags ?? 'g'
+                    : 'g'
+                }
+                onFlagsChange={async (text: string) => {
+                  if (
+                    typeof regexDetailSidebar.index !== 'number' ||
+                    regexDetailSidebar.index < 0 ||
+                    !selectedRegexGroupId
+                  ) return;
 
-            {/* 没有任何脚本组时显示提示 */}
-            {regexScriptGroups.length === 0 && (
-              <View style={{ padding: 20, alignItems: 'center' }}>
-                <Ionicons name="folder-open-outline" size={40} color="#666" />
-                <Text style={{ color: '#666', marginTop: 10, textAlign: 'center' }}>
-                  请先创建一个脚本组
-                </Text>
-                <TouchableOpacity
-                  style={{
-                    marginTop: 16,
-                    backgroundColor: theme.colors.primary,
-                    paddingHorizontal: 16,
-                    paddingVertical: 8,
-                    borderRadius: 8
-                  }}
-                  onPress={handleCreateRegexGroup}
-                >
-                  <Text style={{ color: 'black', fontWeight: '500' }}>创建脚本组</Text>
-                </TouchableOpacity>
-              </View>
-            )}
+                  setRegexScriptGroups(groups =>
+                    groups.map(group => {
+                      if (group.id === selectedRegexGroupId) {
+                        const updatedScripts = [...group.scripts];
+                        if (regexDetailSidebar.index! < updatedScripts.length) {
+                          updatedScripts[regexDetailSidebar.index!] = {
+                            ...updatedScripts[regexDetailSidebar.index!],
+                            flags: text.trim() || 'g'
+                          };
+                        }
+                        return { ...group, scripts: updatedScripts };
+                      }
+                      return group;
+                    })
+                  );
 
-            {/* 管理模式下显示删除按钮 */}
-            {regexManaging && getCurrentGroupScripts().length > 0 && (
-              <View style={{ marginTop: 12, alignItems: 'flex-end' }}>
-                <TouchableOpacity
-                  style={{
-                    backgroundColor: theme.colors.danger,
-                    borderRadius: 8,
-                    paddingVertical: 10,
-                    paddingHorizontal: 24,
-                  }}
-                  onPress={handleDeleteRegexScripts}
-                >
-                  <Text style={{ color: '#fff', fontWeight: 'bold', fontSize: 16 }}>删除选中脚本</Text>
-                </TouchableOpacity>
-              </View>
+                  // 持久化保存
+                  try {
+                    const { StorageAdapter } = await import('@/NodeST/nodest/utils/storage-adapter');
+                    await StorageAdapter.saveGlobalRegexScriptGroups?.(regexScriptGroups);
+                  } catch (e) { }
+                }}
+                onContentChange={async (text: string) => {
+                  if (
+                    typeof regexDetailSidebar.index !== 'number' ||
+                    regexDetailSidebar.index < 0 ||
+                    !selectedRegexGroupId
+                  ) return;
+
+                  setRegexScriptGroups(groups =>
+                    groups.map(group => {
+                      if (group.id === selectedRegexGroupId) {
+                        const updatedScripts = [...group.scripts];
+                        if (regexDetailSidebar.index! < updatedScripts.length) {
+                          updatedScripts[regexDetailSidebar.index!] = {
+                            ...updatedScripts[regexDetailSidebar.index!],
+                            findRegex: text
+                          };
+                        }
+                        return { ...group, scripts: updatedScripts };
+                      }
+                      return group;
+                    })
+                  );
+
+                  // 持久化保存
+                  try {
+                    const { StorageAdapter } = await import('@/NodeST/nodest/utils/storage-adapter');
+                    await StorageAdapter.saveGlobalRegexScriptGroups?.(regexScriptGroups);
+                  } catch (e) { }
+                }}
+                onNameChange={async text => {
+                  if (
+                    typeof regexDetailSidebar.index !== 'number' ||
+                    regexDetailSidebar.index < 0 ||
+                    !selectedRegexGroupId
+                  ) return;
+
+                  setRegexScriptGroups(groups =>
+                    groups.map(group => {
+                      if (group.id === selectedRegexGroupId) {
+                        const updatedScripts = [...group.scripts];
+                        if (regexDetailSidebar.index! < updatedScripts.length) {
+                          updatedScripts[regexDetailSidebar.index!] = {
+                            ...updatedScripts[regexDetailSidebar.index!],
+                            scriptName: text
+                          };
+                        }
+                        return { ...group, scripts: updatedScripts };
+                      }
+                      return group;
+                    })
+                  );
+
+                  // 持久化保存
+                  try {
+                    const { StorageAdapter } = await import('@/NodeST/nodest/utils/storage-adapter');
+                    await StorageAdapter.saveGlobalRegexScriptGroups?.(regexScriptGroups);
+                  } catch (e) { }
+                }}
+                onOptionsChange={async opts => {
+                  if (
+                    typeof regexDetailSidebar.index !== 'number' ||
+                    regexDetailSidebar.index < 0 ||
+                    !selectedRegexGroupId
+                  ) return;
+
+                  setRegexScriptGroups(groups =>
+                    groups.map(group => {
+                      if (group.id === selectedRegexGroupId) {
+                        const updatedScripts = [...group.scripts];
+                        if (regexDetailSidebar.index! < updatedScripts.length) {
+                          updatedScripts[regexDetailSidebar.index!] = {
+                            ...updatedScripts[regexDetailSidebar.index!],
+                            ...opts,
+                            flags: (opts.flags ?? updatedScripts[regexDetailSidebar.index!].flags ?? 'g') || 'g'
+                          };
+                        }
+                        return { ...group, scripts: updatedScripts };
+                      }
+                      return group;
+                    })
+                  );
+
+                  // 持久化保存
+                  try {
+                    const { StorageAdapter } = await import('@/NodeST/nodest/utils/storage-adapter');
+                    await StorageAdapter.saveGlobalRegexScriptGroups?.(regexScriptGroups);
+                  } catch (e) { }
+                }}
+                onDelete={async () => {
+                  if (
+                    typeof regexDetailSidebar.index !== 'number' ||
+                    regexDetailSidebar.index < 0 ||
+                    !selectedRegexGroupId
+                  ) return;
+
+                  Alert.alert("删除确认", "确定要删除此正则脚本吗？", [
+                    { text: "取消", style: "cancel" },
+                    {
+                      text: "删除",
+                      style: "destructive",
+                      onPress: () => {
+                        setRegexScriptGroups(groups =>
+                          groups.map(group => {
+                            if (group.id === selectedRegexGroupId) {
+                              const updatedScripts = group.scripts.filter((_, idx) => idx !== regexDetailSidebar.index);
+                              return { ...group, scripts: updatedScripts };
+                            }
+                            return group;
+                          })
+                        );
+
+                        // 持久化保存
+                        (async () => {
+                          try {
+                            const { StorageAdapter } = await import('@/NodeST/nodest/utils/storage-adapter');
+                            await StorageAdapter.saveGlobalRegexScriptGroups?.(regexScriptGroups);
+                          } catch (e) { }
+                        })();
+
+                        handleCloseRegexSidebar();
+                      }
+                    }
+                  ]);
+                }}
+                inline // 新增：标记为内联模式
+              />
             )}
           </View>
         )}
-      </ScrollView>
+      </View>
 
       {/* 底部保存按钮 */}
       <View style={styles.footer}>
@@ -2524,6 +2806,7 @@ export default function GlobalSettingsPage() {
           style={styles.saveBtn}
           onPress={handleSave}
           disabled={isSaving}
+          hitSlop={{ top: 15, bottom: 15, left: 15, right: 15 }}
         >
           <Text style={styles.saveBtnText}>{isSaving ? '保存中...' : '保存设置'}</Text>
         </TouchableOpacity>
@@ -2553,12 +2836,14 @@ export default function GlobalSettingsPage() {
               <TouchableOpacity
                 style={[styles.modalButton, styles.modalButtonCancel]}
                 onPress={() => setNewTemplateModal({ ...newTemplateModal, visible: false })}
+                hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
               >
                 <Text style={styles.modalButtonText}>取消</Text>
               </TouchableOpacity>
               <TouchableOpacity
                 style={[styles.modalButton, styles.modalButtonConfirm]}
                 onPress={handleConfirmCreateTemplate}
+                hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
               >
                 <Text style={styles.modalButtonTextConfirm}>确认</Text>
               </TouchableOpacity>
@@ -2593,6 +2878,7 @@ export default function GlobalSettingsPage() {
                   backgroundColor: '#eee', borderRadius: 8, paddingVertical: 10, paddingHorizontal: 24, marginRight: 12
                 }}
                 onPress={() => setShowDeleteTemplateModal(null)}
+                hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
               >
                 <Text style={{ color: '#333', fontSize: 16 }}>取消</Text>
               </TouchableOpacity>
@@ -2601,6 +2887,7 @@ export default function GlobalSettingsPage() {
                   backgroundColor: theme.colors.danger, borderRadius: 8, paddingVertical: 10, paddingHorizontal: 24
                 }}
                 onPress={confirmDeleteTemplate}
+                hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
               >
                 <Text style={{ color: '#fff', fontWeight: 'bold', fontSize: 16 }}>删除</Text>
               </TouchableOpacity>
@@ -2631,12 +2918,14 @@ export default function GlobalSettingsPage() {
               <TouchableOpacity
                 style={[styles.modalButton, styles.modalButtonCancel]}
                 onPress={() => setRenameModal({ ...renameModal, visible: false })}
+                hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
               >
                 <Text style={styles.modalButtonText}>取消</Text>
               </TouchableOpacity>
               <TouchableOpacity
                 style={[styles.modalButton, styles.modalButtonConfirm]}
                 onPress={handleRenameModalConfirm}
+                hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
               >
                 <Text style={styles.modalButtonTextConfirm}>确认</Text>
               </TouchableOpacity>
@@ -2667,12 +2956,14 @@ export default function GlobalSettingsPage() {
               <TouchableOpacity
                 style={[styles.modalButton, styles.modalButtonCancel]}
                 onPress={() => setNewRegexModal({ ...newRegexModal, visible: false })}
+                hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
               >
                 <Text style={styles.modalButtonText}>取消</Text>
               </TouchableOpacity>
               <TouchableOpacity
                 style={[styles.modalButton, styles.modalButtonConfirm]}
                 onPress={handleConfirmCreateRegex}
+                hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
               >
                 <Text style={styles.modalButtonTextConfirm}>确认</Text>
               </TouchableOpacity>
@@ -2707,6 +2998,7 @@ export default function GlobalSettingsPage() {
                   backgroundColor: '#eee', borderRadius: 8, paddingVertical: 10, paddingHorizontal: 24, marginRight: 12
                 }}
                 onPress={() => setShowDeleteRegexModal(false)}
+                hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
               >
                 <Text style={{ color: '#333', fontSize: 16 }}>取消</Text>
               </TouchableOpacity>
@@ -2715,6 +3007,7 @@ export default function GlobalSettingsPage() {
                   backgroundColor: theme.colors.danger, borderRadius: 8, paddingVertical: 10, paddingHorizontal: 24
                 }}
                 onPress={confirmDeleteRegexScript}
+                hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
               >
                 <Text style={{ color: '#fff', fontWeight: 'bold', fontSize: 16 }}>删除</Text>
               </TouchableOpacity>
@@ -2745,12 +3038,14 @@ export default function GlobalSettingsPage() {
               <TouchableOpacity
                 style={[styles.modalButton, styles.modalButtonCancel]}
                 onPress={() => setNewRegexGroupModal({ ...newRegexGroupModal, visible: false })}
+                hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
               >
                 <Text style={styles.modalButtonText}>取消</Text>
               </TouchableOpacity>
               <TouchableOpacity
                 style={[styles.modalButton, styles.modalButtonConfirm]}
                 onPress={handleConfirmCreateRegexGroup}
+                hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
               >
                 <Text style={styles.modalButtonTextConfirm}>确认</Text>
               </TouchableOpacity>
@@ -2759,232 +3054,240 @@ export default function GlobalSettingsPage() {
         </View>
       </Modal>
 
-      {/* 新增：全局详情侧边栏 */}
-      <GlobalDetailSidebar
-        isVisible={detailSidebar.isVisible}
-        onClose={handleCloseSidebar}
-        title={detailSidebar.title}
-        content={detailSidebar.content}
-        entryType={detailSidebar.entryType}
-        entryOptions={detailSidebar.entryOptions}
-        name={detailSidebar.name}
-        onContentChange={
-          detailSidebar.entryType === 'preset'
-            ? handlePresetContentChange
-            : handleWorldbookContentChange
-        }
-        onNameChange={
-          detailSidebar.entryType === 'preset'
-            ? handlePresetNameChange
-            : handleWorldbookNameChange
-        }
-        onOptionsChange={
-          detailSidebar.entryType === 'preset'
-            ? handlePresetOptionsChange
-            : handleWorldbookOptionsChange
-        }
-        onDelete={
-          detailSidebar.entryType === 'preset'
-            ? handleDeletePresetEntry
-            : handleDeleteWorldbookEntry
-        }
-      />
+      {/* 新增：全局详情侧边栏（窄屏时用Modal） */}
+      {!isWide && (
+        <GlobalDetailSidebar
+          isVisible={detailSidebar.isVisible}
+          onClose={handleCloseSidebar}
+          title={detailSidebar.title}
+          content={detailSidebar.content}
+          entryType={detailSidebar.entryType}
+          entryOptions={detailSidebar.entryOptions}
+          name={detailSidebar.name}
+          onContentChange={
+            detailSidebar.entryType === 'preset'
+              ? handlePresetContentChange
+              : handleWorldbookContentChange
+          }
+          onNameChange={
+            detailSidebar.entryType === 'preset'
+              ? handlePresetNameChange
+              : handleWorldbookNameChange
+          }
+          onOptionsChange={
+            detailSidebar.entryType === 'preset'
+              ? handlePresetOptionsChange
+              : handleWorldbookOptionsChange
+          }
+          onDelete={
+            detailSidebar.entryType === 'preset'
+              ? handleDeletePresetEntry
+              : handleDeleteWorldbookEntry
+          }
+        />
+      )}
 
-      {/* 正则脚本编辑侧边栏 */}
-      <GlobalDetailSidebar
-        isVisible={regexDetailSidebar.isVisible}
-        onClose={handleCloseRegexSidebar}
-        title="编辑正则脚本"
-        content={
-          typeof regexDetailSidebar.index === 'number'
-            ? getCurrentGroupScripts()[regexDetailSidebar.index]?.findRegex || ''
-            : ''
-        }
-        entryType="regex"
-        entryOptions={
-          typeof regexDetailSidebar.index === 'number'
-            ? getCurrentGroupScripts()[regexDetailSidebar.index]
-            : undefined
-        }
-        name={
-          typeof regexDetailSidebar.index === 'number'
-            ? getCurrentGroupScripts()[regexDetailSidebar.index]?.scriptName
-            : undefined
-        }
-        flags={
-          typeof regexDetailSidebar.index === 'number'
-            ? getCurrentGroupScripts()[regexDetailSidebar.index]?.flags ?? 'g'
-            : 'g'
-        }
-        onFlagsChange={async (text: string) => {
-          if (
-            typeof regexDetailSidebar.index !== 'number' ||
-            regexDetailSidebar.index < 0 ||
-            !selectedRegexGroupId
-          ) return;
+      {/* 正则脚本编辑侧边栏（窄屏时用Modal） */}
+      {!isWide && (
+        <GlobalDetailSidebar
+          isVisible={regexDetailSidebar.isVisible}
+          onClose={handleCloseRegexSidebar}
+          title="编辑正则脚本"
+          content={
+            typeof regexDetailSidebar.index === 'number'
+              ? getCurrentGroupScripts()[regexDetailSidebar.index]?.findRegex || ''
+              : ''
+          }
+          entryType="regex"
+          entryOptions={
+            typeof regexDetailSidebar.index === 'number'
+              ? getCurrentGroupScripts()[regexDetailSidebar.index]
+              : undefined
+          }
+          name={
+            typeof regexDetailSidebar.index === 'number'
+              ? getCurrentGroupScripts()[regexDetailSidebar.index]?.scriptName
+              : undefined
+          }
+          flags={
+            typeof regexDetailSidebar.index === 'number'
+              ? getCurrentGroupScripts()[regexDetailSidebar.index]?.flags ?? 'g'
+              : 'g'
+          }
+          onFlagsChange={async (text: string) => {
+            if (
+              typeof regexDetailSidebar.index !== 'number' ||
+              regexDetailSidebar.index < 0 ||
+              !selectedRegexGroupId
+            ) return;
 
-          setRegexScriptGroups(groups =>
-            groups.map(group => {
-              if (group.id === selectedRegexGroupId) {
-                const updatedScripts = [...group.scripts];
-                if (regexDetailSidebar.index! < updatedScripts.length) {
-                  updatedScripts[regexDetailSidebar.index!] = {
-                    ...updatedScripts[regexDetailSidebar.index!],
-                    flags: text.trim() || 'g'
-                  };
+            setRegexScriptGroups(groups =>
+              groups.map(group => {
+                if (group.id === selectedRegexGroupId) {
+                  const updatedScripts = [...group.scripts];
+                  if (regexDetailSidebar.index! < updatedScripts.length) {
+                    updatedScripts[regexDetailSidebar.index!] = {
+                      ...updatedScripts[regexDetailSidebar.index!],
+                      flags: text.trim() || 'g'
+                    };
+                  }
+                  return { ...group, scripts: updatedScripts };
                 }
-                return { ...group, scripts: updatedScripts };
-              }
-              return group;
-            })
-          );
+                return group;
+              })
+            );
 
-          // 持久化保存
-          try {
-            const { StorageAdapter } = await import('@/NodeST/nodest/utils/storage-adapter');
-            await StorageAdapter.saveGlobalRegexScriptGroups?.(regexScriptGroups);
-          } catch (e) { }
-        }}
-        onContentChange={async (text: string) => {
-          if (
-            typeof regexDetailSidebar.index !== 'number' ||
-            regexDetailSidebar.index < 0 ||
-            !selectedRegexGroupId
-          ) return;
+            // 持久化保存
+            try {
+              const { StorageAdapter } = await import('@/NodeST/nodest/utils/storage-adapter');
+              await StorageAdapter.saveGlobalRegexScriptGroups?.(regexScriptGroups);
+            } catch (e) { }
+          }}
+          onContentChange={async (text: string) => {
+            if (
+              typeof regexDetailSidebar.index !== 'number' ||
+              regexDetailSidebar.index < 0 ||
+              !selectedRegexGroupId
+            ) return;
 
-          setRegexScriptGroups(groups =>
-            groups.map(group => {
-              if (group.id === selectedRegexGroupId) {
-                const updatedScripts = [...group.scripts];
-                if (regexDetailSidebar.index! < updatedScripts.length) {
-                  updatedScripts[regexDetailSidebar.index!] = {
-                    ...updatedScripts[regexDetailSidebar.index!],
-                    findRegex: text
-                  };
+            setRegexScriptGroups(groups =>
+              groups.map(group => {
+                if (group.id === selectedRegexGroupId) {
+                  const updatedScripts = [...group.scripts];
+                  if (regexDetailSidebar.index! < updatedScripts.length) {
+                    updatedScripts[regexDetailSidebar.index!] = {
+                      ...updatedScripts[regexDetailSidebar.index!],
+                      findRegex: text
+                    };
+                  }
+                  return { ...group, scripts: updatedScripts };
                 }
-                return { ...group, scripts: updatedScripts };
-              }
-              return group;
-            })
-          );
+                return group;
+              })
+            );
 
-          // 持久化保存
-          try {
-            const { StorageAdapter } = await import('@/NodeST/nodest/utils/storage-adapter');
-            await StorageAdapter.saveGlobalRegexScriptGroups?.(regexScriptGroups);
-          } catch (e) { }
-        }}
-        onNameChange={async text => {
-          if (
-            typeof regexDetailSidebar.index !== 'number' ||
-            regexDetailSidebar.index < 0 ||
-            !selectedRegexGroupId
-          ) return;
+            // 持久化保存
+            try {
+              const { StorageAdapter } = await import('@/NodeST/nodest/utils/storage-adapter');
+              await StorageAdapter.saveGlobalRegexScriptGroups?.(regexScriptGroups);
+            } catch (e) { }
+          }}
+          onNameChange={async text => {
+            if (
+              typeof regexDetailSidebar.index !== 'number' ||
+              regexDetailSidebar.index < 0 ||
+              !selectedRegexGroupId
+            ) return;
 
-          setRegexScriptGroups(groups =>
-            groups.map(group => {
-              if (group.id === selectedRegexGroupId) {
-                const updatedScripts = [...group.scripts];
-                if (regexDetailSidebar.index! < updatedScripts.length) {
-                  updatedScripts[regexDetailSidebar.index!] = {
-                    ...updatedScripts[regexDetailSidebar.index!],
-                    scriptName: text
-                  };
+            setRegexScriptGroups(groups =>
+              groups.map(group => {
+                if (group.id === selectedRegexGroupId) {
+                  const updatedScripts = [...group.scripts];
+                  if (regexDetailSidebar.index! < updatedScripts.length) {
+                    updatedScripts[regexDetailSidebar.index!] = {
+                      ...updatedScripts[regexDetailSidebar.index!],
+                      scriptName: text
+                    };
+                  }
+                  return { ...group, scripts: updatedScripts };
                 }
-                return { ...group, scripts: updatedScripts };
-              }
-              return group;
-            })
-          );
+                return group;
+              })
+            );
 
-          // 持久化保存
-          try {
-            const { StorageAdapter } = await import('@/NodeST/nodest/utils/storage-adapter');
-            await StorageAdapter.saveGlobalRegexScriptGroups?.(regexScriptGroups);
-          } catch (e) { }
-        }}
-        onOptionsChange={async opts => {
-          if (
-            typeof regexDetailSidebar.index !== 'number' ||
-            regexDetailSidebar.index < 0 ||
-            !selectedRegexGroupId
-          ) return;
+            // 持久化保存
+            try {
+              const { StorageAdapter } = await import('@/NodeST/nodest/utils/storage-adapter');
+              await StorageAdapter.saveGlobalRegexScriptGroups?.(regexScriptGroups);
+            } catch (e) { }
+          }}
+          onOptionsChange={async opts => {
+            if (
+              typeof regexDetailSidebar.index !== 'number' ||
+              regexDetailSidebar.index < 0 ||
+              !selectedRegexGroupId
+            ) return;
 
-          setRegexScriptGroups(groups =>
-            groups.map(group => {
-              if (group.id === selectedRegexGroupId) {
-                const updatedScripts = [...group.scripts];
-                if (regexDetailSidebar.index! < updatedScripts.length) {
-                  updatedScripts[regexDetailSidebar.index!] = {
-                    ...updatedScripts[regexDetailSidebar.index!],
-                    ...opts,
-                    flags: (opts.flags ?? updatedScripts[regexDetailSidebar.index!].flags ?? 'g') || 'g'
-                  };
+            setRegexScriptGroups(groups =>
+              groups.map(group => {
+                if (group.id === selectedRegexGroupId) {
+                  const updatedScripts = [...group.scripts];
+                  if (regexDetailSidebar.index! < updatedScripts.length) {
+                    updatedScripts[regexDetailSidebar.index!] = {
+                      ...updatedScripts[regexDetailSidebar.index!],
+                      ...opts,
+                      flags: (opts.flags ?? updatedScripts[regexDetailSidebar.index!].flags ?? 'g') || 'g'
+                    };
+                  }
+                  return { ...group, scripts: updatedScripts };
                 }
-                return { ...group, scripts: updatedScripts };
+                return group;
+              })
+            );
+
+            // 持久化保存
+            try {
+              const { StorageAdapter } = await import('@/NodeST/nodest/utils/storage-adapter');
+              await StorageAdapter.saveGlobalRegexScriptGroups?.(regexScriptGroups);
+            } catch (e) { }
+          }}
+          onDelete={async () => {
+            if (
+              typeof regexDetailSidebar.index !== 'number' ||
+              regexDetailSidebar.index < 0 ||
+              !selectedRegexGroupId
+            ) return;
+
+            Alert.alert("删除确认", "确定要删除此正则脚本吗？", [
+              { text: "取消", style: "cancel" },
+              {
+                text: "删除",
+                style: "destructive",
+                onPress: () => {
+                  setRegexScriptGroups(groups =>
+                    groups.map(group => {
+                      if (group.id === selectedRegexGroupId) {
+                        const updatedScripts = group.scripts.filter((_, idx) => idx !== regexDetailSidebar.index);
+                        return { ...group, scripts: updatedScripts };
+                      }
+                      return group;
+                    })
+                  );
+
+                  // 持久化保存
+                  (async () => {
+                    try {
+                      const { StorageAdapter } = await import('@/NodeST/nodest/utils/storage-adapter');
+                      await StorageAdapter.saveGlobalRegexScriptGroups?.(regexScriptGroups);
+                    } catch (e) { }
+                  })();
+
+                  handleCloseRegexSidebar();
+                }
               }
-              return group;
-            })
-          );
+            ]);
+          }}
+        />
+      )}
 
-          // 持久化保存
-          try {
-            const { StorageAdapter } = await import('@/NodeST/nodest/utils/storage-adapter');
-            await StorageAdapter.saveGlobalRegexScriptGroups?.(regexScriptGroups);
-          } catch (e) { }
-        }}
-        onDelete={async () => {
-          if (
-            typeof regexDetailSidebar.index !== 'number' ||
-            regexDetailSidebar.index < 0 ||
-            !selectedRegexGroupId
-          ) return;
-
-          Alert.alert("删除确认", "确定要删除此正则脚本吗？", [
-            { text: "取消", style: "cancel" },
-            {
-              text: "删除",
-              style: "destructive",
-              onPress: () => {
-                setRegexScriptGroups(groups =>
-                  groups.map(group => {
-                    if (group.id === selectedRegexGroupId) {
-                      const updatedScripts = group.scripts.filter((_, idx) => idx !== regexDetailSidebar.index);
-                      return { ...group, scripts: updatedScripts };
-                    }
-                    return group;
-                  })
-                );
-
-                // 持久化保存
-                (async () => {
-                  try {
-                    const { StorageAdapter } = await import('@/NodeST/nodest/utils/storage-adapter');
-                    await StorageAdapter.saveGlobalRegexScriptGroups?.(regexScriptGroups);
-                  } catch (e) { }
-                })();
-
-                handleCloseRegexSidebar();
-              }
-            }
-          ]);
-        }}
-      />
+      {/* 其它模态框... */}
+      {/* ...existing code... */}
     </View>
   );
 }
 
 const styles = StyleSheet.create({
   header: {
-    height: 56,
+    height: 60, // 增加高度
     backgroundColor: theme.colors.black,
     flexDirection: 'row',
     alignItems: 'center',
-    paddingHorizontal: 8,
+    paddingHorizontal: 16, // 增加水平间距
     justifyContent: 'space-between',
   },
   headerBtn: {
-    width: 40,
+    width: 44, // 增加按钮宽度
+    height: 44, // 增加按钮高度
     alignItems: 'center',
     justifyContent: 'center',
   },
@@ -2997,12 +3300,14 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     backgroundColor: theme.colors.background,
     borderBottomWidth: 1,
-    borderBottomColor: '#eee',
+    borderBottomColor: '#444',
+    minHeight: 48, // 确保标签高度足够
   },
   tab: {
     flex: 1,
-    paddingVertical: 12,
+    paddingVertical: 14, // 增加垂直内边距
     alignItems: 'center',
+    justifyContent: 'center',
   },
   tabActive: {
     borderBottomWidth: 2,
@@ -3041,13 +3346,14 @@ const styles = StyleSheet.create({
   promptCard: {
     backgroundColor: theme.colors.cardBackground,
     borderRadius: 8,
-    padding: 12,
+    padding: 14, // 原12
     marginBottom: 12,
     elevation: 1,
     shadowColor: '#000',
     shadowOpacity: 0.05,
     shadowRadius: 2,
     shadowOffset: { width: 0, height: 1 },
+    minHeight: 56,
   },
   promptRow: {
     flexDirection: 'row',
@@ -3079,11 +3385,12 @@ const styles = StyleSheet.create({
     backgroundColor: theme.colors.cardBackground,
     borderTopWidth: 1,
     borderTopColor: '#eee',
+    minWidth: 0,
   },
   saveBtn: {
     backgroundColor: theme.colors.primary,
     borderRadius: 8,
-    paddingVertical: 12,
+    paddingVertical: 14, // 增加按钮高度
     alignItems: 'center',
   },
   saveBtnText: {
@@ -3120,8 +3427,9 @@ const styles = StyleSheet.create({
     backgroundColor: theme.colors.cardBackground,
     borderRadius: 10,
     padding: 20,
-    width: '80%',
+    width: '90%', // 原80%
     maxWidth: 400,
+    minWidth: 260,
   },
   modalTitle: {
     fontSize: 18,
@@ -3151,9 +3459,10 @@ const styles = StyleSheet.create({
   },
   modalButton: {
     paddingHorizontal: 20,
-    paddingVertical: 10,
+    paddingVertical: 12, // 增加按钮高度
     borderRadius: 6,
     marginLeft: 10,
+    minWidth: 80, // 确保按钮有足够的宽度
   },
   modalButtonCancel: {
     backgroundColor: '#f0f0f0',
@@ -3176,13 +3485,14 @@ const styles = StyleSheet.create({
     backgroundColor: theme.colors.cardBackground,
     borderRadius: 8,
     marginBottom: 6,
-    paddingHorizontal: 12,
-    paddingVertical: 8,
-    minHeight: 40,
+    paddingHorizontal: 16, // 增加水平内边距
+    paddingVertical: 12, // 增加垂直内边距
+    minHeight: 52, // 增加最小高度
   },
   compactName: {
     flex: 1,
     justifyContent: 'center',
+    paddingVertical: 6, // 增加垂直内边距
   },
   compactNameText: {
     color: theme.colors.text,
@@ -3190,8 +3500,30 @@ const styles = StyleSheet.create({
     fontWeight: '500',
   },
   compactSwitch: {
-    paddingHorizontal: 8,
-    paddingVertical: 4,
+    paddingHorizontal: 12, // 增加水平内边距
+    paddingVertical: 8, // 增加垂直内边距
+  },
+  responsiveRow: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'stretch',
+    minHeight: 0,
+    minWidth: 0,
+  },
+  sidebarContainer: {
+    width: '100%',
+    maxWidth: 500,
+    minWidth: 260,
+    backgroundColor: '#222',
+    borderLeftWidth: 1,
+    borderLeftColor: '#444',
+    height: '100%',
+    alignSelf: 'stretch',
+    overflow: 'hidden',
+    shadowColor: '#000',
+    shadowOpacity: 0.08,
+    shadowRadius: 4,
+    elevation: 2,
   },
 });
 

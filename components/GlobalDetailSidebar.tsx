@@ -32,9 +32,9 @@ interface GlobalDetailSidebarProps {
   name?: string;
   onNameChange?: (text: string) => void;
   onDelete?: () => void;
-  // 新增：正则flags支持
   flags?: string;
   onFlagsChange?: (flags: string) => void;
+  inline?: boolean; // 新增：响应式内联模式
 }
 
 const { width } = Dimensions.get('window');
@@ -54,9 +54,9 @@ const GlobalDetailSidebar: React.FC<GlobalDetailSidebarProps> = ({
   name,
   onNameChange,
   onDelete,
-  // 新增
   flags,
   onFlagsChange,
+  inline = false,
 }) => {
   const [localContent, setLocalContent] = useState(content);
   const [localName, setLocalName] = useState(name || '');
@@ -500,7 +500,6 @@ const GlobalDetailSidebar: React.FC<GlobalDetailSidebarProps> = ({
                 autoCorrect={false}
               />
             </View>
-            {/* 新增：flags 编辑 */}
             <View style={styles.optionRow}>
               <Text style={styles.optionLabel}>标志(flags):</Text>
               <TextInput
@@ -611,6 +610,112 @@ const GlobalDetailSidebar: React.FC<GlobalDetailSidebarProps> = ({
     }
   }, [onDelete, onClose]);
 
+  const sidebarContent = (
+    <Animated.View 
+      style={[
+        styles.modalWrapper,
+        { transform: [{ translateY: translateYValue }] },
+        inline && { 
+          width: '100%',
+          maxWidth: 500,
+          height: '100%',
+          maxHeight: '100%',
+          marginBottom: 0,
+          borderRadius: 0,
+          backgroundColor: '#333',
+        }
+      ]}
+    >
+      <View style={[styles.content, inline && { width: '100%', maxWidth: '100%', height: '100%', maxHeight: '100%' }]}>
+        <View style={styles.header}>
+          <Text style={styles.title}>{title}</Text>
+          <View style={styles.headerButtons}>
+            {onDelete && (
+              <TouchableOpacity 
+                style={styles.headerButton} 
+                onPress={handleDelete}
+                accessibilityLabel="Delete"
+              >
+                <Ionicons name="trash-outline" size={22} color={COLOR_DANGER} />
+              </TouchableOpacity>
+            )}
+            <TouchableOpacity 
+              style={styles.headerButton} 
+              onPress={handleCloseWithKeyboardDismiss}
+              accessibilityLabel="Close"
+            >
+              <Ionicons name="close" size={24} color="#fff" />
+            </TouchableOpacity>
+          </View>
+        </View>
+        
+        <ScrollView style={styles.scrollViewContainer}>
+          {name !== undefined && (
+            <View style={styles.nameContainer}>
+              <Text style={styles.nameLabel}>名称:</Text>
+              <TextInput
+                style={styles.nameInput}
+                value={localName}
+                onChangeText={setLocalName}
+                editable={editable}
+                placeholder="输入名称..."
+                placeholderTextColor="#999"
+              />
+            </View>
+          )}
+
+          {renderEntryOptions()}
+
+          <View style={styles.textContentContainer}>
+            <TouchableOpacity 
+              style={styles.textPreview} 
+              onPress={handleTextPress}
+              disabled={!editable}
+            >
+              <Text style={styles.textPreviewContent} numberOfLines={0}>
+                {localContent || '点击编辑文本...'}
+              </Text>
+            </TouchableOpacity>
+          </View>
+          
+          <View style={{ height: 20 }} />
+        </ScrollView>
+
+        <View style={styles.buttonContainer}>
+          <TouchableOpacity
+            style={[styles.button, styles.cancelButton]}
+            onPress={handleCloseWithKeyboardDismiss}
+          >
+            <Text style={styles.buttonText}>取消</Text>
+          </TouchableOpacity>
+          {editable && (
+            <TouchableOpacity
+              style={[styles.button, styles.saveButton]}
+              onPress={handleSaveWithKeyboardDismiss}
+            >
+              <Text style={styles.buttonText}>保存</Text>
+            </TouchableOpacity>
+          )}
+        </View>
+
+        <TextEditorModal
+          isVisible={showTextEditor}
+          onClose={() => setShowTextEditor(false)}
+          onSave={handleTextSave}
+          initialText={localContent}
+        />
+      </View>
+    </Animated.View>
+  );
+
+  if (inline) {
+    return (
+      <View style={{ flex: 1, backgroundColor: '#222', height: '100%' }}>
+        {sidebarContent}
+      </View>
+    );
+  }
+
   return (
     <Modal
       visible={isVisible}
@@ -620,92 +725,7 @@ const GlobalDetailSidebar: React.FC<GlobalDetailSidebarProps> = ({
       supportedOrientations={['portrait', 'landscape']}
     >
       <BlurView intensity={20} tint="dark" style={styles.container}>
-        <Animated.View 
-          style={[
-            styles.modalWrapper,
-            { transform: [{ translateY: translateYValue }] }
-          ]}
-        >
-          <View style={styles.content}>
-            <View style={styles.header}>
-              <Text style={styles.title}>{title}</Text>
-              <View style={styles.headerButtons}>
-                {onDelete && (
-                  <TouchableOpacity 
-                    style={styles.headerButton} 
-                    onPress={handleDelete}
-                    accessibilityLabel="Delete"
-                  >
-                    <Ionicons name="trash-outline" size={22} color={COLOR_DANGER} />
-                  </TouchableOpacity>
-                )}
-                <TouchableOpacity 
-                  style={styles.headerButton} 
-                  onPress={handleCloseWithKeyboardDismiss}
-                  accessibilityLabel="Close"
-                >
-                  <Ionicons name="close" size={24} color="#fff" />
-                </TouchableOpacity>
-              </View>
-            </View>
-            
-            <ScrollView style={styles.scrollViewContainer}>
-              {name !== undefined && (
-                <View style={styles.nameContainer}>
-                  <Text style={styles.nameLabel}>名称:</Text>
-                  <TextInput
-                    style={styles.nameInput}
-                    value={localName}
-                    onChangeText={setLocalName}
-                    editable={editable}
-                    placeholder="输入名称..."
-                    placeholderTextColor="#999"
-                  />
-                </View>
-              )}
-
-              {renderEntryOptions()}
-
-              <View style={styles.textContentContainer}>
-                <TouchableOpacity 
-                  style={styles.textPreview} 
-                  onPress={handleTextPress}
-                  disabled={!editable}
-                >
-                  <Text style={styles.textPreviewContent} numberOfLines={0}>
-                    {localContent || '点击编辑文本...'}
-                  </Text>
-                </TouchableOpacity>
-              </View>
-              
-              <View style={{ height: 20 }} />
-            </ScrollView>
-
-            <View style={styles.buttonContainer}>
-              <TouchableOpacity
-                style={[styles.button, styles.cancelButton]}
-                onPress={handleCloseWithKeyboardDismiss}
-              >
-                <Text style={styles.buttonText}>取消</Text>
-              </TouchableOpacity>
-              {editable && (
-                <TouchableOpacity
-                  style={[styles.button, styles.saveButton]}
-                  onPress={handleSaveWithKeyboardDismiss}
-                >
-                  <Text style={styles.buttonText}>保存</Text>
-                </TouchableOpacity>
-              )}
-            </View>
-
-            <TextEditorModal
-              isVisible={showTextEditor}
-              onClose={() => setShowTextEditor(false)}
-              onSave={handleTextSave}
-              initialText={localContent}
-            />
-          </View>
-        </Animated.View>
+        {sidebarContent}
       </BlurView>
     </Modal>
   );

@@ -28,9 +28,10 @@ import { GeminiAdapter } from '@/NodeST/nodest/utils/gemini-adapter';
 import Mem0Service from '@/src/memory/services/Mem0Service';
 import ImageManager from '@/utils/ImageManager';
 import { StorageAdapter } from '@/NodeST/nodest/utils/storage-adapter';
-import { updateAuthorNoteDataForCharacter } from '@/app/pages/character-detail'; // 导入新方法
-import { InputImagen } from '@/services/InputImagen'; // 导入InputImagen服务
-import { CloudServiceProvider } from '@/services/cloud-service-provider'; // 导入云服务提供商
+import { updateAuthorNoteDataForCharacter } from '@/app/pages/character-detail'; 
+import { InputImagen } from '@/services/InputImagen'; 
+import { CloudServiceProvider } from '@/services/cloud-service-provider'; 
+import { getApiSettings } from '@/utils/settings-helper'; 
 interface ChatInputProps {
   onSendMessage: (text: string, sender: 'user' | 'bot', isLoading?: boolean, metadata?: Record<string, any>) => void;
   selectedConversationId: string | null;
@@ -263,26 +264,19 @@ const ChatInput: React.FC<ChatInputProps> = ({
       
       onSendMessage('', 'bot', true);
       
-      console.log('[ChatInput] 开始同一角色继续对话处理...');
-      console.log(`[ChatInput] 用户消息: "${messageToSend}"`);
-      console.log(`[ChatInput] 会话ID: ${conversationId}`);
-      console.log(`[ChatInput] 角色ID: ${selectedCharacter?.id}`);
-      console.log(`[ChatInput] 角色名称: ${selectedCharacter?.name}`);
-      console.log(`[ChatInput] API提供商: ${user?.settings?.chat.apiProvider || 'gemini'}`);
+      // console.log('[ChatInput] 开始同一角色继续对话处理...');
+      // console.log(`[ChatInput] 用户消息: "${messageToSend}"`);
+      // console.log(`[ChatInput] 会话ID: ${conversationId}`);
+      // console.log(`[ChatInput] 角色ID: ${selectedCharacter?.id}`);
+      // console.log(`[ChatInput] 角色名称: ${selectedCharacter?.name}`);
+      // console.log(`[ChatInput] API提供商: ${user?.settings?.chat.apiProvider || 'gemini'}`);
       
       const result = await NodeSTManager.processChatMessage({
         userMessage: messageToSend,
         status: '同一角色继续对话',
         conversationId: conversationId,
         apiKey: user?.settings?.chat.characterApiKey || '',
-        apiSettings: {
-          apiProvider: user?.settings?.chat.apiProvider || 'gemini',
-          openrouter: user?.settings?.chat.openrouter,
-          OpenAIcompatible: user?.settings?.chat.OpenAIcompatible, // 新增
-          useGeminiModelLoadBalancing: user?.settings?.chat.useGeminiModelLoadBalancing,
-          useGeminiKeyRotation: user?.settings?.chat.useGeminiKeyRotation,
-          additionalGeminiKeys: user?.settings?.chat.additionalGeminiKeys,
-        },
+        apiSettings: getApiSettings(), 
         // 新增：传递gemini模型和retryDelay参数
         geminiOptions: {
           geminiPrimaryModel: user?.settings?.chat.geminiPrimaryModel,
@@ -361,14 +355,7 @@ const ChatInput: React.FC<ChatInputProps> = ({
         status: '同一角色继续对话',
         conversationId: conversationId,
         apiKey: user?.settings?.chat.characterApiKey || '',
-        apiSettings: {
-          apiProvider: user?.settings?.chat.apiProvider || 'gemini',
-          openrouter: user?.settings?.chat.openrouter,
-          OpenAIcompatible: user?.settings?.chat.OpenAIcompatible,
-          useGeminiModelLoadBalancing: user?.settings?.chat.useGeminiModelLoadBalancing,
-          useGeminiKeyRotation: user?.settings?.chat.useGeminiKeyRotation,
-          additionalGeminiKeys: user?.settings?.chat.additionalGeminiKeys,
-        },
+        apiSettings: getApiSettings(),
         geminiOptions: {
           geminiPrimaryModel: user?.settings?.chat.geminiPrimaryModel,
           geminiBackupModel: user?.settings?.chat.geminiBackupModel,

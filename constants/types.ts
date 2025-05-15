@@ -36,7 +36,6 @@ export interface CharactersContextType {
   addMessage: (conversationId: string, message: Message) => Promise<void>;
   clearMessages: (conversationId: string) => Promise<void>;
   removeMessage: (conversationId: string, messageId: string) => Promise<void>;
-  memos: Memo[];
   addMemo: (content: string) => Promise<void>;
   updateMemo: (id: string, content: string) => Promise<void>;
   deleteMemo: (id: string) => Promise<void>;
@@ -50,7 +49,6 @@ export interface CharactersContextType {
   // 摇篮系统相关方法
   updateCradleSettings: (settings: CradleSettings) => Promise<void>;
   getCradleSettings: () => CradleSettings;
-  clearTransientMessages(conversationId: string): Promise<void>
   // 摇篮系统检查图片更新
   checkCradleGeneration: () => {
     readyCharactersCount: number;
