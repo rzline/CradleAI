@@ -14,6 +14,7 @@ import { Ionicons, MaterialIcons } from '@expo/vector-icons';
 import { Group } from '@/src/group/group-types';
 import { GroupScheduler } from '@/src/group/group-scheduler';
 import * as ImagePicker from 'expo-image-picker';
+import { disbandGroup } from '@/src/group'; // 新增
 
 const SIDEBAR_WIDTH = 280;
 
@@ -31,6 +32,7 @@ interface GroupSettingsSidebarProps {
   selectedGroup: Group | null;
   currentUser: any;
   onGroupBackgroundChanged?: (groupId: string, newBackground: string | undefined) => void;
+  onGroupDisbanded?: (disbandedGroupId: string) => void; // 新增
 }
 
 const GroupSettingsSidebar: React.FC<GroupSettingsSidebarProps> = ({
@@ -40,6 +42,7 @@ const GroupSettingsSidebar: React.FC<GroupSettingsSidebarProps> = ({
   selectedGroup,
   currentUser,
   onGroupBackgroundChanged,
+  onGroupDisbanded, // 新增
 }) => {
   const [settings, setSettings] = useState<GroupChatSettings>({
     dailyMessageLimit: 50,
@@ -122,7 +125,7 @@ const GroupSettingsSidebar: React.FC<GroupSettingsSidebarProps> = ({
 
   const isOwner = selectedGroup && currentUser && selectedGroup.groupOwnerId === currentUser.id;
 
-  const handleDisbandGroup = () => {
+  const handleDisbandGroup = async () => {
     if (!selectedGroup) return;
     Alert.alert(
       "解散群聊",
@@ -132,8 +135,18 @@ const GroupSettingsSidebar: React.FC<GroupSettingsSidebarProps> = ({
         {
           text: "确定解散",
           style: "destructive",
-          onPress: () => {
-            onClose();
+          onPress: async () => {
+            try {
+              const ok = await disbandGroup(currentUser, selectedGroup.groupId);
+              if (ok) {
+                if (onGroupDisbanded) onGroupDisbanded(selectedGroup.groupId);
+                onClose();
+              } else {
+                Alert.alert('解散失败', '解散群聊失败，请重试');
+              }
+            } catch (e) {
+              Alert.alert('解散失败', '解散群聊失败，请重试');
+            }
           }
         }
       ]

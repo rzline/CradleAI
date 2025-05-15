@@ -37,7 +37,8 @@ export interface SidebarProps {
   animationValue?: Animated.Value;
   currentUser: User;
   disbandedGroups?: string[];
-  onGroupsUpdated?: (groups: Group[]) => void; // Add this line
+  onGroupsUpdated?: (groups: Group[]) => void;
+  onGroupDisbanded?: (disbandedGroupId: string) => void; // 新增
 }
 
 interface ConversationItem {
@@ -57,7 +58,8 @@ const Sidebar: React.FC<SidebarProps> = ({
   animationValue,
   currentUser,
   disbandedGroups = [],
-  onGroupsUpdated, // Add this line
+  onGroupsUpdated,
+  onGroupDisbanded, // 新增
 }) => {
   const router = useRouter();
   const [searchQuery, setSearchQuery] = useState('');
@@ -184,6 +186,30 @@ const Sidebar: React.FC<SidebarProps> = ({
       } else {
         return [...prevSelected, character];
       }
+    });
+  };
+
+  // 新增: 处理群聊解散
+  const handleGroupDisbanded = async (disbandedGroupId: string) => {
+    // 移除该群聊
+    setUserGroups(prevGroups => {
+      const updated = prevGroups.filter(g => g.groupId !== disbandedGroupId);
+      // 自动切换到上一个会话（优先私聊，没有则第一个群聊，没有则null）
+      let nextId: string | null = null;
+      if (selectedConversationId === disbandedGroupId) {
+        // 先找私聊
+        if (conversations.length > 0) {
+          nextId = conversations[0].id;
+        } else if (updated.length > 0) {
+          nextId = updated[0].groupId;
+        }
+        if (nextId) {
+          onSelectConversation(nextId);
+        }
+      }
+      // 通知父组件
+      if (onGroupsUpdated) onGroupsUpdated(updated);
+      return updated;
     });
   };
 

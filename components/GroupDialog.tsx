@@ -33,6 +33,7 @@ interface GroupDialogProps {
   currentUser: User;
   groupMembers: Character[];
   isGroupDisbanded?: boolean; // 添加群组是否已解散的标志
+  onGroupDisbanded?: (disbandedGroupId: string) => void; // 新增
 }
 
 // Constants for virtualization
@@ -50,6 +51,7 @@ const GroupDialog: React.FC<GroupDialogProps> = ({
   currentUser,
   groupMembers,
   isGroupDisbanded = false, // 默认为false
+  onGroupDisbanded, // 新增
 }) => {
   // Reference to FlatList for scrolling
   const flatListRef = useRef<FlatList>(null);
