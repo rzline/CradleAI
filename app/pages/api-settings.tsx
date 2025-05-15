@@ -675,7 +675,7 @@ const ApiSettings = () => {
         body
       });
 
-      if (!resp.ok) {
+      if (!resp.ok) { 
         let errMsg = '';
         try {
           const errJson = await resp.json();
@@ -686,7 +686,7 @@ const ApiSettings = () => {
         Alert.alert('连接失败', `HTTP ${resp.status}: ${errMsg}`);
         return;
       }
-
+//
       const data = await resp.json();
       const content =
         data?.choices?.[0]?.message?.content ||
