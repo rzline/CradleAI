@@ -2669,13 +2669,13 @@ useEffect(() => {
               </Suspense>
 
                             {/* 浮动WebView测试按钮 */}
-              <TouchableOpacity
+              {/* <TouchableOpacity
                 style={styles.floatingLogButton}
                 onPress={handleWebViewTest}
                 activeOpacity={0.85}
               >
                 <Text style={styles.floatingLogButtonText}>Web</Text>
-              </TouchableOpacity>
+              </TouchableOpacity> */}
             </View>
           </KeyboardAvoidingView>
         </Animated.View>

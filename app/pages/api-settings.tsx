@@ -1303,7 +1303,7 @@ const ApiSettings = () => {
                   </View>
                 </View>
 
-                {/* 新增 temperature 和 max tokens 设置 */}
+                {/* 新增 temperature 和 max tokens 设置
                 <View style={{ marginTop: 24 }}>
                   <Text style={styles.inputLabel}>Temperature</Text>
                   <TextInput
@@ -1335,7 +1335,7 @@ const ApiSettings = () => {
                     placeholder="8192"
                     placeholderTextColor="#999"
                   />
-                </View>
+                </View> */}
               </View>
             </View>
           )}
