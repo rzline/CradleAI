@@ -241,7 +241,7 @@ export default function GlobalSettingsPage() {
   // 新增：重命名模板弹窗状态
   const [renameModal, setRenameModal] = useState<{
     visible: boolean;
-    type: 'preset' | 'worldbook';
+    type: 'preset' | 'worldbook' | 'regexGroup';
     id: string;
     name: string;
   }>({ visible: false, type: 'preset', id: '', name: '' });
@@ -1075,22 +1075,56 @@ export default function GlobalSettingsPage() {
     await AsyncStorage.setItem('nodest_global_regex_enabled', value ? 'true' : 'false');
   };
   // 下拉重命名
-  const handleRenameTemplate = (type: 'preset' | 'worldbook', id: string, name: string) => {
+  const handleRenameTemplate = (type: 'preset' | 'worldbook' | 'regexGroup', id: string, name: string) => {
     setRenameModal({ visible: true, type, id, name });
   };
-  const handleRenameModalConfirm = () => {
+
+  const handleRenameModalConfirm = async () => {
     if (renameModal.type === 'preset') {
       setGlobalPresetList(list =>
         list.map(tpl =>
           tpl.id === renameModal.id ? { ...tpl, name: renameModal.name.trim() || tpl.name } : tpl
         )
       );
-    } else {
+      // 持久化保存
+      try {
+        const { StorageAdapter } = await import('@/NodeST/nodest/utils/storage-adapter');
+        await StorageAdapter.saveGlobalPresetList?.(
+          globalPresetList.map(tpl =>
+            tpl.id === renameModal.id ? { ...tpl, name: renameModal.name.trim() || tpl.name } : tpl
+          )
+        );
+      } catch {}
+    } else if (renameModal.type === 'worldbook') {
       setGlobalWorldbookList(list =>
         list.map(tpl =>
           tpl.id === renameModal.id ? { ...tpl, name: renameModal.name.trim() || tpl.name } : tpl
         )
       );
+      // 持久化保存
+      try {
+        const { StorageAdapter } = await import('@/NodeST/nodest/utils/storage-adapter');
+        await StorageAdapter.saveGlobalWorldbookList?.(
+          globalWorldbookList.map(tpl =>
+            tpl.id === renameModal.id ? { ...tpl, name: renameModal.name.trim() || tpl.name } : tpl
+          )
+        );
+      } catch {}
+    } else if (renameModal.type === 'regexGroup') {
+      setRegexScriptGroups(groups =>
+        groups.map(g =>
+          g.id === renameModal.id ? { ...g, name: renameModal.name.trim() || g.name } : g
+        )
+      );
+      // 持久化保存
+      try {
+        const { StorageAdapter } = await import('@/NodeST/nodest/utils/storage-adapter');
+        await StorageAdapter.saveGlobalRegexScriptGroups?.(
+          regexScriptGroups.map(g =>
+            g.id === renameModal.id ? { ...g, name: renameModal.name.trim() || g.name } : g
+          )
+        );
+      } catch {}
     }
     setRenameModal({ visible: false, type: 'preset', id: '', name: '' });
   };
@@ -1797,7 +1831,7 @@ export default function GlobalSettingsPage() {
                 </TouchableOpacity>
                 {/* 重命名按钮 */}
                 <TouchableOpacity
-                  onPress={() => handleRenameTemplate('preset', group.id, group.name)}
+                  onPress={() => handleRenameTemplate('regexGroup', group.id, group.name)}
                   style={{ padding: 6 }}
                   hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
                 >
@@ -1927,14 +1961,13 @@ export default function GlobalSettingsPage() {
           style={styles.headerBtn} 
           hitSlop={{ top: 15, bottom: 15, left: 15, right: 15 }}
         >
-          <Ionicons name="arrow-back" size={22} color="#fff" />
+
         </TouchableOpacity>
-        <Text style={styles.headerTitle}>全局设置</Text>
         <TouchableOpacity 
           style={styles.headerBtn} 
           hitSlop={{ top: 15, bottom: 15, left: 15, right: 15 }}
         >
-          <Ionicons name="cloud-upload-outline" size={22} color="#fff" />
+
         </TouchableOpacity>
       </View>
 
@@ -2247,7 +2280,8 @@ export default function GlobalSettingsPage() {
                     <Ionicons name="duplicate-outline" size={22} color={theme.colors.primary} />
                   </TouchableOpacity>
                   {/* 新增：导入按钮 */}
-                  <TouchableOpacity onPress={handleImportWorldbook} style={{ marginRight: 8 }} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
+                  <TouchableOpacity onPress={handleImportWorldbook} style={{ marginRight: 8 }} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+                  >
                     <Ionicons name="download-outline" size={22} color={theme.colors.primary} />
                   </TouchableOpacity>
                   <TouchableOpacity onPress={handleAddWorldbookEntry} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
