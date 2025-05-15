@@ -1,0 +1,58 @@
+name: React Native Android Build (arm64)
+
+on:
+  push:
+    branches:
+      - main
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v3
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v3
+        with:
+          node-version: 19.x
+
+      - name: Install dependencies
+        run: npm install
+
+      # 恢复 Gradle 缓存
+      - name: Restore Gradle Cache
+        uses: actions/cache@v3
+        with:
+          path: |
+            ~/.gradle/caches
+            ~/.gradle/wrapper
+          key: ${{ runner.os }}-gradle-${{ hashFiles('android/gradle/wrapper/gradle-wrapper.properties') }}-${{ hashFiles('android/build.gradle') }}-${{ hashFiles('android/app/build.gradle') }}
+          restore-keys: |
+            ${{ runner.os }}-gradle-
+
+      # 如果您选择在 CI 中生成原生目录，保留此步骤
+      # 如果您已将 android 和 ios 目录提交到仓库，请删除下面这一步
+      - name: Run Expo Prebuild
+        run: npx expo prebuild
+
+      # 构建 Android (运行标准的 assembleRelease 任务)
+      - name: Build Android Release
+        run: cd android && ./gradlew assembleRelease
+
+      # 保存 Gradle 缓存
+      - name: Save Gradle Cache
+        uses: actions/cache@v3
+        with:
+          path: |
+            ~/.gradle/caches
+            ~/.gradle/wrapper
+          key: ${{ runner.os }}-gradle-${{ hashFiles('android/gradle/wrapper/gradle-wrapper.properties') }}-${{ hashFiles('android/build.gradle') }}-${{ hashFiles('android/app/build.gradle') }}
+
+      # 上传 Android 构建产物 (实际生成的 APK 文件)
+      - name: Upload Android Release APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: android-release-apk # 修改产物名称以反映是单个 APK
+          # **根据 List Build Output 步骤的输出，将 path 设置为实际生成的 APK 文件路径**
+          path: android/app/build/outputs/apk/release/app-release.apk
