@@ -1853,7 +1853,7 @@ export default function GlobalSettingsPage() {
   );
 
   // ======= 保存 =======
-  const handleSave = async () => {
+ const handleSave = async () => {
     setIsSaving(true);
     try {
       // 合并 FIXED 条目
@@ -1864,27 +1864,27 @@ export default function GlobalSettingsPage() {
         prompt_order: [promptOrder]
       };
 
-      // 更新当前模板内容
-      setGlobalPresetList(list =>
-        list.map(tpl =>
-          tpl.id === selectedPresetId
-            ? { ...tpl, presetJson: normalizedPresetJson }
-            : tpl
-        )
+      // === 修正：保存时用最新的 presetEntries 更新 globalPresetList ===
+      const updatedGlobalPresetList = globalPresetList.map(tpl =>
+        tpl.id === selectedPresetId
+          ? { ...tpl, presetJson: normalizedPresetJson }
+          : tpl
       );
-      setGlobalWorldbookList(list =>
-        list.map(tpl =>
-          tpl.id === selectedWorldbookId
-            ? { ...tpl, worldbookJson: worldbookConfig.worldbookJson }
-            : tpl
-        )
+      setGlobalPresetList(updatedGlobalPresetList);
+
+      // 世界书同理
+      const updatedGlobalWorldbookList = globalWorldbookList.map(tpl =>
+        tpl.id === selectedWorldbookId
+          ? { ...tpl, worldbookJson: worldbookConfig.worldbookJson }
+          : tpl
       );
+      setGlobalWorldbookList(updatedGlobalWorldbookList);
 
       // 保存所有模板和当前选中id
       const { StorageAdapter } = await import('@/NodeST/nodest/utils/storage-adapter');
-      await StorageAdapter.saveGlobalPresetList?.(globalPresetList);
+      await StorageAdapter.saveGlobalPresetList?.(updatedGlobalPresetList);
       await StorageAdapter.saveSelectedGlobalPresetId?.(selectedPresetId);
-      await StorageAdapter.saveGlobalWorldbookList?.(globalWorldbookList);
+      await StorageAdapter.saveGlobalWorldbookList?.(updatedGlobalWorldbookList);
       await StorageAdapter.saveSelectedGlobalWorldbookId?.(selectedWorldbookId);
 
       // === 关键：保存正则脚本组时给每个脚本加上bindType/bindCharacterId ===
@@ -1929,6 +1929,8 @@ export default function GlobalSettingsPage() {
       setIsSaving(false);
     }
   };
+
+
   const renderCompactWorldbookEntry = (key: string, entry: WorldBookEntry, idx: number) => (
     <View key={key} style={styles.compactCard}>
       <TouchableOpacity
