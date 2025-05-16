@@ -4,17 +4,21 @@ on:
   push:
     branches:
       - main
+    tags:
+      - 'v*' # 当推送带v开头的标签时触发，例如v1.0.0
 
 jobs:
   build:
     runs-on: ubuntu-latest
-    strategy:
-      matrix:
-        arch: [arm64-v8a, armeabi-v7a, x86, x86_64]
-    
     steps:
       - name: Checkout code
         uses: actions/checkout@v3
+        with:
+          fetch-depth: 0 # 获取完整历史用于自动版本生成
+
+      - name: Get version from package.json
+        id: package-version
+        uses: martinbeentjes/npm-get-version-action@main
 
       - name: Setup Node.js
         uses: actions/setup-node@v3
@@ -31,9 +35,8 @@ jobs:
           path: |
             ~/.gradle/caches
             ~/.gradle/wrapper
-          key: ${{ runner.os }}-gradle-${{ matrix.arch }}-${{ hashFiles('android/gradle/wrapper/gradle-wrapper.properties') }}-${{ hashFiles('android/build.gradle') }}-${{ hashFiles('android/app/build.gradle') }}
+          key: ${{ runner.os }}-gradle-${{ hashFiles('android/gradle/wrapper/gradle-wrapper.properties') }}-${{ hashFiles('android/build.gradle') }}-${{ hashFiles('android/app/build.gradle') }}
           restore-keys: |
-            ${{ runner.os }}-gradle-${{ matrix.arch }}-
             ${{ runner.os }}-gradle-
 
       # 如果您选择在 CI 中生成原生目录，保留此步骤
@@ -41,72 +44,134 @@ jobs:
       - name: Run Expo Prebuild
         run: npx expo prebuild
 
-      # 修改 build.gradle 以仅构建特定架构
-      - name: Configure build for specific architecture
+      # 修改 build.gradle 以支持按架构拆分 APK
+      - name: Configure build.gradle for split APKs
         run: |
-          echo "配置构建为仅支持 ${{ matrix.arch }} 架构"
-          sed -i '/ndk {/,/}/c\            ndk {\n                abiFilters "${{ matrix.arch }}"\n            }' android/app/build.gradle
-
-      # 构建 Android 特定架构的 APK
-      - name: Build Android Release for ${{ matrix.arch }}
-        run: cd android && ./gradlew assembleRelease
-
-      # 上传特定架构的 APK
-      - name: Upload Android Release APK for ${{ matrix.arch }}
-        uses: actions/upload-artifact@v4
-        with:
-          name: android-release-${{ matrix.arch }}
-          path: android/app/build/outputs/apk/release/app-release.apk
+          echo "配置 build.gradle 以支持按架构拆分 APK"
+          # 添加 splits 配置到 android/app/build.gradle
+          BUILD_GRADLE="android/app/build.gradle"
           
-  build-universal:
-    runs-on: ubuntu-latest
-    needs: build
-    steps:
-      - name: Checkout code
-        uses: actions/checkout@v3
+          # 查找 android { 块的结束位置并插入我们的配置
+          LINE_NUM=$(grep -n "android {" $BUILD_GRADLE | head -1 | cut -d: -f1)
+          LINE_NUM=$((LINE_NUM + 1))
+          
+          # 准备要插入的配置
+          SPLITS_CONFIG="    splits {\n        abi {\n            enable true\n            reset()\n            include 'arm64-v8a', 'armeabi-v7a', 'x86', 'x86_64'\n            universalApk true\n        }\n    }\n"
+          
+          # 使用 sed 在指定行后插入配置
+          sed -i "${LINE_NUM}i\\${SPLITS_CONFIG}" $BUILD_GRADLE
+          
+          # 添加自定义APK文件名配置
+          VARIANT_FILTER="    // 自定义每个变体的输出文件名\n    applicationVariants.all { variant ->\n        variant.outputs.each { output ->\n            def versionName = \"${{ steps.package-version.outputs.current-version }}\"\n            def abiName = output.getFilter(com.android.build.OutputFile.ABI)\n            if (abiName == null) abiName = \"universal\"\n            def outputFileName = \"app-${versionName}-${abiName}.apk\"\n            output.outputFileName = outputFileName\n        }\n    }\n"
+          
+          # 在 android { 块结尾前插入
+          END_LINE_NUM=$(grep -n "}" $BUILD_GRADLE | head -1 | cut -d: -f1)
+          END_LINE_NUM=$((END_LINE_NUM - 1))
+          sed -i "${END_LINE_NUM}i\\${VARIANT_FILTER}" $BUILD_GRADLE
+          
+          # 显示修改后的文件内容进行确认
+          echo "Modified build.gradle:"
+          cat $BUILD_GRADLE
 
-      - name: Setup Node.js
-        uses: actions/setup-node@v3
-        with:
-          node-version: 19.x
+      # 构建所有架构的 APK
+      - name: Build Android Release APKs
+        run: cd android && ./gradlew assembleRelease --info
 
-      - name: Install dependencies
-        run: npm install
+      # 列出构建产物
+      - name: List Build Outputs
+        run: find android/app/build/outputs -type f | grep '.apk'
 
-      # 恢复 Gradle 缓存
-      - name: Restore Gradle Cache
-        uses: actions/cache@v3
-        with:
-          path: |
-            ~/.gradle/caches
-            ~/.gradle/wrapper
-          key: ${{ runner.os }}-gradle-universal-${{ hashFiles('android/gradle/wrapper/gradle-wrapper.properties') }}-${{ hashFiles('android/build.gradle') }}-${{ hashFiles('android/app/build.gradle') }}
-          restore-keys: |
-            ${{ runner.os }}-gradle-universal-
-            ${{ runner.os }}-gradle-
-
-      # 如果您选择在 CI 中生成原生目录，保留此步骤
-      - name: Run Expo Prebuild
-        run: npx expo prebuild
-
-      # 构建通用 APK (包含所有架构)
-      - name: Build Universal Android Release
-        run: cd android && ./gradlew assembleRelease
-
-      # 上传通用 APK
-      - name: Upload Universal Android Release APK
+      # 将所有构建的 APK 上传为工作流产物
+      - name: Upload Android Release APKs as Artifacts
         uses: actions/upload-artifact@v4
         with:
-          name: android-release-universal
-          path: android/app/build/outputs/apk/release/app-release.apk
+          name: android-release-apks
+          path: android/app/build/outputs/apk/release/*.apk
 
-      # 生成包含所有架构的 AAB (Android App Bundle)
+      # 构建 AAB 文件
       - name: Build Android App Bundle
         run: cd android && ./gradlew bundleRelease
+      
+      # 重命名 AAB 文件添加版本号
+      - name: Rename AAB file
+        run: |
+          VERSION=${{ steps.package-version.outputs.current-version }}
+          mkdir -p artifacts
+          cp android/app/build/outputs/bundle/release/app-release.aab artifacts/app-${VERSION}.aab
 
       # 上传 AAB 文件
       - name: Upload Android App Bundle
         uses: actions/upload-artifact@v4
         with:
           name: android-release-bundle
-          path: android/app/build/outputs/bundle/release/app-release.aab
+          path: artifacts/app-${{ steps.package-version.outputs.current-version }}.aab
+
+      # 将所有构建产物准备用于 Release
+      - name: Prepare artifacts for Release
+        if: startsWith(github.ref, 'refs/tags/')
+        run: |
+          mkdir -p release-artifacts
+          cp android/app/build/outputs/apk/release/*.apk release-artifacts/
+          cp artifacts/app-${{ steps.package-version.outputs.current-version }}.aab release-artifacts/
+
+      # 上传所有产物到工作空间以供 Release 使用
+      - name: Upload artifacts to workspace for Release
+        if: startsWith(github.ref, 'refs/tags/')
+        uses: actions/upload-artifact@v4
+        with:
+          name: release-artifacts
+          path: release-artifacts/
+
+  create-release:
+    needs: [build]
+    runs-on: ubuntu-latest
+    # 只在推送tag时创建release
+    if: startsWith(github.ref, 'refs/tags/')
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v3
+
+      - name: Get version from tag
+        id: get_version
+        run: echo "VERSION=${GITHUB_REF#refs/tags/}" >> $GITHUB_OUTPUT
+
+      # 下载所有构建产物
+      - name: Download all build artifacts
+        uses: actions/download-artifact@v4
+        with:
+          name: release-artifacts
+          path: release-artifacts
+
+      # 列出所有将要发布的文件
+      - name: List files to be released
+        run: ls -la release-artifacts/
+
+      # 生成发布说明
+      - name: Generate Release Notes
+        id: release_notes
+        run: |
+          echo "## React Native App Release ${{ steps.get_version.outputs.VERSION }}" > RELEASE_NOTES.md
+          echo "" >> RELEASE_NOTES.md
+          echo "### APK文件" >> RELEASE_NOTES.md
+          echo "- **通用APK**: 适用于所有设备，文件较大" >> RELEASE_NOTES.md
+          echo "- **特定架构APK**: 更小的文件体积，请选择适合您设备的版本" >> RELEASE_NOTES.md
+          echo "  - arm64-v8a: 适用于新款64位ARM设备" >> RELEASE_NOTES.md
+          echo "  - armeabi-v7a: 适用于大多数32位ARM设备" >> RELEASE_NOTES.md
+          echo "  - x86: 适用于部分32位Intel设备和模拟器" >> RELEASE_NOTES.md
+          echo "  - x86_64: 适用于部分64位Intel设备和模拟器" >> RELEASE_NOTES.md
+          echo "" >> RELEASE_NOTES.md
+          echo "### AAB文件" >> RELEASE_NOTES.md
+          echo "- 用于Google Play商店发布" >> RELEASE_NOTES.md
+
+      # 创建GitHub Release
+      - name: Create Release
+        id: create_release
+        uses: softprops/action-gh-release@v1
+        with:
+          name: Release ${{ steps.get_version.outputs.VERSION }}
+          body_path: RELEASE_NOTES.md
+          draft: false
+          prerelease: false
+          files: release-artifacts/*
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
