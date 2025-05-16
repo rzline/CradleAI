@@ -104,7 +104,7 @@ export class NodeSTCore {
         characterId?: string
         
     ): string {
-        console.log(`[全局正则] 应用脚本，文本长度: ${text.length}, 脚本数量: ${regexScripts?.length || 0}, 位置: ${placement}`);
+        // console.log(`[全局正则] 应用脚本，文本长度: ${text.length}, 脚本数量: ${regexScripts?.length || 0}, 位置: ${placement}`);
         if (!Array.isArray(regexScripts) || typeof text !== 'string') return text;
         let result = text;
         for (const script of regexScripts) {
@@ -115,22 +115,22 @@ export class NodeSTCore {
                 // groupBindCharacterId: string | undefined
                 // 兼容旧数据：如果没有groupBindType，默认全部可用
                 if (script.groupBindType === 'all') {
-                 console.log(`[全局正则][绑定检查] 脚本${script.scriptName} 绑定类型=all，允许应用`);
+                //  console.log(`[全局正则][绑定检查] 脚本${script.scriptName} 绑定类型=all，允许应用`);
                     
                     // 全部绑定，允许
                 } else if (script.groupBindType === 'character') {
                     if (!characterId || script.groupBindCharacterId !== characterId) {
-                console.log(`[全局正则][绑定检查] 跳过脚本${script.scriptName}，绑定角色ID=${script.groupBindCharacterId}，当前角色ID=${characterId}`);
+                // console.log(`[全局正则][绑定检查] 跳过脚本${script.scriptName}，绑定角色ID=${script.groupBindCharacterId}，当前角色ID=${characterId}`);
 
                         continue;
                     }
                 } else if (typeof script.groupBindType !== 'undefined') {
-                    console.log(`[全局正则][绑定检查] 跳过脚本${script.scriptName}，未知绑定类型=${script.groupBindType}`);
+                    // console.log(`[全局正则][绑定检查] 跳过脚本${script.scriptName}，未知绑定类型=${script.groupBindType}`);
                     // 其它未知类型，跳过
                     continue;
                 }else {
             // === 新增：groupBindType为undefined时也输出日志 ===
-            console.log(`[全局正则][绑定检查] 脚本${script.scriptName} 未指定绑定类型（groupBindType=undefined），默认允许应用`);
+            // console.log(`[全局正则][绑定检查] 脚本${script.scriptName} 未指定绑定类型（groupBindType=undefined），默认允许应用`);
         }
                 if (script.disabled) continue;
                 if (!script.placement || !script.placement.includes(placement)) continue;
@@ -155,11 +155,11 @@ export class NodeSTCore {
                 const before = result;
                 const regex = new RegExp(pattern, flags);
                 result = result.replace(regex, replaceString);
-                if (before !== result) {
-                    console.log(`[全局正则] 应用脚本: ${script.scriptName}，查找: ${pattern}，替换为: ${replaceString}，flags: ${flags}，placement: ${script.placement}，原文: ${before}，结果: ${result}`);
-                } else {
-                    console.log(`[全局正则] 脚本: ${script.scriptName} 未匹配内容，原文未变。`);
-                }
+                // if (before !== result) {
+                //     // console.log(`[全局正则] 应用脚本: ${script.scriptName}，查找: ${pattern}，替换为: ${replaceString}，flags: ${flags}，placement: ${script.placement}，原文: ${before}，结果: ${result}`);
+                // } else {
+                //     // console.log(`[全局正则] 脚本: ${script.scriptName} 未匹配内容，原文未变。`);
+                // }
             } catch (e) {
                 console.warn('[NodeSTCore][GlobalRegex] 正则脚本执行异常:', script?.scriptName, e);
                 continue;
@@ -214,7 +214,7 @@ export class NodeSTCore {
                 await this.saveJson(this.getStorageKey(conversationId, '_history'), summarized);
                 return true;
             } catch (e) {
-                console.error('[NodeSTCore] summarizeMemoryNow error:', e);
+                // console.error('[NodeSTCore] summarizeMemoryNow error:', e);
                 return false;
             }
         }
@@ -297,7 +297,7 @@ export class NodeSTCore {
         apiSettings = settings;
         // 不再为空 API 密钥抛出错误，而是记录一条消息
         if (!apiKey) {
-            console.log('[NodeSTCore] No API key provided, will attempt to use cloud service if available');
+            // console.log('[NodeSTCore] No API key provided, will attempt to use cloud service if available');
         }
     
         // 初始化 Gemini，允许 apiKey 为 null 或 empty，便于回退到云服务
@@ -313,24 +313,24 @@ export class NodeSTCore {
             }
         );
         
-        console.log('[NodeSTCore] GeminiAdapter initialized with load balancing options:', {
-            useModelLoadBalancing: apiSettings?.useGeminiModelLoadBalancing || false,
-            useKeyRotation: apiSettings?.useGeminiKeyRotation || false,
-            additionalKeysCount: apiSettings?.additionalGeminiKeys?.length || 0,
-            usingCloudFallback: !apiKey,
-            primaryModel: this.geminiPrimaryModel,
-            backupModel: this.geminiBackupModel,
-            retryDelay: this.retryDelay
-        });
+        // console.log('[NodeSTCore] GeminiAdapter initialized with load balancing options:', {
+        //     useModelLoadBalancing: apiSettings?.useGeminiModelLoadBalancing || false,
+        //     useKeyRotation: apiSettings?.useGeminiKeyRotation || false,
+        //     additionalKeysCount: apiSettings?.additionalGeminiKeys?.length || 0,
+        //     usingCloudFallback: !apiKey,
+        //     primaryModel: this.geminiPrimaryModel,
+        //     backupModel: this.geminiBackupModel,
+        //     retryDelay: this.retryDelay
+        // });
         
         // 初始化 OpenRouter 如果已启用且有 API 密钥
         if (apiSettings?.apiProvider === 'openrouter' && 
             apiSettings.openrouter?.enabled && 
             apiSettings.openrouter?.apiKey) {
-            console.log('[NodeSTCore] Initializing OpenRouter adapter with:', {
-                apiKeyLength: apiSettings.openrouter.apiKey.length,
-                model: apiSettings.openrouter.model || 'openai/gpt-3.5-turbo'
-            });
+            // console.log('[NodeSTCore] Initializing OpenRouter adapter with:', {
+            //     apiKeyLength: apiSettings.openrouter.apiKey.length,
+            //     model: apiSettings.openrouter.model || 'openai/gpt-3.5-turbo'
+            // });
             this.openRouterAdapter = new OpenRouterAdapter(
                 apiSettings.openrouter.apiKey,
                 apiSettings.openrouter.model || 'openai/gpt-3.5-turbo'
@@ -353,10 +353,10 @@ export class NodeSTCore {
                 apiKey: apiSettings.OpenAIcompatible.apiKey,
                 model: apiSettings.OpenAIcompatible.model
             });
-            console.log('[NodeSTCore] OpenAIAdapter 初始化:', {
-                endpoint: apiSettings.OpenAIcompatible.endpoint,
-                model: apiSettings.OpenAIcompatible.model
-            });
+            // console.log('[NodeSTCore] OpenAIAdapter 初始化:', {
+            //     endpoint: apiSettings.OpenAIcompatible.endpoint,
+            //     model: apiSettings.OpenAIcompatible.model
+            // });
         } else {
             this.openAICompatibleAdapter = null;
         }
@@ -371,8 +371,8 @@ export class NodeSTCore {
         if (this.apiSettings?.apiProvider === 'openrouter' && 
             this.apiSettings.openrouter?.enabled && 
             this.openRouterAdapter) {
-            console.log('[NodeSTCore] Using OpenRouter adapter with model:', 
-                this.apiSettings.openrouter.model || 'default');
+            // console.log('[NodeSTCore] Using OpenRouter adapter with model:', 
+            //     this.apiSettings.openrouter.model || 'default');
             return this.openRouterAdapter;
         }
         
@@ -382,7 +382,7 @@ export class NodeSTCore {
             this.apiSettings.OpenAIcompatible?.enabled &&
             this.openAICompatibleAdapter
         ) {
-            console.log('[NodeSTCore] Using OpenAIAdapter with endpoint:', this.apiSettings.OpenAIcompatible.endpoint);
+            // console.log('[NodeSTCore] Using OpenAIAdapter with endpoint:', this.apiSettings.OpenAIcompatible.endpoint);
             return this.openAICompatibleAdapter;
         }
 
@@ -991,19 +991,19 @@ export class NodeSTCore {
         onStream?: (delta: string) => void // 新增参数
     ): Promise<string | null> {
         try {
-            console.log('[NodeSTCore] Starting continueChat:', {
-                conversationId,
-                messageLength: userMessage.length,
-                apiProvider: this.apiSettings?.apiProvider,
-                useGeminiLoadBalancing: this.apiSettings?.useGeminiModelLoadBalancing,
-                useGeminiKeyRotation: this.apiSettings?.useGeminiKeyRotation,
-                additionalKeysCount: this.apiSettings?.additionalGeminiKeys?.length || 0,
-                hasCustomUserName: !!customUserName,
-                useToolCalls: useToolCalls,
-                apiKeyProvided: !!apiKey,
-                characterId: characterId,
-                onStream : !!onStream
-            });
+            // console.log('[NodeSTCore] Starting continueChat:', {
+            //     conversationId,
+            //     messageLength: userMessage.length,
+            //     apiProvider: this.apiSettings?.apiProvider,
+            //     useGeminiLoadBalancing: this.apiSettings?.useGeminiModelLoadBalancing,
+            //     useGeminiKeyRotation: this.apiSettings?.useGeminiKeyRotation,
+            //     additionalKeysCount: this.apiSettings?.additionalGeminiKeys?.length || 0,
+            //     hasCustomUserName: !!customUserName,
+            //     useToolCalls: useToolCalls,
+            //     apiKeyProvided: !!apiKey,
+            //     characterId: characterId,
+            //     onStream : !!onStream
+            // });
     
             // 确保 Adapter 已初始化 - 传递 apiKey 即使它是 null
             if (!this.geminiAdapter || !this.openRouterAdapter || !this.openAICompatibleAdapter) {
@@ -1612,17 +1612,17 @@ export class NodeSTCore {
         console.log(`[NodeSTCore] Final message sequence has ${dEntryCount} D-entries out of ${finalMessages.length} total messages`);
 
         // 7. 添加详细的调试日志，显示消息顺序和类型以及D类条目的注入深度
-        console.log('[NodeSTCore] Message sequence after D-entry insertion:', 
-            finalMessages.map((msg, idx) => ({
-                index: idx,
-                type: msg.is_d_entry ? 'D-entry' : 'chat',
-                role: msg.role,
-                depth: msg.is_d_entry ? msg.injection_depth || 0 : 'N/A',
-                position: msg.position,
-                isBaseMessage: msg.parts[0]?.text === userMessage,
-                preview: msg.parts[0]?.text?.substring(0, 30)
-            }))
-        );
+        // console.log('[NodeSTCore] Message sequence after D-entry insertion:', 
+        //     finalMessages.map((msg, idx) => ({
+        //         index: idx,
+        //         type: msg.is_d_entry ? 'D-entry' : 'chat',
+        //         role: msg.role,
+        //         depth: msg.is_d_entry ? msg.injection_depth || 0 : 'N/A',
+        //         position: msg.position,
+        //         isBaseMessage: msg.parts[0]?.text === userMessage,
+        //         preview: msg.parts[0]?.text?.substring(0, 30)
+        //     }))
+        // );
 
         return {
             ...chatHistory,
@@ -1912,13 +1912,13 @@ export class NodeSTCore {
             });
             
             // 打印完整的请求内容以便检查
-            console.log('[NodeSTCore] COMPLETE API REQUEST CONTENT:');
-            cleanedContents.forEach((msg, i) => {
-                console.log(`[Message ${i+1}] Role: ${msg.role}`);
-                msg.parts.forEach((part, j) => {
-                    console.log(`[Message ${i+1}][Part ${j+1}] Content length: ${part.text?.length || 0} chars`);
-                });
-            });
+            // console.log('[NodeSTCore] COMPLETE API REQUEST CONTENT:');
+            // cleanedContents.forEach((msg, i) => {
+            //     // console.log(`[Message ${i+1}] Role: ${msg.role}`);
+            //     msg.parts.forEach((part, j) => {
+            //         // console.log(`[Message ${i+1}][Part ${j+1}] Content length: ${part.text?.length || 0} chars`);
+            //     });
+            // });
 
             // 验证是否还有消息要发送
             if (cleanedContents.length === 0) {
@@ -1977,7 +1977,7 @@ export class NodeSTCore {
                 }
             }
             } else if (shouldUseMemoryResults && activeAdapter) {
-                console.log('[NodeSTCore] 调用generateContentWithTools，传递characterId:', characterId); // <--- 记录
+                // console.log('[NodeSTCore] 调用generateContentWithTools，传递characterId:', characterId); // <--- 记录
                 const response = await activeAdapter.generateContentWithTools(cleanedContents, characterId, memorySearchResults, userMessage);
                 console.log('[NodeSTCore] API response received:', {
                     hasResponse: !!response,

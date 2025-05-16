@@ -150,15 +150,15 @@ export class NodeST {
             this.openAICompatibleAdapter = null;
         }
         
-        console.log(`【NodeST】更新API设置:`, {
-            provider: apiSettings?.apiProvider || 'gemini',
-            hasOpenRouter: !!apiSettings?.openrouter?.enabled,
-            model: apiSettings?.openrouter?.model || 'none',
-            useGeminiModelLoadBalancing: apiSettings?.useGeminiModelLoadBalancing,
-            useGeminiKeyRotation: apiSettings?.useGeminiKeyRotation,
-            additionalKeysCount: apiSettings?.additionalGeminiKeys?.length,
-            apiKeyLength: apiKey?.length || 0
-        });
+        // console.log(`【NodeST】更新API设置:`, {
+        //     provider: apiSettings?.apiProvider || 'gemini',
+        //     hasOpenRouter: !!apiSettings?.openrouter?.enabled,
+        //     model: apiSettings?.openrouter?.model || 'none',
+        //     useGeminiModelLoadBalancing: apiSettings?.useGeminiModelLoadBalancing,
+        //     useGeminiKeyRotation: apiSettings?.useGeminiKeyRotation,
+        //     additionalKeysCount: apiSettings?.additionalGeminiKeys?.length,
+        //     apiKeyLength: apiKey?.length || 0
+        // });
     }
 
     private getCoreInstance(
@@ -201,19 +201,19 @@ export class NodeST {
 
     async processChatMessage(params: ProcessChatRequest): Promise<ProcessChatResponse> {
         try {
-            console.log("[NodeST] Processing chat message:", { 
-                messageLength: params.userMessage.length,
-                status: params.status,
-                conversationId: params.conversationId,
-                apiProvider: params.apiSettings?.apiProvider || 'gemini',
-                useGeminiModelLoadBalancing: params.apiSettings?.useGeminiModelLoadBalancing,
-                useGeminiKeyRotation: params.apiSettings?.useGeminiKeyRotation,
-                additionalKeysCount: params.apiSettings?.additionalGeminiKeys?.length,
-                hasJsonString: !!params.jsonString,
-                useToolCalls: params.useToolCalls || false,
-                apiKeyProvided: !!params.apiKey,
-                characterId: params.characterId
-            });
+            // console.log("[NodeST] Processing chat message:", { 
+            //     messageLength: params.userMessage.length,
+            //     status: params.status,
+            //     conversationId: params.conversationId,
+            //     apiProvider: params.apiSettings?.apiProvider || 'gemini',
+            //     useGeminiModelLoadBalancing: params.apiSettings?.useGeminiModelLoadBalancing,
+            //     useGeminiKeyRotation: params.apiSettings?.useGeminiKeyRotation,
+            //     additionalKeysCount: params.apiSettings?.additionalGeminiKeys?.length,
+            //     hasJsonString: !!params.jsonString,
+            //     useToolCalls: params.useToolCalls || false,
+            //     apiKeyProvided: !!params.apiKey,
+            //     characterId: params.characterId
+            // });
 
             // Note: We pass the API key even if it's empty
             // 获取 NodeSTCore 实例，并传递 API 设置和 geminiOptions
@@ -230,16 +230,16 @@ export class NodeST {
                     const characterData = this.parseCharacterJson(params.jsonString);
                     
                     // 验证所有必要的数据都存在
-                    console.log("[NodeST] 验证角色数据完整性:", {
-                        hasRoleCard: !!characterData.roleCard,
-                        hasWorldBook: !!characterData.worldBook,
-                        hasPreset: !!characterData.preset,
-                        roleCardName: characterData.roleCard?.name,
-                        worldBookEntries: Object.keys(characterData.worldBook?.entries || {}).length,
-                        hasChatHistory: !!characterData.chatHistory,
-                        chatHistoryMessagesCount: characterData.chatHistory?.parts.length || 0,
-                        isCradleGeneration: params.isCradleGeneration || false
-                    });
+                    // console.log("[NodeST] 验证角色数据完整性:", {
+                    //     hasRoleCard: !!characterData.roleCard,
+                    //     hasWorldBook: !!characterData.worldBook,
+                    //     hasPreset: !!characterData.preset,
+                    //     roleCardName: characterData.roleCard?.name,
+                    //     worldBookEntries: Object.keys(characterData.worldBook?.entries || {}).length,
+                    //     hasChatHistory: !!characterData.chatHistory,
+                    //     chatHistoryMessagesCount: characterData.chatHistory?.parts.length || 0,
+                    //     isCradleGeneration: params.isCradleGeneration || false
+                    // });
                     
                     // 创建新角色
                     console.log("[NodeST] 开始创建新角色...");

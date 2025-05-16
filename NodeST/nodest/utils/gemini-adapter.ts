@@ -100,12 +100,12 @@ export class GeminiAdapter {
         }
         
       
-        console.log(`[Gemini适配器] 初始化完成，配置了 ${this.apiKeys.length} 个API密钥`);
-        console.log(`[Gemini适配器] API密钥轮换: ${this.useKeyRotation ? '已启用' : '未启用'}`);
-        console.log(`[Gemini适配器] 模型负载均衡: ${this.useModelLoadBalancing ? '已启用' : '未启用'}`);
-        console.log(`[Gemini适配器] 主模型: ${this.primaryModel}, 备用模型: ${this.backupModel}`);
-        console.log(`[Gemini适配器] 备用模型重试延迟: ${this.retryDelay}ms`);
-        console.log(`[Gemini适配器] 云服务状态: ${this.useCloudService ? '已启用' : '未启用'}`);
+        // console.log(`[Gemini适配器] 初始化完成，配置了 ${this.apiKeys.length} 个API密钥`);
+        // console.log(`[Gemini适配器] API密钥轮换: ${this.useKeyRotation ? '已启用' : '未启用'}`);
+        // console.log(`[Gemini适配器] 模型负载均衡: ${this.useModelLoadBalancing ? '已启用' : '未启用'}`);
+        // console.log(`[Gemini适配器] 主模型: ${this.primaryModel}, 备用模型: ${this.backupModel}`);
+        // console.log(`[Gemini适配器] 备用模型重试延迟: ${this.retryDelay}ms`);
+        // console.log(`[Gemini适配器] 云服务状态: ${this.useCloudService ? '已启用' : '未启用'}`);
         
         // Subscribe to tracker updates
         this.cloudStatusUnsubscribe = addCloudServiceStatusListener((enabled) => {
