@@ -638,9 +638,9 @@ private async executeGenerateContent(contents: ChatMessage[], modelId: string, c
                     model: modelId,
                 };
 
-                console.log(`[Gemini适配器] 发送请求到API: ${modelId}`);
-                console.log(`[Gemini适配器] 请求包含 ${contents.length} 条消息`);
-                console.log(`[Gemini适配器] 当前云服务状态: ${this.useCloudService ? '启用' : '禁用'}`);
+                // console.log(`[Gemini适配器] 发送请求到API: ${modelId}`);
+                // console.log(`[Gemini适配器] 请求包含 ${contents.length} 条消息`);
+                // console.log(`[Gemini适配器] 当前云服务状态: ${this.useCloudService ? '启用' : '禁用'}`);
                 
                 // Enhanced logging for each message in the request
                 contents.forEach((msg, index) => {
