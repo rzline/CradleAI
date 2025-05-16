@@ -100,12 +100,12 @@ export class GeminiAdapter {
         }
         
       
-        console.log(`[Gemini适配器] 初始化完成，配置了 ${this.apiKeys.length} 个API密钥`);
-        console.log(`[Gemini适配器] API密钥轮换: ${this.useKeyRotation ? '已启用' : '未启用'}`);
-        console.log(`[Gemini适配器] 模型负载均衡: ${this.useModelLoadBalancing ? '已启用' : '未启用'}`);
-        console.log(`[Gemini适配器] 主模型: ${this.primaryModel}, 备用模型: ${this.backupModel}`);
-        console.log(`[Gemini适配器] 备用模型重试延迟: ${this.retryDelay}ms`);
-        console.log(`[Gemini适配器] 云服务状态: ${this.useCloudService ? '已启用' : '未启用'}`);
+        // console.log(`[Gemini适配器] 初始化完成，配置了 ${this.apiKeys.length} 个API密钥`);
+        // console.log(`[Gemini适配器] API密钥轮换: ${this.useKeyRotation ? '已启用' : '未启用'}`);
+        // console.log(`[Gemini适配器] 模型负载均衡: ${this.useModelLoadBalancing ? '已启用' : '未启用'}`);
+        // console.log(`[Gemini适配器] 主模型: ${this.primaryModel}, 备用模型: ${this.backupModel}`);
+        // console.log(`[Gemini适配器] 备用模型重试延迟: ${this.retryDelay}ms`);
+        // console.log(`[Gemini适配器] 云服务状态: ${this.useCloudService ? '已启用' : '未启用'}`);
         
         // Subscribe to tracker updates
         this.cloudStatusUnsubscribe = addCloudServiceStatusListener((enabled) => {
@@ -246,7 +246,7 @@ export class GeminiAdapter {
      */
     private updateCloudServiceStatus(): void {
         this.useCloudService = getCloudServiceStatus();
-        console.log(`[Gemini适配器] 初始化云服务状态: ${this.useCloudService ? '启用' : '禁用'}`);
+        // console.log(`[Gemini适配器] 初始化云服务状态: ${this.useCloudService ? '启用' : '禁用'}`);
     }
     
     /**
@@ -491,7 +491,7 @@ private async executeGenerateContentWithCloudService(contents: ChatMessage[], ch
         for (let keyIndex = 0; keyIndex < this.apiKeys.length; keyIndex++) {
             // Set the current key index
             this.currentKeyIndex = keyIndex;
-            console.log(`[Gemini适配器] 尝试使用API密钥 ${keyIndex + 1}/${this.apiKeys.length} 请求模型: ${modelId}`);
+            // console.log(`[Gemini适配器] 尝试使用API密钥 ${keyIndex + 1}/${this.apiKeys.length} 请求模型: ${modelId}`);
             
             try {
                 // Try the request with this key
@@ -638,14 +638,14 @@ private async executeGenerateContent(contents: ChatMessage[], modelId: string, c
                     model: modelId,
                 };
 
-                console.log(`[Gemini适配器] 发送请求到API: ${modelId}`);
-                console.log(`[Gemini适配器] 请求包含 ${contents.length} 条消息`);
-                console.log(`[Gemini适配器] 当前云服务状态: ${this.useCloudService ? '启用' : '禁用'}`);
+                // console.log(`[Gemini适配器] 发送请求到API: ${modelId}`);
+                // console.log(`[Gemini适配器] 请求包含 ${contents.length} 条消息`);
+                // console.log(`[Gemini适配器] 当前云服务状态: ${this.useCloudService ? '启用' : '禁用'}`);
                 
                 // Enhanced logging for each message in the request
                 contents.forEach((msg, index) => {
                     const previewText = msg.parts?.[0]?.text || "";
-                    console.log(`[Gemini适配器] 消息 #${index + 1} (${msg.role}): ${previewText.substring(0, 100)}...`);
+                    // console.log(`[Gemini适配器] 消息 #${index + 1} (${msg.role}): ${previewText.substring(0, 100)}...`);
                     
                     // Special handling for messages that might contain VNDB data, appearance tags, or traits
                     if (previewText.includes("VNDB") || 
@@ -762,9 +762,9 @@ private async executeGenerateContent(contents: ChatMessage[], modelId: string, c
                         console.log('[Gemini适配器] 云服务状态不一致: tracker显示已启用但CloudServiceProvider未启用');
                     }
                     
-                    console.log('[Gemini适配器] 云服务未启用，使用直接API调用');
-                    console.log(`[Gemini适配器] 直接调用URL: ${url.replace(/(\bkey=)([^&]{4})[^&]*/gi, '$1$2****')}`);
-                    console.log(`[Gemini适配器] 开始时间: ${new Date().toISOString()}`);
+                    // console.log('[Gemini适配器] 云服务未启用，使用直接API调用');
+                    // console.log(`[Gemini适配器] 直接调用URL: ${url.replace(/(\bkey=)([^&]{4})[^&]*/gi, '$1$2****')}`);
+                    // console.log(`[Gemini适配器] 开始时间: ${new Date().toISOString()}`);
                     
                     const startTime = Date.now();
                     response = await fetch(url, {

@@ -131,28 +131,28 @@ console.log(`[NodeSTManager] Setting search enabled to: ${enabled}`); // Add log
       const jsonString = params.character?.jsonData;
       const apiKey = params.apiKey || this.apiKey || ''; // Use instance apiKey as fallback, empty string as last resort
       
-      console.log('[NodeSTManager] Processing request:', {
-        apiKeyProvided: !!apiKey,
-        apiProvider: params.apiSettings?.apiProvider || 'gemini',
-        openRouterEnabled: params.apiSettings?.apiProvider === 'openrouter' && params.apiSettings?.openrouter?.enabled,
-        openRouterModel: params.apiSettings?.openrouter?.model,
-        useGeminiModelLoadBalancing: params.apiSettings?.useGeminiModelLoadBalancing,
-        useGeminiKeyRotation: params.apiSettings?.useGeminiKeyRotation,
-        additionalKeysCount: params.apiSettings?.additionalGeminiKeys?.length,
-        status: params.status || '同一角色继续对话',
-        conversationId: params.conversationId,
-        characterId: characterId,
-        hasCharacter: !!params.character,
-        hasJsonData: !!jsonString,
-        customUserName: params.character?.customUserName || 'User',
-        action: params.status === "更新人设" ? "更新人设" : (params.status === "新建角色" ? "新建角色" : "继续对话"),
-        useToolCalls: this.searchEnabled,
-        usingCloudFallback: !apiKey,
-        OpenAIcompatible: params.apiSettings?.OpenAIcompatible?.enabled,
-        OpenAIcompatibleModel: params.apiSettings?.OpenAIcompatible?.model,
-        OpenAIcompatibleKey: params.apiSettings?.OpenAIcompatible?.apiKey,
-        OpenAIcompatibleEndpoint: params.apiSettings?.OpenAIcompatible?.endpoint
-      });
+      // console.log('[NodeSTManager] Processing request:', {
+      //   apiKeyProvided: !!apiKey,
+      //   apiProvider: params.apiSettings?.apiProvider || 'gemini',
+      //   openRouterEnabled: params.apiSettings?.apiProvider === 'openrouter' && params.apiSettings?.openrouter?.enabled,
+      //   openRouterModel: params.apiSettings?.openrouter?.model,
+      //   useGeminiModelLoadBalancing: params.apiSettings?.useGeminiModelLoadBalancing,
+      //   useGeminiKeyRotation: params.apiSettings?.useGeminiKeyRotation,
+      //   additionalKeysCount: params.apiSettings?.additionalGeminiKeys?.length,
+      //   status: params.status || '同一角色继续对话',
+      //   conversationId: params.conversationId,
+      //   characterId: characterId,
+      //   hasCharacter: !!params.character,
+      //   hasJsonData: !!jsonString,
+      //   customUserName: params.character?.customUserName || 'User',
+      //   action: params.status === "更新人设" ? "更新人设" : (params.status === "新建角色" ? "新建角色" : "继续对话"),
+      //   useToolCalls: this.searchEnabled,
+      //   usingCloudFallback: !apiKey,
+      //   OpenAIcompatible: params.apiSettings?.OpenAIcompatible?.enabled,
+      //   OpenAIcompatibleModel: params.apiSettings?.OpenAIcompatible?.model,
+      //   OpenAIcompatibleKey: params.apiSettings?.OpenAIcompatible?.apiKey,
+      //   OpenAIcompatibleEndpoint: params.apiSettings?.OpenAIcompatible?.endpoint
+      // });
 
       // Add detailed logging of character data when creating a new character
       if (params.status === "新建角色" && params.character) {
