@@ -39,6 +39,7 @@ import TextEditorModal from './common/TextEditorModal';
 import Slider from '@react-native-community/slider';
 import type { RenderFunction, ASTNode } from 'react-native-markdown-display';
 import { useRouter } from 'expo-router';
+import { Character } from '@/shared/types';
 
 interface ExtendedChatDialogProps extends ChatDialogProps {
   messageMemoryState?: Record<string, string>;
@@ -390,7 +391,7 @@ const ChatDialog: React.FC<ExtendedChatDialogProps> = ({
   }, []);
   // 判断是否为最后一条消息
   const isLastMessage = (index: number) => {
-    const visibleMessages = getVisibleMessages();
+    // const visibleMessages = getVisibleMessages();
     return index === visibleMessages.length - 1;
   };
   // 新增：视觉小说展开/收起状态和背景透明度
@@ -838,11 +839,11 @@ const processMessageContent = (text: string, isUser: boolean, opts?: { isHtmlPag
   }
 
   const hasCustomTags = (
-    /<\s*(thinking|think|status|mem|websearch)[^>]*>([\s\S]*?)<\/\s*(thinking|think|status|mem|websearch)\s*>/i.test(text) || 
+    /<\s*(thinking|think|status|mem|websearch)[^>]*>([\s\S]*?)<\/\s*(thinking|think|status|mem|websearch)\s*>/i.test(text) ||
     /<\s*char\s+think\s*>([\s\S]*?)<\/\s*char\s+think\s*>/i.test(text)
   );
 
-  const hasMarkdown = /```[\w]*\s*([\s\S]*?)```/.test(text) || 
+  const hasMarkdown = /```[\w]*\s*([\s\S]*?)```/.test(text) ||
                      /!\[[\s\S]*?\]\([\s\S]*?\)/.test(text) ||
                      /\*\*([\s\S]*?)\*\*/.test(text) ||
                      /\*([\s\S]*?)\*/.test(text);
@@ -1095,6 +1096,16 @@ const processMessageContent = (text: string, isUser: boolean, opts?: { isHtmlPag
       ]
     );
   };
+
+// 1. 用 useMemo 缓存 visibleMessages，避免每次渲染都新建数组
+const visibleMessages = React.useMemo(() => {
+  const filtered = messages.filter(
+    m => !(m.sender === 'user' && m.metadata && m.metadata.isContinue === true)
+  );
+  if (mode === 'visual-novel') return messages;
+  if (isHistoryModalVisible) return messages;
+  return messages.slice(-30);
+}, [messages, mode, isHistoryModalVisible]);
 
 const renderMessageContent = (message: Message, isUser: boolean, index: number) => {
   // 新增：常规/背景强调模式下，遇到完整HTML页面只显示占位
@@ -1704,38 +1715,35 @@ const renderMessageContent = (message: Message, isUser: boolean, index: number) 
     );
   };
 
-  const getVisibleMessages = () => {
-    const filtered = messages.filter(
-    m => !(m.sender === 'user' && m.metadata && m.metadata.isContinue === true)
-  );
-    if (mode === 'visual-novel') return messages;
-    if (isHistoryModalVisible) return messages;
-    return messages.slice(-30);
-  };
+  // 2. renderItem 只依赖必要的 props，避免依赖整个 messages
+  const renderItem = useCallback(
+    ({ item, index }: { item: Message, index: number }) => {
+      const isUser = item.sender === 'user';
+      // 只用 visibleMessages 计算 showTime
+      const showTime = index === 0 || index % 5 === 0 ||
+        (index > 0 && new Date(item.timestamp || 0).getHours() !==
+          new Date(visibleMessages[index - 1]?.timestamp || 0).getHours());
 
-  const renderItem = useCallback(({ item, index }: { item: Message, index: number }) => {
-    const isUser = item.sender === 'user';
-    const showTime = index === 0 || index % 5 === 0 || 
-                    (index > 0 && new Date(item.timestamp || 0).getHours() !== 
-                      new Date(messages[index-1].timestamp || 0).getHours());
-
-    return (
-      <View key={item.id} style={styles.messageWrapper}>
-        {showTime && item.timestamp && renderTimeGroup(item.timestamp)}
-        <View
-          style={[
-            styles.messageContainer,
-            isUser ? styles.userMessageContainer : styles.botMessageContainer,
-          ]}
-        >
-          {renderMessageContent(item, isUser, index)}
+      return (
+        <View key={item.id} style={styles.messageWrapper}>
+          {showTime && item.timestamp && renderTimeGroup(item.timestamp)}
+          <View
+            style={[
+              styles.messageContainer,
+              isUser ? styles.userMessageContainer : styles.botMessageContainer,
+            ]}
+          >
+            {renderMessageContent(item, isUser, index)}
+          </View>
         </View>
-      </View>
-    );
-  }, [messages, selectedCharacter, ratedMessages, audioStates, user]);
+      );
+    },
+    [visibleMessages, selectedCharacter, ratedMessages, audioStates, user]
+  );
 
-  const keyExtractor = useCallback((item: Message, index: number) => {
-    return `${item.id}-${item.sender}-${item.timestamp || ''}-${index}`;
+  // 3. keyExtractor 只用 item.id，保证 key 稳定
+  const keyExtractor = useCallback((item: Message) => {
+    return item.id;
   }, []);
 
   return (
@@ -1749,7 +1757,7 @@ const renderMessageContent = (message: Message, isUser: boolean, index: number) 
       ) : (
         <>
           <View style={{ flex: 1 }}>
-            {getVisibleMessages().length === 0 ? (
+            {visibleMessages.length === 0 ? (
               <ScrollView
                 style={[
                   styles.container, 
@@ -1766,7 +1774,7 @@ const renderMessageContent = (message: Message, isUser: boolean, index: number) 
             ) : (
               <FlatList
                 ref={flatListRef}
-                data={getVisibleMessages()}
+                data={visibleMessages}
                 renderItem={renderItem}
                 keyExtractor={keyExtractor}
                 style={[
@@ -1963,6 +1971,7 @@ const styles = StyleSheet.create({
   botMessageText: {
     color: '#fff',
     fontSize: Math.min(Math.max(14, width * 0.04), 16),
+ 
   },
   loadingMessage: {
     minWidth: 80,

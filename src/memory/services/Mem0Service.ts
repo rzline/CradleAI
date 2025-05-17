@@ -636,85 +636,45 @@ console.error('[Mem0Service] 添加聊天记忆失败:', error instanceof Error 
     limit: number = 5
   ): Promise<any> {
     this.checkInitialized();
-    
-    // If embedding service is unavailable, return empty results
+
     if (!this.isEmbeddingAvailable) {
       console.log('[Mem0Service] 嵌入服务不可用，返回空搜索结果');
       return { results: [] };
     }
-    
+
+    // 统一 runId 格式为 conversation- 前缀
+    const prefixedConversationId = conversationId.startsWith('conversation-')
+      ? conversationId
+      : `conversation-${conversationId}`;
+
     console.log(`[Mem0Service] 开始搜索记忆: "${query.substring(0, 50)}${query.length > 50 ? '...' : ''}"`);
-    console.log(`[Mem0Service] 搜索参数: characterId=${characterId}, conversationId=${conversationId}, limit=${limit}`);
-    
+    console.log(`[Mem0Service] 搜索参数: characterId=${characterId}, conversationId=${prefixedConversationId}, limit=${limit}`);
+
     try {
-      // Record search start time for calculating search duration
       const searchStartTime = Date.now();
-      
-      // Generate both versions of the conversation ID
-      const originalConversationId = conversationId;
-      const prefixedConversationId = conversationId.startsWith('conversation-') ? 
-        conversationId : `conversation-${conversationId}`;
-      const unprefixedConversationId = conversationId.startsWith('conversation-') ?
-        conversationId.replace('conversation-', '') : conversationId;
-      
-      console.log(`[Mem0Service] 将检索原始ID(${originalConversationId})和${originalConversationId === prefixedConversationId ? '无' : '有'}前缀ID的记忆`);
-      
-      // First try with original conversation ID
-      const originalResults = await this.memoryActions!.search(query, {
+
+      // 只用带前缀的 runId 搜索
+      const results = await this.memoryActions!.search(query, {
         userId: 'current-user',
         agentId: characterId,
-        runId: originalConversationId,
+        runId: prefixedConversationId,
         limit
       });
-      
-      // Always search with the alternative ID, regardless of how many results we got in the first search
-      console.log(`[Mem0Service] 同时使用${originalConversationId === prefixedConversationId ? '无' : '有'}前缀ID搜索`);
-      
-      // Search with alternative ID
-      const alternativeResults = await this.memoryActions!.search(query, {
-        userId: 'current-user',
-        agentId: characterId,
-        runId: originalConversationId === prefixedConversationId ? unprefixedConversationId : prefixedConversationId,
-        limit
-      });
-      
-      // Merge results, avoiding duplicates
-      let results = { results: [] as any[] };
-      if (originalResults.results && originalResults.results.length > 0) {
-        results.results = [...originalResults.results];
-      }
-      
-      if (alternativeResults.results && alternativeResults.results.length > 0) {
-        const existingIds = new Set(results.results.map((item: any) => item.id));
-        const newResults = alternativeResults.results.filter((item: any) => !existingIds.has(item.id));
-        
-        console.log(`[Mem0Service] 使用替代ID找到${newResults.length}条额外记忆`);
-        
-        // Merge and limit to requested amount
-        results.results = [...results.results, ...newResults].slice(0, limit);
-      }
-      
-      // Calculate search time
+
       const searchEndTime = Date.now();
       const searchTime = searchEndTime - searchStartTime;
-      
-      // Calculate result count
       const resultCount = results.results?.length || 0;
       console.log(`[Mem0Service] 搜索结果: 找到 ${resultCount} 条记忆, 搜索耗时: ${searchTime}ms`);
-      
-      // Rest of existing logging code...
-      
+
       return results;
     } catch (error) {
       const errorMessage = error instanceof Error ? error.message : String(error);
       console.error(`[Mem0Service] 搜索记忆失败: ${errorMessage}`);
-      
-      // 判断错误类型
+
       if (error instanceof Error && error.message.includes('智谱嵌入API密钥未设置')) {
         console.warn('[Mem0Service] 智谱API密钥未设置，标记嵌入服务为不可用');
         this.isEmbeddingAvailable = false;
-        
-        // 尝试重新获取API密钥
+
         this.tryGetZhipuApiKey().then(apiKey => {
           if (apiKey) {
             console.log('[Mem0Service] 找到API密钥，下次请求将尝试使用');
@@ -722,7 +682,7 @@ console.error('[Mem0Service] 添加聊天记忆失败:', error instanceof Error 
           }
         });
       }
-      
+
       return { results: [] };
     }
   }

@@ -17,7 +17,8 @@ import {
   getUpdateMemoryMessages, 
   removeCodeBlocks 
 } from './prompts';
-import { MobileSQLiteManager } from './storage/MobileSQLiteManager';
+// import { MobileSQLiteManager } from './storage/MobileSQLiteManager';
+import { MobileFileHistoryManager } from './storage/MobileFileHistoryManager';
 import { ConfigManager } from './config/manager';
 import { 
   AddMemoryOptions, 
@@ -46,7 +47,8 @@ export class MobileMemory {
   public embedder: any; // Make the embedder accessible
   private vectorStore: any;
   public llm: any; // 改为公共属性以便更新配置
-  private db: MobileSQLiteManager;
+  // private db: MobileSQLiteManager;
+  private db: MobileFileHistoryManager;
   private collectionName: string;
   private apiVersion: string;
   private processingInterval: number = 10;
@@ -73,7 +75,17 @@ export class MobileMemory {
       this.config.llm.config,
     );
     // 使用移动端 SQLite 管理器
-    this.db = new MobileSQLiteManager(this.config.historyDbPath || "memory_history.db");
+    // this.db = new MobileSQLiteManager(this.config.historyDbPath || "memory_history.db");
+    
+    // 修正历史目录名，避免传入 .db 文件名
+    let historyDir = this.config.historyDbPath;
+    if (!historyDir) {
+      historyDir = undefined;
+    } else if (historyDir.endsWith('.db')) {
+      historyDir = historyDir.replace(/\.db$/, '_data');
+    }
+    this.db = new MobileFileHistoryManager(historyDir);
+    
     this.collectionName = this.config.vectorStore.config.collectionName;
     this.apiVersion = this.config.version || "v1.0";
 
