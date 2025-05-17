@@ -4,21 +4,14 @@ on:
   push:
     branches:
       - main
-    tags:
-      - 'v*' # 当推送带v开头的标签时触发，例如v1.0.0
 
 jobs:
   build:
     runs-on: ubuntu-latest
+    
     steps:
       - name: Checkout code
         uses: actions/checkout@v3
-        with:
-          fetch-depth: 0 # 获取完整历史用于自动版本生成
-
-      - name: Get version from package.json
-        id: package-version
-        uses: martinbeentjes/npm-get-version-action@main
 
       - name: Setup Node.js
         uses: actions/setup-node@v3
@@ -44,134 +37,93 @@ jobs:
       - name: Run Expo Prebuild
         run: npx expo prebuild
 
-      # 修改 build.gradle 以支持按架构拆分 APK
+      # 修改 build.gradle 以启用 per-ABI 构建
       - name: Configure build.gradle for split APKs
         run: |
-          echo "配置 build.gradle 以支持按架构拆分 APK"
-          # 添加 splits 配置到 android/app/build.gradle
+          echo "配置 build.gradle 来实现按架构分包"
+          # 向 android/app/build.gradle 添加 splits 配置
           BUILD_GRADLE="android/app/build.gradle"
           
-          # 查找 android { 块的结束位置并插入我们的配置
-          LINE_NUM=$(grep -n "android {" $BUILD_GRADLE | head -1 | cut -d: -f1)
-          LINE_NUM=$((LINE_NUM + 1))
+          # 检查文件是否存在
+          if [ ! -f "$BUILD_GRADLE" ]; then
+            echo "错误: $BUILD_GRADLE 不存在!"
+            exit 1
+          fi
           
-          # 准备要插入的配置
-          SPLITS_CONFIG="    splits {\n        abi {\n            enable true\n            reset()\n            include 'arm64-v8a', 'armeabi-v7a', 'x86', 'x86_64'\n            universalApk true\n        }\n    }\n"
+          # 备份原始文件
+          cp $BUILD_GRADLE ${BUILD_GRADLE}.bak
           
-          # 使用 sed 在指定行后插入配置
-          sed -i "${LINE_NUM}i\\${SPLITS_CONFIG}" $BUILD_GRADLE
+          # 查找 android { 块结束位置
+          ANDROID_BLOCK_END=$(grep -n "}" $BUILD_GRADLE | grep -A1 "android {" | tail -n1 | cut -d: -f1)
           
-          # 添加自定义APK文件名配置
-          VARIANT_FILTER="    // 自定义每个变体的输出文件名\n    applicationVariants.all { variant ->\n        variant.outputs.each { output ->\n            def versionName = \"${{ steps.package-version.outputs.current-version }}\"\n            def abiName = output.getFilter(com.android.build.OutputFile.ABI)\n            if (abiName == null) abiName = \"universal\"\n            def outputFileName = \"app-${versionName}-${abiName}.apk\"\n            output.outputFileName = outputFileName\n        }\n    }\n"
+          if [ -z "$ANDROID_BLOCK_END" ]; then
+            echo "无法找到 android { 块结束位置"
+            exit 1
+          fi
           
-          # 在 android { 块结尾前插入
-          END_LINE_NUM=$(grep -n "}" $BUILD_GRADLE | head -1 | cut -d: -f1)
-          END_LINE_NUM=$((END_LINE_NUM - 1))
-          sed -i "${END_LINE_NUM}i\\${VARIANT_FILTER}" $BUILD_GRADLE
+          # 在 android 块内添加 splits 配置
+          SPLITS_CONFIG='
+    // 配置按架构分包
+    splits {
+        abi {
+            enable true
+            reset()
+            include "armeabi-v7a", "arm64-v8a", "x86", "x86_64"
+            universalApk true
+        }
+    }'
           
-          # 显示修改后的文件内容进行确认
-          echo "Modified build.gradle:"
+          sed -i "${ANDROID_BLOCK_END}i\\${SPLITS_CONFIG}" $BUILD_GRADLE
+          
+          echo "修改后的 build.gradle:"
           cat $BUILD_GRADLE
 
-      # 构建所有架构的 APK
-      - name: Build Android Release APKs
-        run: cd android && ./gradlew assembleRelease --info
+      # 构建 Android Release
+      - name: Build Android Release
+        run: cd android && ./gradlew assembleRelease
 
       # 列出构建产物
       - name: List Build Outputs
-        run: find android/app/build/outputs -type f | grep '.apk'
+        run: find android/app/build/outputs -type f -name "*.apk" | sort
 
-      # 将所有构建的 APK 上传为工作流产物
-      - name: Upload Android Release APKs as Artifacts
+      # 上传分架构 APK 文件
+      - name: Upload arm64-v8a APK
         uses: actions/upload-artifact@v4
         with:
-          name: android-release-apks
-          path: android/app/build/outputs/apk/release/*.apk
-
-      # 构建 AAB 文件
+          name: android-arm64-v8a
+          path: android/app/build/outputs/apk/release/app-arm64-v8a-release.apk
+          
+      - name: Upload armeabi-v7a APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: android-armeabi-v7a
+          path: android/app/build/outputs/apk/release/app-armeabi-v7a-release.apk
+          
+      - name: Upload x86 APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: android-x86
+          path: android/app/build/outputs/apk/release/app-x86-release.apk
+          
+      - name: Upload x86_64 APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: android-x86_64
+          path: android/app/build/outputs/apk/release/app-x86_64-release.apk
+      
+      # 上传通用 APK
+      - name: Upload Universal APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: android-universal
+          path: android/app/build/outputs/apk/release/app-universal-release.apk
+          
+      # 构建和上传 AAB 文件 (Google Play 格式)
       - name: Build Android App Bundle
         run: cd android && ./gradlew bundleRelease
-      
-      # 重命名 AAB 文件添加版本号
-      - name: Rename AAB file
-        run: |
-          VERSION=${{ steps.package-version.outputs.current-version }}
-          mkdir -p artifacts
-          cp android/app/build/outputs/bundle/release/app-release.aab artifacts/app-${VERSION}.aab
-
-      # 上传 AAB 文件
+        
       - name: Upload Android App Bundle
         uses: actions/upload-artifact@v4
         with:
-          name: android-release-bundle
-          path: artifacts/app-${{ steps.package-version.outputs.current-version }}.aab
-
-      # 将所有构建产物准备用于 Release
-      - name: Prepare artifacts for Release
-        if: startsWith(github.ref, 'refs/tags/')
-        run: |
-          mkdir -p release-artifacts
-          cp android/app/build/outputs/apk/release/*.apk release-artifacts/
-          cp artifacts/app-${{ steps.package-version.outputs.current-version }}.aab release-artifacts/
-
-      # 上传所有产物到工作空间以供 Release 使用
-      - name: Upload artifacts to workspace for Release
-        if: startsWith(github.ref, 'refs/tags/')
-        uses: actions/upload-artifact@v4
-        with:
-          name: release-artifacts
-          path: release-artifacts/
-
-  create-release:
-    needs: [build]
-    runs-on: ubuntu-latest
-    # 只在推送tag时创建release
-    if: startsWith(github.ref, 'refs/tags/')
-    steps:
-      - name: Checkout code
-        uses: actions/checkout@v3
-
-      - name: Get version from tag
-        id: get_version
-        run: echo "VERSION=${GITHUB_REF#refs/tags/}" >> $GITHUB_OUTPUT
-
-      # 下载所有构建产物
-      - name: Download all build artifacts
-        uses: actions/download-artifact@v4
-        with:
-          name: release-artifacts
-          path: release-artifacts
-
-      # 列出所有将要发布的文件
-      - name: List files to be released
-        run: ls -la release-artifacts/
-
-      # 生成发布说明
-      - name: Generate Release Notes
-        id: release_notes
-        run: |
-          echo "## React Native App Release ${{ steps.get_version.outputs.VERSION }}" > RELEASE_NOTES.md
-          echo "" >> RELEASE_NOTES.md
-          echo "### APK文件" >> RELEASE_NOTES.md
-          echo "- **通用APK**: 适用于所有设备，文件较大" >> RELEASE_NOTES.md
-          echo "- **特定架构APK**: 更小的文件体积，请选择适合您设备的版本" >> RELEASE_NOTES.md
-          echo "  - arm64-v8a: 适用于新款64位ARM设备" >> RELEASE_NOTES.md
-          echo "  - armeabi-v7a: 适用于大多数32位ARM设备" >> RELEASE_NOTES.md
-          echo "  - x86: 适用于部分32位Intel设备和模拟器" >> RELEASE_NOTES.md
-          echo "  - x86_64: 适用于部分64位Intel设备和模拟器" >> RELEASE_NOTES.md
-          echo "" >> RELEASE_NOTES.md
-          echo "### AAB文件" >> RELEASE_NOTES.md
-          echo "- 用于Google Play商店发布" >> RELEASE_NOTES.md
-
-      # 创建GitHub Release
-      - name: Create Release
-        id: create_release
-        uses: softprops/action-gh-release@v1
-        with:
-          name: Release ${{ steps.get_version.outputs.VERSION }}
-          body_path: RELEASE_NOTES.md
-          draft: false
-          prerelease: false
-          files: release-artifacts/*
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          name: android-app-bundle
+          path: android/app/build/outputs/bundle/release/app-release.aab
