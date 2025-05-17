@@ -74,28 +74,8 @@ jobs:
           name: apk-${{ matrix.abi }}
           path: output/app-${{ matrix.abi }}-release.apk
 
-  bundle:
-    needs: build
-    runs-on: ubuntu-latest
-    steps:
-      - name: Download all APKs
-        uses: actions/download-artifact@v4
-        with:
-          path: all-apks
-
-      - name: Build AAB
-        run: |
-          cd android
-          ./gradlew bundleRelease --no-daemon
-
-      - name: Upload AAB
-        uses: actions/upload-artifact@v4
-        with:
-          name: android-app-bundle
-          path: android/app/build/outputs/bundle/release/app-release.aab
-
   release:
-    needs: [ build, bundle ]
+    needs: [ build]
     if: startsWith(github.ref, 'refs/tags/')
     runs-on: ubuntu-latest
     steps:
@@ -117,7 +97,7 @@ jobs:
             dist/**/*.aab
 
   push-to-release:
-    needs: [ build, bundle ]
+    needs: [ build ]
     if: github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
     steps:
