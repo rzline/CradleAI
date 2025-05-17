@@ -116,13 +116,13 @@ const Profile: React.FC = () => {
         />
         
         {/* New: Plugin manager option */}
-        <ListItem
+        {/* <ListItem
           title="插件管理"
           leftIcon="extension-puzzle-outline"
           chevron={true}
           onPress={() => router.push('/pages/plugins')}
           subtitle="管理插件"
-        />
+        /> */}
 
         {/* <ListItem
           title="加入社区"
