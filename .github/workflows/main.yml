@@ -43,14 +43,20 @@ jobs:
           key: ${{ runner.os }}-gradle-${{ hashFiles('android/**/build.gradle','android/gradle/wrapper/gradle-wrapper.properties') }}
 
       - name: Expo Prebuild (if needed)
-        if: "!exists('android')"
-        run: npx expo prebuild --platform android
+        run: |
+          if [ ! -d android ]; then
+            echo "android 目录不存在，执行 expo prebuild"
+            npx expo prebuild --platform android
+          else
+            echo "android 目录已存在，跳过 prebuild"
+          fi
 
       - name: Enable ABI splits in build.gradle
         run: |
-          grep -q "splits {" android/app/build.gradle || (
+          # 只插入一次 splits 配置，避免重复
+          if ! grep -q "splits {" android/app/build.gradle; then
             perl -i -pe 's/(android\s*\{)/\1\n  splits {\n    abi {\n      enable true\n      reset()\n      include "${{ matrix.abi }}"\n      universalApk true\n    }\n  }/' android/app/build.gradle
-          )
+          fi
 
       - name: Assemble for ${{ matrix.abi }}
         run: |
@@ -67,9 +73,6 @@ jobs:
         with:
           name: apk-${{ matrix.abi }}
           path: output/app-${{ matrix.abi }}-release.apk
-
-    outputs:
-      artifacts: ${{ steps.build.outputs }}  # 可根据需要导出
 
   bundle:
     needs: build
@@ -106,7 +109,6 @@ jobs:
           path: dist
 
       - name: Create GitHub Release
-        id: create_release
         uses: softprops/action-gh-release@v1
         with:
           name: Release ${{ steps.get_version.outputs.VERSION }}
