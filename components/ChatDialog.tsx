@@ -809,26 +809,42 @@ const processMessageContent = (text: string, isUser: boolean, opts?: { isHtmlPag
             text: isUser ? styles.userMessageText : styles.botMessageText,
             // Enhanced code block styling
             code_block: { 
-              backgroundColor: '#111', // 修改为黑色
-              color: '#fff', 
-              borderRadius: 6, 
-              padding: 12, 
+              backgroundColor: '#111',
+              color: '#fff',
+              borderRadius: 6,
+              padding: 12,
               fontSize: 14,
               fontFamily: Platform.OS === 'ios' ? 'Menlo' : 'monospace',
               marginVertical: 10,
             },
             code_block_text: {
-              backgroundColor: 'transparent', // 改为透明，防止重叠底色
+              backgroundColor: '#111', // 显式设置背景
+              color: '#fff',           // 显式设置字体颜色
+              fontSize: 14,
+              fontFamily: Platform.OS === 'ios' ? 'Menlo' : 'monospace',
+              padding: 0,
+            },
+            fence: {
+              backgroundColor: '#111',
+              borderRadius: 6,
+              marginVertical: 10,
+              width: '100%',
+            },
+            fence_code: {
+              backgroundColor: '#111',
+              color: '#fff',
+              borderRadius: 6,
+              padding: 12,
+              fontSize: 14,
+              fontFamily: Platform.OS === 'ios' ? 'Menlo' : 'monospace',
+              width: '100%',
+            },
+            fence_code_text: {
+              backgroundColor: '#111',
               color: '#fff',
               fontSize: 14,
               fontFamily: Platform.OS === 'ios' ? 'Menlo' : 'monospace',
-            },
-            code_inline: { 
-              backgroundColor: '#111', // 修改为黑色
-              color: '#fff', 
-              borderRadius: 4, 
-              padding: 2, 
-              fontSize: 14 
+              padding: 0,
             },
             heading1: { fontSize: 24, fontWeight: 'bold', marginVertical: 10 },
             heading2: { fontSize: 22, fontWeight: 'bold', marginVertical: 8 },
@@ -847,27 +863,6 @@ const processMessageContent = (text: string, isUser: boolean, opts?: { isHtmlPag
             hr: { borderBottomWidth: 1, borderColor: '#aaa', marginVertical: 8 },
             link: { color: '#3498db', textDecorationLine: 'underline' },
             image: { width: 220, height: 160, borderRadius: 8, marginVertical: 8, alignSelf: 'center' },
-            fence_code: { // 改进fence_code样式 (用于```包裹的代码块)
-              backgroundColor: '#111',
-              color: '#fff',
-              borderRadius: 6,
-              padding: 12,
-              fontSize: 14,
-              marginVertical: 10,
-              fontFamily: Platform.OS === 'ios' ? 'Menlo' : 'monospace',
-              width: '100%',
-            },
-            fence_code_text: { // 添加特定文本样式
-              backgroundColor: 'transparent',
-              color: '#fff',
-              fontSize: 14,
-              fontFamily: Platform.OS === 'ios' ? 'Menlo' : 'monospace',
-              padding: 0,
-            },
-            fence: { // 添加fence样式
-              marginVertical: 10,
-              width: '100%',
-            }
           }}
           onLinkPress={(url: string) => {
             if (url.startsWith('http://') || url.startsWith('https://') || url.startsWith('mailto:')) {
@@ -888,8 +883,8 @@ const processMessageContent = (text: string, isUser: boolean, opts?: { isHtmlPag
               styles: any
             ) => {
               return (
-                <View key={node.key} style={styles.codeBlock}>
-                  <Text style={styles.codeText}>
+                <View key={node.key} style={styles.code_block}>
+                  <Text style={styles.code_block_text}>
                     {node.content || ''}
                   </Text>
                 </View>

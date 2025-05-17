@@ -24,28 +24,21 @@ const RichTextRenderer: React.FC<RichTextRendererProps> = ({
   onLinkPress,
   maxImageHeight = 300,
 }) => {
-  const [imageLoadErrors, setImageLoadErrors] = useState<Record<string, boolean>>({});
-
-  // Add validation for empty content
+  // 只渲染 HTML，不做 markdown 检测和渲染
   if (!html || html.trim() === '') {
     return <Text style={[styles.emptyText, baseStyle]}>(No content)</Text>;
   }
 
   // SafeURL handler for links
   const handleLinkPress = useCallback((url: string) => {
-    // Check URL protocol for safety
     if (!url.startsWith('http://') && !url.startsWith('https://') && !url.startsWith('mailto:')) {
       console.warn('Blocked unsafe URL protocol:', url);
       return;
     }
-
-    // Use custom handler if provided
     if (onLinkPress) {
       onLinkPress(url);
       return;
     }
-
-    // Default link handling
     Linking.canOpenURL(url)
       .then((supported) => {
         if (supported) {
@@ -59,40 +52,21 @@ const RichTextRenderer: React.FC<RichTextRendererProps> = ({
 
   // SafeImage handler with error handling
   const handleImagePress = useCallback((url: string) => {
-    console.log('Image pressed in RichTextRenderer:', url);
-    
-    // Check if it's a special image:id format
     if (url.startsWith('image:')) {
-      const imageId = url.substring(6); // Remove "image:" prefix
+      const imageId = url.substring(6);
       const imageInfo = ImageManager.getImageInfo(imageId);
-      
       if (imageInfo) {
-        console.log('Found image info for ID:', imageId);
-        // Use thumbnail path for preview and original for full view
         if (onImagePress) {
           onImagePress(imageInfo.originalPath);
         }
         return;
-      } else {
-        console.error('No image info found for ID:', imageId);
       }
     }
-    
     if (onImagePress) {
       onImagePress(url);
     }
   }, [onImagePress]);
 
-  // Image error handler
-  const handleImageError = useCallback((url: string) => {
-    console.error('Failed to load image:', url);
-    setImageLoadErrors(prev => ({
-      ...prev,
-      [url]: true
-    }));
-  }, []);
-
-  // Simply use the parseHtmlToReactNative function from our updated htmlParser
   try {
     return (
       <View style={styles.container}>
