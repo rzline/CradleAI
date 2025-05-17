@@ -152,6 +152,8 @@ export function getApiSettings(): {
   retryDelay?: number;
   geminiTemperature?: number; // 新增
   geminiMaxTokens?: number;   // 新增
+  useZhipuEmbedding?: boolean;
+  zhipuApiKey?: string;
 } {
   const settings = getUserSettingsGlobally();
   if (!settings || !settings.chat) {
@@ -170,7 +172,7 @@ export function getApiSettings(): {
   }
 
   // 互斥逻辑：只返回当前 provider 的参数
-  const { apiProvider, characterApiKey, openrouter, OpenAIcompatible, useCloudService = false, additionalGeminiKeys, useGeminiKeyRotation, useGeminiModelLoadBalancing, cloudModel, geminiPrimaryModel, geminiBackupModel, retryDelay, geminiTemperature, geminiMaxTokens } = settings.chat;
+  const { apiProvider, characterApiKey, openrouter, OpenAIcompatible, useCloudService = false, additionalGeminiKeys, useGeminiKeyRotation, useGeminiModelLoadBalancing, cloudModel, geminiPrimaryModel, geminiBackupModel, retryDelay, geminiTemperature, geminiMaxTokens, useZhipuEmbedding, zhipuApiKey } = settings.chat;
 
   // --- 修正：同步OpenAIcompatible的流式参数等 ---
   let openAICompatibleConfig: any = { enabled: false };
@@ -214,6 +216,8 @@ export function getApiSettings(): {
     geminiBackupModel,
     retryDelay,
     geminiTemperature, // 新增
-    geminiMaxTokens    // 新增
+    geminiMaxTokens,   // 新增
+    useZhipuEmbedding,
+    zhipuApiKey
   };
 }

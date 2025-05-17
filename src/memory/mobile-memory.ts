@@ -62,6 +62,8 @@ export class MobileMemory {
       this.config.embedder.provider,
       this.config.embedder.config,
     );
+    // 强制使用 mobile_file provider
+    this.config.vectorStore.provider = 'mobile_file';
     this.vectorStore = VectorStoreFactory.create(
       this.config.vectorStore.provider,
       this.config.vectorStore.config,
@@ -1091,6 +1093,8 @@ export class MobileMemory {
   async reset(): Promise<void> {
     await this.db.reset();
     await this.vectorStore.deleteCol();
+    // 重置时也强制使用 mobile_file provider
+    this.config.vectorStore.provider = 'mobile_file';
     this.vectorStore = VectorStoreFactory.create(
       this.config.vectorStore.provider,
       this.config.vectorStore.config,

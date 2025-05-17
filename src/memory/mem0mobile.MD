@@ -20,6 +20,7 @@ Mem0 记忆系统主要由以下三个核心组件组成：
 - **LLM 服务**：OpenAI GPT、Gemini 或 OpenRouter (多提供商支持)
 - **状态管理**：React Hooks 和 Context API
 - **调试工具**：内置诊断功能和日志系统
+- **向量存储**：支持 SQLite (expo-sqlite) 或文件系统 (expo-file-system) 两种实现，可通过配置切换
 
 ## 3. 文件结构
 
@@ -48,7 +49,8 @@ f:\my-app\src\memory\
 │   └── debug-helper.ts        # 调试助手
 ├── vector-stores/
 │   ├── base.ts                # 向量存储接口
-│   └── mobile-sqlite.ts       # SQLite向量存储实现
+│   ├── mobile-sqlite.ts       # SQLite向量存储实现
+│   └── mobile-file.ts         # 文件系统向量存储实现
 ├── components/
 │   ├── Mem0Initializer.tsx    # 初始化组件
 │   └── MemoryProcessingControl.tsx # 记忆管理界面
@@ -62,23 +64,25 @@ f:\my-app\src\memory\
 
 ## 4. 核心组件详解
 
-### 4.1 向量存储 (MobileSQLiteVectorStore)
+### 4.1 向量存储 (MobileSQLiteVectorStore / MobileFileVectorStore)
 
-`MobileSQLiteVectorStore` 提供在 SQLite 中存储和检索向量数据的功能：
+- **MobileSQLiteVectorStore**：基于 SQLite 的向量存储实现。
+- **MobileFileVectorStore**：基于 expo-file-system 的文件存储实现，每条向量数据为单独JSON文件，接口与SQLite实现兼容。
+- **切换方式**：在配置中将 `vectorStore.provider` 设置为 `mobile_file` 即可切换到文件存储。
 
-- **表结构**：`id`(主键), `vector`(向量数据), `payload`(元数据)
-- **API更新**：使用 `execAsync`、`runAsync` 等异步方法替代过时的事务方法
-- **关键方法**：
-  - `insert()`: 插入新向量
-  - `search()`: 执行相似度搜索
-  - `update()`: 更新现有向量
-  - `delete()`: 删除向量
-  - `getByCharacterId()`: 根据角色ID获取所有记忆
-  - `getCountByCharacterId()`: 获取特定角色的记忆数量
-  - `getStats()`: 获取向量存储统计信息
-- **类型安全**：
-  - 添加了专用接口 `CountResult`、`VectorRow` 和 `PayloadRow` 确保类型安全
-  - 模板化的方法 `all<T>` 和 `getOne<T>` 允许灵活类型处理
+```typescript
+const memoryConfig = {
+  // ...other config...
+  vectorStore: {
+    provider: 'mobile_file',
+    config: {
+      collectionName: 'memories',
+      dimension: 1536,
+      // 可选: baseDir: FileSystem.documentDirectory + 'vector-store/memories'
+    }
+  }
+}
+```
 
 ### 4.2 嵌入服务 (智谱嵌入器)
 

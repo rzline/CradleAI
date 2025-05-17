@@ -286,7 +286,7 @@ class Mem0Service {
             const tableMemoryIntegration = require('../integration/table-memory-integration');
             if (tableMemoryIntegration.isTableMemoryEnabled()) {
               // 检查角色是否有表格
-              const tables = await tableMemoryIntegration.getTableDataForPrompt(characterId, conversationId);
+              await tableMemoryIntegration.getTableDataForPrompt(characterId, conversationId);
             }
           } catch (e) {
             console.warn('[Mem0Service] 嵌入不可用时表格插件兜底失败:', e);
@@ -299,15 +299,27 @@ class Mem0Service {
         console.log('[Mem0Service] 跳过空消息');
         return;
       }
-      
+
       // 处理AI回复，如果有待更新的记忆，为它们添加AI响应
       if (role === 'bot' && this.lastProcessedMemoryIds.length > 0) {
-        console.log(`[Mem0Service] 收到AI回复，长度: ${message.length}字符，将更新${this.lastProcessedMemoryIds.length}条记忆的AI响应字段`);
-        await this.updateAIResponseForMemories(this.lastProcessedMemoryIds, message);
+        try {
+          console.log(`[Mem0Service] 收到AI回复，长度: ${message.length}字符，将更新${this.lastProcessedMemoryIds.length}条记忆的AI响应字段`);
+          await this.updateAIResponseForMemories(this.lastProcessedMemoryIds, message);
+        } catch (err) {
+          console.error('[Mem0Service] 更新AI响应字段时出错:', err instanceof Error ? err.stack : err);
+        }
         return;
       }
-      
+
       // 初始化缓存结构
+      if (!characterId) {
+        console.warn('[Mem0Service] characterId 为空，跳过 addChatMemory');
+        return;
+      }
+      if (!conversationId) {
+        console.warn('[Mem0Service] conversationId 为空，跳过 addChatMemory');
+        return;
+      }
       if (!this.messageCache[characterId]) {
         this.messageCache[characterId] = {};
       }
@@ -318,13 +330,13 @@ class Mem0Service {
           pendingUserMessage: false
         };
       }
-      
+
       const cache = this.messageCache[characterId][conversationId];
-      
+
       // 获取角色特定的命名
       const userName = this.getUserName(characterId);
       const aiName = this.getAIName(characterId);
-      
+
       // 添加当前消息到缓存，使用自定义称呼
       const timestamp = new Date().toISOString();
       cache.messages.push({
@@ -334,7 +346,7 @@ class Mem0Service {
         userName,
         aiName
       });
-      
+
       // 改进: 实现对话轮次计数逻辑
       if (role === 'user') {
         // 标记有一条待回复的用户消息
@@ -344,34 +356,42 @@ class Mem0Service {
         // 如果是AI回复，并且有待回复的用户消息，则完成一轮对话
         cache.pendingUserMessage = false;
         cache.userMessageCount++;
-        
+
         // 打印当前对话轮次和处理间隔
         console.log(`[Mem0Service] 完成第 ${cache.userMessageCount} 轮对话，处理间隔: ${this.processingInterval} 轮`);
-        
+
         // 改进：使用取模运算，确保只在达到确切的倍数时触发处理
         if (cache.userMessageCount > 0 && cache.userMessageCount % this.processingInterval === 0) {
-          console.log(`[Mem0Service] 达到处理间隔 ${this.processingInterval} 轮的整数倍，开始处理缓存记忆`);
-          await this.processMessageCache(characterId, conversationId);
+          try {
+            console.log(`[Mem0Service] 达到处理间隔 ${this.processingInterval} 轮的整数倍，开始处理缓存记忆`);
+            await this.processMessageCache(characterId, conversationId);
+          } catch (err) {
+            console.error('[Mem0Service] processMessageCache 异常:', err instanceof Error ? err.stack : err);
+          }
         }
       }
     } catch (error) {
-      console.error('[Mem0Service] 添加聊天记忆失败:', error);
-      
+      console.error('[Mem0Service] 添加聊天记忆失败:', error instanceof Error ? error.stack : error);
+
       // 判断错误类型
       if (error instanceof Error && error.message.includes('智谱嵌入API密钥未设置')) {
         console.warn('[Mem0Service] 智谱API密钥未设置，标记嵌入服务为不可用');
         this.isEmbeddingAvailable = false;
-        
+
         // 尝试重新获取API密钥
-        const apiKey = await this.tryGetZhipuApiKey();
-        if (apiKey) {
-          console.log('[Mem0Service] 找到API密钥，下次请求将尝试使用');
-          this.isEmbeddingAvailable = true;
+        try {
+          const apiKey = await this.tryGetZhipuApiKey();
+          if (apiKey) {
+            console.log('[Mem0Service] 找到API密钥，下次请求将尝试使用');
+            this.isEmbeddingAvailable = true;
+          }
+        } catch (e) {
+console.error('[Mem0Service] 添加聊天记忆失败:', error instanceof Error ? error.stack : error);
         }
       }
     }
   }
-  
+
   /**
    * 处理消息缓存，提取并保存记忆
    * @param characterId 角色ID
@@ -382,71 +402,81 @@ class Mem0Service {
     conversationId: string
   ): Promise<void> {
     try {
-      if (!this.messageCache[characterId]?.[conversationId]) {
+      if (!characterId || !conversationId) {
+        console.warn('[Mem0Service] processMessageCache 缺少 characterId 或 conversationId');
+        return;
+      }
+      if (!this.messageCache[characterId] || !this.messageCache[characterId][conversationId]) {
         console.log(`[Mem0Service] 没有找到角色ID=${characterId}，会话ID=${conversationId}的消息缓存`);
         return;
       }
-      
+
       const cache = this.messageCache[characterId][conversationId];
-      
-      if (cache.messages.length === 0) {
+
+      if (!cache || !Array.isArray(cache.messages) || cache.messages.length === 0) {
         console.log(`[Mem0Service] 消息缓存为空，无需处理`);
         return;
       }
-      
+
       // 获取角色特定的命名
       const userName = this.getUserName(characterId);
       const aiName = this.getAIName(characterId);
-      
+
       // 构建多轮对话格式，使用自定义称呼
       let conversationText = "";
       cache.messages.forEach((msg, index) => {
-        const speaker = msg.role === 'user' 
-          ? (msg.userName || userName) 
+        const speaker = msg.role === 'user'
+          ? (msg.userName || userName)
           : (msg.aiName || aiName);
-        
+
         conversationText += `${speaker}: ${msg.message}\n\n`;
       });
-      
+
       console.log(`[Mem0Service] 处理 ${cache.userMessageCount} 轮对话, 共 ${cache.messages.length} 条消息，角色ID=${characterId}`);
       console.log(`[Mem0Service] 对话内容预览: ${conversationText.substring(0, 100)}...`);
-      
+
       // 将自定义称呼信息传递给记忆系统
-      const result = await this.memoryActions!.add(
-        conversationText,
-        {
-          userId: 'current-user',
-          agentId: characterId,
-          runId: conversationId,
-          metadata: {
-            timestamp: new Date().toISOString(),
-            role: 'user',
-            isMultiRound: true,
-            userName: userName,
-            aiName: aiName
-          }
-        },
-        true  // 明确标记这是多轮对话处理
-      );
-      
+      let result: any = null;
+      try {
+        result = await this.memoryActions!.add(
+          conversationText,
+          {
+            userId: 'current-user',
+            agentId: characterId,
+            runId: conversationId,
+            metadata: {
+              timestamp: new Date().toISOString(),
+              role: 'user',
+              isMultiRound: true,
+              userName: userName,
+              aiName: aiName
+            }
+          },
+          true  // 明确标记这是多轮对话处理
+        );
+      } catch (err) {
+        console.error('[Mem0Service] memoryActions.add 异常:', err instanceof Error ? err.stack : err);
+        throw err;
+      }
+
       // 记录生成的事实
-      const factsCount = result.results?.length || 0;
+      const factsCount = result?.results?.length || 0;
       console.log(`[Mem0Service] 成功添加多轮对话记忆，生成了 ${factsCount} 条事实`);
-      
+
       // 清空上次处理的记忆ID，准备记录新的ID
       this.lastProcessedMemoryIds = [];
-      
-      if (factsCount > 0) {
+
+      if (factsCount > 0 && Array.isArray(result.results)) {
         console.log(`[Mem0Service] 提取的事实详情:`);
-        
+
         // 收集这次处理中添加或更新的记忆ID
         const processedIds: string[] = [];
-        
+
         result.results.forEach((item: { id: string; memory: string; metadata?: any }, index: number) => {
           console.log(`  事实 #${index + 1} (ID: ${item.id}): ${item.memory}`);
           if (item.metadata?.event) {
             console.log(`    操作类型: ${item.metadata.event}`);
-            
+
             // 如果是添加或更新操作，记录ID以便后续更新AI响应
             if (item.metadata.event === 'ADD' || item.metadata.event === 'UPDATE') {
               processedIds.push(item.id);
@@ -456,14 +486,14 @@ class Mem0Service {
             console.log(`    之前内容: ${item.metadata.previousMemory}`);
           }
         });
-        
+
         // 保存这次处理的记忆ID，以便下次AI回复时更新AI响应字段
         if (processedIds.length > 0) {
           this.lastProcessedMemoryIds = processedIds;
           console.log(`[Mem0Service] 已记录 ${processedIds.length} 个待更新的记忆ID，等待AI回复后更新AI响应字段`);
         }
       }
-      
+
       // 改进：重置消息缓存和计数器，但保留待处理的用户消息状态
       const pendingUserMessage = cache.pendingUserMessage;
       this.messageCache[characterId][conversationId] = {
@@ -471,11 +501,11 @@ class Mem0Service {
         userMessageCount: 0,
         pendingUserMessage
       };
-      
+
       console.log(`[Mem0Service] 已重置消息缓存和对话计数，准备下一轮收集，保留待处理用户消息状态: ${pendingUserMessage}`);
-      
+
     } catch (error) {
-      console.error('[Mem0Service] 处理消息缓存失败:', error);
+      console.error('[Mem0Service] 处理消息缓存失败:', error instanceof Error ? error.stack : error);
 
       // 新增：兜底处理表格操作指令
       try {
@@ -501,7 +531,7 @@ class Mem0Service {
           }
         }
       } catch (tableError) {
-        console.error('[Mem0Service] 嵌入失败时表格插件兜底处理也失败:', tableError);
+        console.error('[Mem0Service] 嵌入失败时表格插件兜底处理也失败:', tableError instanceof Error ? tableError.stack : tableError);
       }
 
       // 改进：即使处理失败也重置计数，避免因错误导致频繁尝试处理
@@ -516,7 +546,7 @@ class Mem0Service {
       }
     }
   }
-  
+
   /**
    * 更新记忆的AI响应字段
    * @param memoryIds 待更新的记忆ID数组
@@ -528,7 +558,7 @@ class Mem0Service {
         console.log('[Mem0Service] 无更新任务或缺少必要参数，跳过AI响应更新');
         return;
       }
-      
+
       // 过滤掉无效的记忆ID（null、undefined或空字符串）
       const validMemoryIds = memoryIds.filter(id => id && id.trim() !== '');
       if (validMemoryIds.length === 0) {
@@ -536,22 +566,22 @@ class Mem0Service {
         this.lastProcessedMemoryIds = [];
         return;
       }
-      
+
       // 截断过长的AI响应
       const maxResponseLength = 1000;
-      const truncatedResponse = aiResponse.length > maxResponseLength 
-        ? aiResponse.substring(0, maxResponseLength) + "..." 
+      const truncatedResponse = aiResponse.length > maxResponseLength
+        ? aiResponse.substring(0, maxResponseLength) + "..."
         : aiResponse;
-      
+
       console.log(`[Mem0Service] 正在为 ${validMemoryIds.length} 条记忆更新AI响应`);
       console.log(`[Mem0Service] 响应内容前50字符: "${truncatedResponse.substring(0, 50)}${truncatedResponse.length > 50 ? '...' : ''}"`);
-      
+
       // 调用memory实例的方法更新AI响应
       if (this.memoryRef && typeof this.memoryRef.updateAIResponse === 'function') {
         try {
           await this.memoryRef.updateAIResponse(validMemoryIds, truncatedResponse);
           console.log(`[Mem0Service] 成功更新 ${validMemoryIds.length} 条记忆的AI响应字段`);
-          
+
           // 记录更新的记忆ID，方便调试
           if (validMemoryIds.length <= 5) {
             console.log(`[Mem0Service] 更新的记忆ID: ${validMemoryIds.join(', ')}`);
@@ -559,8 +589,8 @@ class Mem0Service {
             console.log(`[Mem0Service] 更新的记忆ID (前5条): ${validMemoryIds.slice(0, 5).join(', ')}`);
           }
         } catch (updateError) {
-          console.error('[Mem0Service] 批量更新AI响应失败，尝试逐个更新:', updateError);
-          
+          console.error('[Mem0Service] 批量更新AI响应失败，尝试逐个更新:', updateError instanceof Error ? updateError.stack : updateError);
+
           // 如果批量更新失败，尝试逐个更新
           let successCount = 0;
           for (const memoryId of validMemoryIds) {
@@ -568,10 +598,10 @@ class Mem0Service {
               await this.memoryRef.updateAIResponse([memoryId], truncatedResponse);
               successCount++;
             } catch (singleError) {
-              console.error(`[Mem0Service] 更新单条记忆 ${memoryId} 的AI响应失败:`, singleError);
+              console.error(`[Mem0Service] 更新单条记忆 ${memoryId} 的AI响应失败:`, singleError instanceof Error ? singleError.stack : singleError);
             }
           }
-          
+
           if (successCount > 0) {
             console.log(`[Mem0Service] 逐个更新方式成功更新了 ${successCount}/${validMemoryIds.length} 条记忆的AI响应`);
           } else {
@@ -581,12 +611,12 @@ class Mem0Service {
       } else {
         console.warn('[Mem0Service] memory实例不支持updateAIResponse方法，无法更新AI响应');
       }
-      
+
       // 清空处理过的记忆ID
       this.lastProcessedMemoryIds = [];
     } catch (error) {
-      console.error('[Mem0Service] 更新AI响应失败:', error);
-      
+      console.error('[Mem0Service] 更新AI响应失败:', error instanceof Error ? error.stack : error);
+
       // 清空处理过的记忆ID，避免失败后重复尝试
       this.lastProcessedMemoryIds = [];
     }

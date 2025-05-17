@@ -40,7 +40,7 @@ interface GroupDialogProps {
 const INITIAL_LOAD_COUNT = 50; // Initial messages to show
 const BATCH_SIZE = 5; // How many messages to load per batch when scrolling up
 const { width } = Dimensions.get('window');
-const MAX_WIDTH = width * 0.88;
+const MAX_WIDTH = width - 32; // 保证左右各留16px安全边距
 const MAX_IMAGE_HEIGHT = 300;
 
 const GroupDialog: React.FC<GroupDialogProps> = ({
@@ -186,48 +186,22 @@ const GroupDialog: React.FC<GroupDialogProps> = ({
       };
     });
 
-    // Check if we're adding new messages or just getting an updated message array
-    const existingMessageIds = new Set(virtualizedMessages.map(m => m.messageId));
-    const hasNewMessages = processedMessages.some(msg => !existingMessageIds.has(msg.messageId));
-    const messageCountChanged = processedMessages.length !== virtualizedMessages.length;
-
-    // Only treat as "adding" if we have new messages that aren't in our current list
-    const isAddingNewMessages = hasNewMessages && messageCountChanged && 
-      processedMessages.length > virtualizedMessages.length;
-
-    // Small message set - show all
-    if (processedMessages.length <= INITIAL_LOAD_COUNT) {
-      console.log(`[GroupDialog] Small message set (${processedMessages.length}), showing all messages`);
-      setVirtualizedMessages(processedMessages);
-      setHasMoreMessagesToLoad(false);
-      return;
-    }
-
-    // Truly adding new messages - keep existing and append new ones
-    if (isAddingNewMessages) {
-      console.log(`[GroupDialog] New messages detected (${processedMessages.length - virtualizedMessages.length}), appending`);
-      
-      // Find messages that aren't in our current virtualized list
-      const newMessages = processedMessages.filter(msg => !existingMessageIds.has(msg.messageId));
-      
-      // Append only the new messages to avoid duplicates
-      setVirtualizedMessages(prev => [...prev, ...newMessages]);
-      return;
-    }
-
-    // Standard initialization for large conversations
+    // === 修正：每次localMessages变化都重新计算窗口，始终显示最新N条消息 ===
+    // 只在用户主动上拉加载时才扩展窗口，否则始终显示最新的INITIAL_LOAD_COUNT条
     const totalCount = processedMessages.length;
-    const endIdx = totalCount;
-    const startIdx = Math.max(0, totalCount - INITIAL_LOAD_COUNT);
-    
-    console.log(`[GroupDialog] Standard initialization with ${endIdx - startIdx} messages`);
-    
+    let startIdx = Math.max(0, totalCount - INITIAL_LOAD_COUNT);
+    let endIdx = totalCount;
+
+    // 如果当前virtualizedMessages比窗口大，说明用户上拉加载过历史消息，则保留窗口
+    if (virtualizedMessages.length > INITIAL_LOAD_COUNT) {
+      // 保持当前窗口大小，向前扩展
+      startIdx = Math.max(0, totalCount - virtualizedMessages.length);
+    }
+
     setVirtualizedMessages(processedMessages.slice(startIdx, endIdx));
     setHasMoreMessagesToLoad(startIdx > 0);
-    
-    // Reset scroll position when messages change significantly
     setInitialScrollDone(false);
-  }, [localMessages, userHasScrolled]); // 将依赖从messages改为localMessages
+  }, [localMessages]); // 只依赖localMessages，移除userHasScrolled依赖
 
   // Load more messages when scrolling up
   const loadMoreMessages = useCallback(() => {
@@ -466,11 +440,9 @@ const GroupDialog: React.FC<GroupDialogProps> = ({
     if (characterId === 'system') {
       return undefined; // Use default for system messages
     }
-    
     if (characterId === currentUser.id) {
       return currentUser.avatar; // Use current user's avatar
     }
-    
     // Find character in the profiles
     const character = characterProfiles[characterId];
     return character?.avatar ?? undefined;
@@ -484,7 +456,6 @@ const GroupDialog: React.FC<GroupDialogProps> = ({
   // Process and render message content
   const processMessageContent = (text: string, sender: string) => {
     const isUser = sender === currentUser.id;
-    
     // If text is empty, return a placeholder
     if (!text || text.trim() === '') {
       return (
@@ -505,7 +476,6 @@ const GroupDialog: React.FC<GroupDialogProps> = ({
   // Render a single message
   const renderMessageContent = (message: GroupMessage, isUser: boolean) => {
     const isSenderSystem = message.senderId === 'system';
-    
     // For system messages, render differently
     if (isSenderSystem) {
       return (
@@ -515,10 +485,42 @@ const GroupDialog: React.FC<GroupDialogProps> = ({
       );
     }
 
+    // --- 用户消息条：右上角显示头像，宽度自适应文本 ---
+    if (isUser) {
+      return (
+        <View style={[styles.userMessageWrapper]}>
+          {/* 用户头像，绝对定位右上角 */}
+          {getCharacterAvatar(message.senderId) && (
+            <Image
+              source={{ uri: String(getCharacterAvatar(message.senderId)) }}
+              style={styles.userMessageAvatar}
+            />
+          )}
+          <View style={[
+            styles.userGradient,
+            { 
+              alignSelf: 'flex-end',
+              maxWidth: MAX_WIDTH,
+              minWidth: 48,
+              paddingRight: 16,
+              paddingLeft: 16,
+              paddingVertical: 12,
+              borderRadius: 18,
+              borderTopRightRadius: 4,
+            }
+          ]}>
+            {processMessageContent(message.messageContent, message.senderId)}
+          </View>
+        </View>
+      );
+    }
+
+    // ...existing code for bot message...
     return (
       <View style={[
         styles.messageContent,
         isUser ? styles.userMessageContent : styles.botMessageContent,
+        { maxWidth: MAX_WIDTH }
       ]}>
         {!isUser && (
           <Image
@@ -530,16 +532,10 @@ const GroupDialog: React.FC<GroupDialogProps> = ({
             style={styles.messageAvatar}
           />
         )}
-        {isUser ? (
-          <View style={styles.userGradient}>
-            {processMessageContent(message.messageContent, message.senderId)}
-          </View>
-        ) : (
-          <View style={styles.botMessageTextContainer}>
-            <Text style={styles.senderName}>{message.senderName}</Text>
-            {processMessageContent(message.messageContent, message.senderId)}
-          </View>
-        )}
+        <View style={[styles.botMessageTextContainer, { maxWidth: MAX_WIDTH }]}>
+          <Text style={styles.senderName}>{message.senderName}</Text>
+          {processMessageContent(message.messageContent, message.senderId)}
+        </View>
       </View>
     );
   };
@@ -635,7 +631,7 @@ const GroupDialog: React.FC<GroupDialogProps> = ({
           renderItem={renderItem}
           keyExtractor={keyExtractor}
           style={[styles.container, style]}
-          contentContainerStyle={styles.content}
+          contentContainerStyle={[styles.content, { paddingHorizontal: 16 }]} // 保证整体左右有安全边距
           onScroll={handleUserScroll}
           scrollEventThrottle={16}
           showsVerticalScrollIndicator={true}
@@ -709,7 +705,7 @@ const styles = StyleSheet.create({
   },
   messageContent: {
     flex: 1,
-    maxWidth: MAX_WIDTH + 30,
+    maxWidth: MAX_WIDTH,
     marginHorizontal: 8,
     alignSelf: 'center',
   },
@@ -719,12 +715,32 @@ const styles = StyleSheet.create({
   botMessageContent: {
     alignSelf: 'flex-start',
   },
+  userMessageWrapper: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    justifyContent: 'flex-end',
+    position: 'relative',
+    minHeight: 40,
+    maxWidth: MAX_WIDTH,
+    alignSelf: 'flex-end',
+  },
   userGradient: {
     backgroundColor: 'rgba(255, 224, 195, 0.85)',
     borderRadius: 18,
     borderTopRightRadius: 4,
-    padding: 12,
-    paddingHorizontal: 16,
+    // padding 由 renderMessageContent 控制
+  },
+  userMessageAvatar: {
+    position: 'absolute',
+    right: -15,
+    top: -15,
+    zIndex: 2,
+    width: 30,
+    height: 30,
+    borderRadius: 15,
+    backgroundColor: '#444',
+    borderWidth: 2,
+    borderColor: 'rgba(255,255,255,0.2)',
   },
   userMessageText: {
     color: '#333',
@@ -738,8 +754,8 @@ const styles = StyleSheet.create({
     paddingHorizontal: 16,
     width: '100%',
     paddingTop: 20,
-    maxWidth: '98%',
     marginTop: 15,
+    maxWidth: MAX_WIDTH,
   },
   botMessageText: {
     color: '#fff',

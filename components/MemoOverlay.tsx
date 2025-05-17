@@ -27,6 +27,7 @@ import * as FileSystem from 'expo-file-system';
 import * as Sharing from 'expo-sharing';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import Slider from '@react-native-community/slider';
+import TextEditorModal from './common/TextEditorModal';
 
 interface MemoOverlayProps {
   isVisible: boolean;
@@ -91,7 +92,6 @@ const MemoOverlay: React.FC<MemoOverlayProps> = ({ isVisible, onClose, character
 
   // State for plugin settings
   const [pluginEnabled, setPluginEnabled] = useState<boolean>(false);
-  const [queueSystemEnabled, setQueueSystemEnabled] = useState<boolean>(true);
 
   // 新增：角色表格数据
   const [characterTablesData, setCharacterTablesData] = useState<Awaited<ReturnType<typeof TableMemory.getCharacterTablesData>> | null>(null);
@@ -1580,34 +1580,6 @@ const MemoOverlay: React.FC<MemoOverlayProps> = ({ isVisible, onClose, character
             />
           </TouchableOpacity>
         </View>
-
-        {/* 新增: 切换队列系统 */}
-        <View style={styles.settingItem}>
-          <View style={styles.settingLabel}>
-            <Text style={styles.settingTitle}>启用文件操作队列</Text>
-            <Text style={styles.settingDescription}>
-              启用队列可防止文件冲突，但可能导致UI卡顿
-            </Text>
-          </View>
-          <TouchableOpacity
-            style={[
-              styles.toggle,
-              queueSystemEnabled ? styles.toggleActive : styles.toggleInactive
-            ]}
-            onPress={() => {
-              const newValue = !queueSystemEnabled;
-              setQueueSystemEnabled(newValue);
-              TableMemory.setUseQueueSystem(newValue);
-            }}
-          >
-            <View
-              style={[
-                styles.toggleThumb,
-                queueSystemEnabled ? styles.toggleThumbActive : styles.toggleThumbInactive
-              ]}
-            />
-          </TouchableOpacity>
-        </View>
       </View>
 
       {/* Memory settings from MemoryProcessingControl */}
@@ -1658,52 +1630,76 @@ const MemoOverlay: React.FC<MemoOverlayProps> = ({ isVisible, onClose, character
         
       </View>
 
-      {/* 文件系统存储维护选项 */}
-      <Text style={styles.sectionTitle}>文件系统存储维护</Text>
-
-      <TouchableOpacity
-        style={styles.maintenanceButton}
-        onPress={handleResetStorageQueue}
-      >
-        <MaterialIcons name="sync" size={20} color="#ccc" />
-        <Text style={styles.maintenanceButtonText}>重置文件系统操作队列</Text>
-      </TouchableOpacity>
-
-      <TouchableOpacity
-        style={styles.maintenanceButton}
-        onPress={() => loadData(true)}
-      >
-        <MaterialIcons name="refresh" size={20} color="#ccc" />
-        <Text style={styles.maintenanceButtonText}>刷新所有数据</Text>
-      </TouchableOpacity>
-
       {selectedTableId && (
         <>
           <Text style={styles.sectionTitle}>表格维护</Text>
-
-          <TouchableOpacity
-            style={styles.maintenanceButton}
-            onPress={() => handleRebuildTable(selectedTableId, 'rebuild_base')}
-          >
-            <MaterialIcons name="build" size={20} color="#ccc" />
-            <Text style={styles.maintenanceButtonText}>重建表格</Text>
-          </TouchableOpacity>
-
-          <TouchableOpacity
-            style={styles.maintenanceButton}
-            onPress={() => handleRebuildTable(selectedTableId, 'rebuild_fix_all')}
-          >
-            <MaterialIcons name="healing" size={20} color="#ccc" />
-            <Text style={styles.maintenanceButtonText}>修复表格数据</Text>
-          </TouchableOpacity>
-
-          <TouchableOpacity
-            style={styles.maintenanceButton}
-            onPress={() => handleRebuildTable(selectedTableId, 'rebuild_simplify_history')}
-          >
-            <MaterialIcons name="compress" size={20} color="#ccc" />
-            <Text style={styles.maintenanceButtonText}>简化历史记录</Text>
-          </TouchableOpacity>
+          {/* 两列排布的表格维护按钮 */}
+          <View style={styles.maintenanceGrid}>
+            {/* rebuild_base */}
+            <TouchableOpacity
+              style={[styles.maintenanceButton, styles.maintenanceButtonGrid]}
+              onPress={() => handleRebuildTable(selectedTableId, 'rebuild_base')}
+            >
+              <MaterialIcons name="build" size={20} color="#ccc" />
+              <Text style={styles.maintenanceButtonText}>重建表格（基础）</Text>
+            </TouchableOpacity>
+            {/* rebuild_compatible */}
+            <TouchableOpacity
+              style={[styles.maintenanceButton, styles.maintenanceButtonGrid]}
+              onPress={() => handleRebuildTable(selectedTableId, 'rebuild_compatible')}
+            >
+              <MaterialIcons name="compare-arrows" size={20} color="#ccc" />
+              <Text style={styles.maintenanceButtonText}>兼容重建表格</Text>
+            </TouchableOpacity>
+            {/* rebuild_summary */}
+            <TouchableOpacity
+              style={[styles.maintenanceButton, styles.maintenanceButtonGrid]}
+              onPress={() => handleRebuildTable(selectedTableId, 'rebuild_summary')}
+            >
+              <MaterialIcons name="summarize" size={20} color="#ccc" />
+              <Text style={styles.maintenanceButtonText}>摘要重建表格</Text>
+            </TouchableOpacity>
+            {/* rebuild_fix_all */}
+            <TouchableOpacity
+              style={[styles.maintenanceButton, styles.maintenanceButtonGrid]}
+              onPress={() => handleRebuildTable(selectedTableId, 'rebuild_fix_all')}
+            >
+              <MaterialIcons name="healing" size={20} color="#ccc" />
+              <Text style={styles.maintenanceButtonText}>修复表格数据（全部）</Text>
+            </TouchableOpacity>
+            {/* rebuild_fix_simplify_all */}
+            <TouchableOpacity
+              style={[styles.maintenanceButton, styles.maintenanceButtonGrid]}
+              onPress={() => handleRebuildTable(selectedTableId, 'rebuild_fix_simplify_all')}
+            >
+              <MaterialIcons name="filter-list" size={20} color="#ccc" />
+              <Text style={styles.maintenanceButtonText}>修复并简化（全部）</Text>
+            </TouchableOpacity>
+            {/* rebuild_fix_simplify_without_history */}
+            <TouchableOpacity
+              style={[styles.maintenanceButton, styles.maintenanceButtonGrid]}
+              onPress={() => handleRebuildTable(selectedTableId, 'rebuild_fix_simplify_without_history')}
+            >
+              <MaterialIcons name="filter-alt" size={20} color="#ccc" />
+              <Text style={styles.maintenanceButtonText}>修复并简化（无历史）</Text>
+            </TouchableOpacity>
+            {/* rebuild_simplify_history */}
+            <TouchableOpacity
+              style={[styles.maintenanceButton, styles.maintenanceButtonGrid]}
+              onPress={() => handleRebuildTable(selectedTableId, 'rebuild_simplify_history')}
+            >
+              <MaterialIcons name="compress" size={20} color="#ccc" />
+              <Text style={styles.maintenanceButtonText}>简化历史记录</Text>
+            </TouchableOpacity>
+            {/* refresh_table_old */}
+            <TouchableOpacity
+              style={[styles.maintenanceButton, styles.maintenanceButtonGrid]}
+              onPress={() => handleRebuildTable(selectedTableId, 'refresh_table_old')}
+            >
+              <MaterialIcons name="refresh" size={20} color="#ccc" />
+              <Text style={styles.maintenanceButtonText}>刷新表格（旧版）</Text>
+            </TouchableOpacity>
+          </View>
         </>
       )}
     </ScrollView>
@@ -1789,41 +1785,66 @@ const MemoOverlay: React.FC<MemoOverlayProps> = ({ isVisible, onClose, character
 
   // Modal for creating new memory
   const renderNewMemoryModal = () => (
-    <Modal
-      visible={isCreatingNew}
-      transparent={true}
-      animationType="fade"
-      onRequestClose={() => setIsCreatingNew(false)}
-    >
-      <View style={styles.modalOverlay}>
-        <View style={styles.cellEditContainer}>
-          <Text style={styles.cellEditTitle}>新建记忆</Text>
-          <TextInput
-            style={styles.cellEditInput}
-            value={newMemoryContent}
-            onChangeText={setNewMemoryContent}
-            multiline
-            autoFocus
-            placeholder="输入新记忆内容..."
-            placeholderTextColor="#999"
-          />
-          <View style={styles.cellEditActions}>
-            <TouchableOpacity
-              style={[styles.cellEditButton, styles.cellEditCancelButton]}
-              onPress={() => setIsCreatingNew(false)}
-            >
-              <Text style={styles.cellEditButtonText}>取消</Text>
-            </TouchableOpacity>
-            <TouchableOpacity
-              style={[styles.cellEditButton, styles.cellEditSaveButton]}
-              onPress={handleSaveNewMemory}
-            >
-              <Text style={styles.cellEditButtonText}>创建</Text>
-            </TouchableOpacity>
-          </View>
-        </View>
-      </View>
-    </Modal>
+    <TextEditorModal
+      isVisible={isCreatingNew}
+      initialText={newMemoryContent}
+      title="新建记忆"
+      placeholder="输入新记忆内容..."
+      onClose={() => setIsCreatingNew(false)}
+      onSave={async (text: string) => {
+        setNewMemoryContent(text);
+        // 直接调用原有保存逻辑
+        // handleSaveNewMemory 依赖 newMemoryContent，所以这里直接传递 text
+        if (!text.trim()) {
+          Alert.alert('错误', '记忆内容不能为空');
+          return;
+        }
+        if (!characterId) {
+          Alert.alert('错误', '未选择角色');
+          return;
+        }
+        try {
+          setIsCreatingNew(false); 
+          Alert.alert('处理中', '正在创建记忆...');
+          const mem0Service = Mem0Service.getInstance();
+          if (!mem0Service.isEmbeddingAvailable) {
+            throw new Error('嵌入服务不可用，请确保在设置中配置了有效的智谱API密钥');
+          }
+          const result = await mem0Service.createMemory(
+            text, 
+            characterId, 
+            conversationId
+          );
+          if (result) {
+            Alert.alert('成功', '成功创建新记忆');
+            setNewMemoryContent('');
+            await handleRefresh();
+          } else {
+            throw new Error('创建记忆失败，请检查嵌入服务配置');
+          }
+        } catch (error) {
+          const errorMessage = error instanceof Error ? error.message : String(error);
+          console.error('[MemoOverlay] Error creating memory:', error);
+          let alertMessage = '创建记忆失败';
+          if (errorMessage.includes('嵌入服务不可用') || 
+              errorMessage.includes('API密钥') || 
+              errorMessage.includes('嵌入')) {
+            alertMessage = '创建记忆失败：嵌入服务不可用。请在设置中配置有效的智谱API密钥。';
+          } else {
+            alertMessage = `创建记忆失败：${errorMessage}`;
+          }
+          Alert.alert('错误', alertMessage, [
+            { 
+              text: '重试', 
+              onPress: () => setIsCreatingNew(true) 
+            },
+            { 
+              text: '确定' 
+            }
+          ]);
+        }
+      }}
+    />
   );
 
   return (
@@ -2092,7 +2113,7 @@ const styles = StyleSheet.create({
   },
   statsText: {
     color: '#ccc',
-    fontSize: 13,
+       fontSize: 13,
   },
   backupButtonsContainer: {
     flexDirection: 'row',
@@ -2545,12 +2566,22 @@ const styles = StyleSheet.create({
   },
 
   // Maintenance
+  maintenanceGrid: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    justifyContent: 'space-between',
+    marginBottom: 10,
+  },
   maintenanceButton: {
     flexDirection: 'row',
     alignItems: 'center',
     backgroundColor: 'rgba(60, 60, 60, 0.6)',
     borderRadius: 8,
     padding: 12,
+    marginBottom: 10,
+  },
+  maintenanceButtonGrid: {
+    width: '48%',
     marginBottom: 10,
   },
   maintenanceButtonText: {

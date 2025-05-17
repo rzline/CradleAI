@@ -683,26 +683,51 @@ const CharacterDetail: React.FC = () => {
     setIsSaving(true);
     
     try {
+      // 打印调试信息：保存前检查世界书条目数量和内容
+      console.log(`Saving character with ${worldBookEntries.length} worldbook entries`);
+      worldBookEntries.forEach((entry, idx) => {
+        console.log(`Entry ${idx}: ${entry.name}, content length: ${entry.content?.length || 0}`);
+      });
+      
+      // 修改：调整过滤逻辑，确保有效的条目不会被过滤掉
       const worldBookData = {
         entries: Object.fromEntries(
           worldBookEntries
-            .filter(entry => entry.name && entry.content)
-            .map(entry => [
-              entry.name,
-              {
-                comment: entry.comment || '',
-                content: entry.content,
-                disable: entry.disable,
-                position: entry.position,
-                constant: entry.constant || false,
-                key: Array.isArray(entry.key) ? entry.key : [],
-                ...(entry.position === 4 ? { depth: entry.depth || 0 } : {}),
-                order: entry.order || 0,
-                vectorized: false
+            // 过滤规则：只过滤掉内容和名称都为空的条目
+            .filter(entry => {
+              const hasContent = !!entry.content?.trim();
+              const hasName = !!entry.name?.trim();
+              const shouldKeep = hasContent || hasName;
+              if (!shouldKeep) {
+                console.log(`Filtering out empty entry: ${entry.id}`);
               }
-            ])
+              return shouldKeep;
+            })
+            .map(entry => {
+              // 为条目名称生成适当的键名
+              const keyName = entry.name?.trim() || `Entry_${entry.id}`;
+              // 构建条目数据
+              return [
+                keyName,
+                {
+                  comment: entry.comment || entry.name || `Entry_${entry.id}`,
+                  content: entry.content || '',
+                  disable: entry.disable,
+                  position: entry.position,
+                  constant: entry.constant || false,
+                  key: Array.isArray(entry.key) ? entry.key : [],
+                  ...(entry.position === 4 ? { depth: entry.depth || 0 } : {}),
+                  order: entry.order || 0,
+                  vectorized: entry.vectorized || false
+                }
+              ];
+            })
         )
       };
+      
+      // 打印调试信息：检查转换后的条目
+      const entryCount = Object.keys(worldBookData.entries).length;
+      console.log(`Converted to ${entryCount} worldbook entries`);
       
       const presetData = {
         prompts: presetEntries.map(entry => ({
@@ -740,7 +765,9 @@ const CharacterDetail: React.FC = () => {
         },
         worldBook: worldBookData,
         preset: presetData,
-        authorNote: authorNoteData
+        authorNote: authorNoteData,
+        // 确保保存多开场白数据
+        alternateGreetings: alternateGreetings
       };
       
       const cradleFields: Partial<CradleCharacter> = {
@@ -864,20 +891,86 @@ const CharacterDetail: React.FC = () => {
     onOptionsChange?: (options: any) => void,
     name?: string,
     onNameChange?: (text: string) => void,
-    entryId?: string // Add entryId parameter
+    entryId?: string
   ) => {
-    setSelectedField({ 
-      title, 
-      content, 
-      onContentChange, 
-      editable,
-      entryType,
-      entryOptions,
-      onOptionsChange,
-      name,
-      onNameChange,
-      id: entryId // Store the ID for deletion
-    });
+    // 对于 worldbook 条目，自动绑定更新函数
+    if (entryType === 'worldbook' && entryId) {
+      console.log(`Opening worldbook detail for entry ${entryId} with content length: ${content.length}`);
+      // 保存当前的条目，以便在sidebar中正确显示
+      const currentEntry = worldBookEntries.find(entry => entry.id === entryId);
+      if (!currentEntry) {
+        console.warn(`Entry ${entryId} not found in worldBookEntries`);
+      }
+      
+      setSelectedField({
+        title,
+        content,
+        editable,
+        entryType,
+        entryOptions,
+        name,
+        id: entryId,
+        onContentChange: (text: string) => {
+          console.log(`Updating content for worldbook entry ${entryId}, length: ${text.length}`);
+          handleUpdateWorldBookEntry(entryId, { content: text });
+          // 确保在关闭DetailSidebar后内容持久保存
+          setHasUnsavedChanges(true);
+        },
+        onNameChange: (text: string) => {
+          console.log(`Updating name for worldbook entry ${entryId}`);
+          handleUpdateWorldBookEntry(entryId, { name: text });
+        },
+        onOptionsChange: (options: any) => {
+          console.log(`Updating options for worldbook entry ${entryId}`);
+          handleUpdateWorldBookEntry(entryId, options);
+        },
+      });
+    } else if (entryType === 'preset' && entryId) {
+      setSelectedField({
+        title,
+        content,
+        editable,
+        entryType,
+        entryOptions,
+        name,
+        id: entryId,
+        onContentChange: (text: string) => {
+          handleUpdatePresetEntry(entryId, { content: text });
+          setHasUnsavedChanges(true);
+        },
+        onNameChange: (text: string) => handleUpdatePresetEntry(entryId, { name: text }),
+        onOptionsChange: (options: any) => handleUpdatePresetEntry(entryId, options),
+      });
+    } else if (entryType === 'author_note') {
+      setSelectedField({ 
+        title, 
+        content, 
+        onContentChange: (text: string) => {
+          if (onContentChange) onContentChange(text);
+          setHasUnsavedChanges(true);
+        }, 
+        editable,
+        entryType,
+        entryOptions,
+        onOptionsChange,
+        name,
+        onNameChange,
+        id: entryId
+      });
+    } else {
+      setSelectedField({ 
+        title, 
+        content, 
+        onContentChange, 
+        editable,
+        entryType,
+        entryOptions,
+        onOptionsChange,
+        name,
+        onNameChange,
+        id: entryId
+      });
+    }
   };
 
   const handleAddWorldBookEntry = () => {
@@ -898,9 +991,22 @@ const CharacterDetail: React.FC = () => {
   };
   
   const handleUpdateWorldBookEntry = (id: string, updates: Partial<WorldBookEntryUI>) => {
-    setWorldBookEntries(prev =>
-      prev.map(entry => entry.id === id ? { ...entry, ...updates } : entry)
-    );
+    setWorldBookEntries(prev => {
+      // 确保我们返回一个新数组实例，使React检测到状态变化
+      const updated = prev.map(entry => {
+        if (entry.id === id) {
+          // 如果是更新 content，打印调试信息
+          if ('content' in updates) {
+            console.log(`WorldBook content updated for ${id}, new length: ${updates.content?.length || 0}`);
+          }
+          return { ...entry, ...updates };
+        }
+        return entry;
+      });
+      
+      console.log(`Updated worldbook entry ${id}, entries count: ${updated.length}`);
+      return updated;
+    });
     setHasUnsavedChanges(true);
   };
   

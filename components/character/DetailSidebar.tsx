@@ -39,7 +39,7 @@ interface DetailSidebarProps {
   onDelete?: () => void;
 }
 
-const { width } = Dimensions.get('window');
+const { width, height } = Dimensions.get('window');
 const COLOR_BEIGE = 'rgb(255, 224, 195)';
 const COLOR_DANGER = '#FF5252';
 
@@ -186,9 +186,13 @@ const DetailSidebar: React.FC<DetailSidebarProps> = ({
       if (onNameChange && name !== undefined) {
         onNameChange(localName);
       }
+      // 新增：保存 entryOptions
+      if (onOptionsChange && entryOptions !== undefined) {
+        onOptionsChange(localOptions);
+      }
       onClose();
     }, 100);
-  }, [localContent, localName, onContentChange, onNameChange, name, onClose]);
+  }, [localContent, localName, onContentChange, onNameChange, name, onClose, onOptionsChange, entryOptions, localOptions]);
 
   const handleCloseWithKeyboardDismiss = useCallback(() => {
     userCloseRef.current = true;
@@ -205,10 +209,8 @@ const DetailSidebar: React.FC<DetailSidebarProps> = ({
 
   const handleTextSave = useCallback((newText: string) => {
     setLocalContent(newText);
-    if (onContentChange) {
-      onContentChange(newText);
-    }
-  }, [onContentChange]);
+    console.log('[DetailSidebar] Text editor content updated', newText.length);
+  }, []);
 
   const renderEntryOptions = () => {
     if (!entryType || !localOptions) return null;
@@ -422,82 +424,122 @@ const DetailSidebar: React.FC<DetailSidebarProps> = ({
       onRequestClose={handleCloseWithKeyboardDismiss}
       supportedOrientations={['portrait', 'landscape']}
     >
-      <BlurView intensity={20} tint="dark" style={styles.container}>
-        <Animated.View 
-          style={[
-            styles.modalWrapper,
-            { transform: [{ translateY: translateYValue }] }
-          ]}
-        >
-          <View style={styles.content}>
-            <View style={styles.header}>
-              <Text style={styles.title}>{title}</Text>
-              <View style={styles.headerButtons}>
+      {/* 全屏化：BlurView和内容都用flex:1撑满 */}
+      <BlurView intensity={20} tint="dark" style={styles.fullscreenContainer}>
+        <TouchableWithoutFeedback onPress={Keyboard.dismiss}>
+          <View style={styles.fullscreenWrapper}>
+            <View style={styles.fullscreenContent}>
+              <View style={styles.header}>
+                <Text style={styles.title}>{title}</Text>
+                <View style={styles.headerButtons}>
+                  <TouchableOpacity 
+                    style={styles.headerButton} 
+                    onPress={handleCloseWithKeyboardDismiss}
+                    accessibilityLabel="Close"
+                  >
+                    <Ionicons name="close" size={24} color="#fff" />
+                  </TouchableOpacity>
+                </View>
+              </View>
 
+              {name !== undefined && (
+                <View style={styles.nameContainer}>
+                  <Text style={styles.nameLabel}>名称:</Text>
+                  <TextInput
+                    style={styles.nameInput}
+                    value={localName}
+                    onChangeText={setLocalName}
+                    editable={editable}
+                    placeholder="输入名称..."
+                    placeholderTextColor="#999"
+                  />
+                </View>
+              )}
 
-                <TouchableOpacity 
-                  style={styles.headerButton} 
-                  onPress={handleCloseWithKeyboardDismiss}
-                  accessibilityLabel="Close"
+              {renderEntryOptions()}
+
+              <View style={styles.scrollViewWrapper}>
+                <ScrollView 
+                  style={styles.scrollContainer}
+                  contentContainerStyle={styles.scrollContentContainer}
                 >
-                  <Ionicons name="close" size={24} color="#fff" />
-                </TouchableOpacity>
+                  <TouchableOpacity 
+                    style={styles.textPreview} 
+                    onPress={handleTextPress}
+                    disabled={!editable}
+                  >
+                    <Text style={styles.textPreviewContent} numberOfLines={0}>
+                      {localContent || '点击编辑文本...'}
+                    </Text>
+                  </TouchableOpacity>
+                </ScrollView>
               </View>
-            </View>
 
-            {name !== undefined && (
-              <View style={styles.nameContainer}>
-                <Text style={styles.nameLabel}>名称:</Text>
-                <TextInput
-                  style={styles.nameInput}
-                  value={localName}
-                  onChangeText={setLocalName}
-                  editable={editable}
-                  placeholder="输入名称..."
-                  placeholderTextColor="#999"
-                />
-              </View>
-            )}
-
-            {renderEntryOptions()}
-
-            <View style={styles.scrollContainer}>
-              <TouchableOpacity 
-                style={styles.textPreview} 
-                onPress={handleTextPress}
-                disabled={!editable}
-              >
-                <Text style={styles.textPreviewContent} numberOfLines={0}>
-                  {localContent || '点击编辑文本...'}
-                </Text>
-              </TouchableOpacity>
-            </View>
-
-            <View style={styles.buttonContainer}>
-              <TouchableOpacity
-                style={[styles.button, styles.cancelButton]}
-                onPress={handleCloseWithKeyboardDismiss}
-              >
-                <Text style={styles.buttonText}>取消</Text>
-              </TouchableOpacity>
               {editable && (
                 <TouchableOpacity
-                  style={[styles.button, styles.saveButton]}
-                  onPress={handleSaveWithKeyboardDismiss}
+                  style={styles.editButton}
+                  onPress={handleTextPress}
                 >
-                  <Text style={styles.buttonText}>保存</Text>
+                  <Ionicons name="create-outline" size={16} color="#000" />
+                  <Text style={styles.editButtonText}>编辑文本内容</Text>
                 </TouchableOpacity>
               )}
-            </View>
 
-            <TextEditorModal
-              isVisible={showTextEditor}
-              onClose={() => setShowTextEditor(false)}
-              onSave={handleTextSave}
-              initialText={localContent}
-            />
+              <View style={styles.buttonContainer}>
+                <TouchableOpacity
+                  style={[styles.button, styles.cancelButton]}
+                  onPress={handleCloseWithKeyboardDismiss}
+                >
+                  <Text style={styles.buttonText}>取消</Text>
+                </TouchableOpacity>
+                {editable && (
+                  <TouchableOpacity
+                    style={[styles.button, styles.saveButton]}
+                    onPress={handleSaveWithKeyboardDismiss}
+                  >
+                    <Text style={styles.buttonText}>保存</Text>
+                  </TouchableOpacity>
+                )}
+                {onDelete && (
+                  <TouchableOpacity
+                    style={[styles.button, styles.deleteButton]}
+                    onPress={() => {
+                      Alert.alert(
+                        "确认删除",
+                        "确定要删除这个条目吗？此操作不能撤销。",
+                        [
+                          {
+                            text: "取消",
+                            style: "cancel"
+                          },
+                          { 
+                            text: "删除", 
+                            onPress: () => {
+                              onDelete();
+                              onClose();
+                            },
+                            style: "destructive"
+                          }
+                        ]
+                      );
+                    }}
+                  >
+                    <Text style={styles.buttonText}>删除</Text>
+                  </TouchableOpacity>
+                )}
+              </View>
+
+              <TextEditorModal
+                isVisible={showTextEditor}
+                onClose={() => setShowTextEditor(false)}
+                onSave={handleTextSave}
+                initialText={localContent}
+                title={`编辑${title || '条目'}内容`}
+                placeholder="输入文本内容..."
+              />
+            </View>
           </View>
-        </Animated.View>
+        </TouchableWithoutFeedback>
       </BlurView>
     </Modal>
   );
@@ -514,28 +556,38 @@ const styles = StyleSheet.create({
     flex: 1,
     justifyContent: 'center',
     alignItems: 'center',
-    marginBottom: Platform.OS === 'ios' ? 0 : 20,
+    padding: 20,
   },
   content: {
     width: width * 0.9,
     maxWidth: 500,
-    height: '80%',
-    maxHeight: 600,
+    maxHeight: height * 0.8,
     backgroundColor: '#333',
     borderRadius: 10,
     overflow: 'hidden',
     flexDirection: 'column',
+    display: 'flex',
+  },
+  scrollViewWrapper: {
+    flex: 1,
+    minHeight: 100,
+    maxHeight: height * 0.4, // 响应式高度，按钮始终可见
+    minWidth: 0,
   },
   scrollContainer: {
     flex: 1,
-    minHeight: 200,
+    minWidth: 0,
+  },
+  scrollContentContainer: {
+    padding: 16,
+    minWidth: 0,
   },
   textPreview: {
-    flex: 1,
-    padding: 16,
     backgroundColor: '#444',
     borderRadius: 8,
-    margin: 16,
+    padding: 16,
+    minHeight: 120,
+    minWidth: 0,
   },
   textPreviewContent: {
     color: '#fff',
@@ -545,9 +597,12 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
-    padding: 16,
+    paddingHorizontal: 16,
+    paddingTop: 20,
+    paddingBottom: 12,
     borderBottomWidth: 1,
     borderBottomColor: '#444',
+    minHeight: 56,
   },
   title: {
     fontSize: 18,
@@ -585,6 +640,23 @@ const styles = StyleSheet.create({
     backgroundColor: '#444',
     borderRadius: 4,
   },
+  editButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: COLOR_BEIGE,
+    padding: 8,
+    marginHorizontal: 16,
+    marginTop: 8,
+    marginBottom: 8,
+    borderRadius: 4,
+  },
+  editButtonText: {
+    color: '#000',
+    fontWeight: 'bold',
+    fontSize: 14,
+    marginLeft: 4,
+  },
   buttonContainer: {
     flexDirection: 'row',
     justifyContent: 'flex-end',
@@ -592,6 +664,7 @@ const styles = StyleSheet.create({
     borderTopWidth: 1,
     borderTopColor: '#444',
     backgroundColor: '#333',
+    minWidth: 0,
   },
   buttonContainerWithKeyboard: {
     borderTopWidth: 1,
@@ -610,14 +683,18 @@ const styles = StyleSheet.create({
   saveButton: {
     backgroundColor: COLOR_BEIGE,
   },
+  deleteButton: {
+    backgroundColor: COLOR_DANGER,
+  },
   buttonText: {
-    color: '#000',
+    color: 'black',
     fontWeight: 'bold',
   },
   optionsContainer: {
     padding: 16,
     borderBottomWidth: 1,
     borderBottomColor: '#444',
+    minWidth: 0,
   },
   optionRow: {
     flexDirection: 'row',
@@ -654,6 +731,34 @@ const styles = StyleSheet.create({
   slider: {
     flex: 1,
     height: 40,
+  },
+  // 替换container/modalWrapper/content为全屏样式
+  fullscreenContainer: {
+    flex: 1,
+    minWidth: 0,
+    minHeight: 0,
+  },
+  fullscreenWrapper: {
+    flex: 1,
+    justifyContent: 'flex-start',
+    alignItems: 'center',
+    paddingTop: Platform.OS === 'ios' ? 44 : 0,
+    backgroundColor: 'rgba(0,0,0,0.3)',
+    minWidth: 0,
+    minHeight: 0,
+  },
+  fullscreenContent: {
+    flex: 1,
+    width: '100%',
+    maxWidth: 600, // 限制最大宽度，适配大屏
+    minWidth: 0,
+    minHeight: 0,
+    backgroundColor: '#333',
+    borderRadius: Platform.OS === 'web' ? 12 : 0,
+    overflow: 'hidden',
+    flexDirection: 'column',
+    display: 'flex',
+    alignSelf: 'center',
   },
 });
 

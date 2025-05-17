@@ -2,6 +2,7 @@ import { Embedder } from '../embeddings/base';
 import { ZhipuEmbedder } from '../embeddings/zhipu-embedder';
 import { VectorStore } from '../vector-stores/base';
 import { MobileSQLiteVectorStore } from '../vector-stores/mobile-sqlite';
+import { MobileFileVectorStore } from '../vector-stores/mobile-file';
 import { 
   EmbeddingConfig, 
   LLMConfig, 
@@ -48,6 +49,8 @@ export class VectorStoreFactory {
     switch (provider.toLowerCase()) {
       case 'mobile_sqlite':
         return new MobileSQLiteVectorStore(config as any);
+      case 'mobile_file':
+        return new MobileFileVectorStore(config as any);
       default:
         throw new Error(`不支持的向量存储提供商: ${provider}`);
     }

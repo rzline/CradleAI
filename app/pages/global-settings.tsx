@@ -102,32 +102,6 @@ const TABS = [
   { key: 'regex', label: '全局正则' },
 ];
 
-// 工具函数：确保所有 FIXED 条目都存在
-function ensureFixedPresetEntries(presetEntries: PresetEntryUI[]): PresetEntryUI[] {
-  const fixedIds = new Set(DEFAULT_PRESET_ENTRIES.FIXED.map(e => e.identifier));
-  const userEntries = presetEntries.filter(e => !fixedIds.has(e.identifier));
-  // 保证 FIXED 条目顺序和定义一致
-  return [
-    ...DEFAULT_PRESET_ENTRIES.FIXED,
-    ...userEntries
-  ];
-}
-
-// 工具函数：确保 prompt_order 顺序和 UI 一致，并包含 chatHistory
-function buildPromptOrderFromEntries(entries: PresetEntryUI[]): { order: any[] } {
-  const order = entries
-    .sort((a, b) => a.order - b.order)
-    .map(entry => ({
-      identifier: entry.identifier,
-      enabled: entry.enable
-    }));
-  // 确保 chatHistory 存在
-  if (!order.some(o => o.identifier === 'chatHistory')) {
-    order.push({ identifier: 'chatHistory', enabled: true });
-  }
-  return { order };
-}
-
 // 类型转换：PresetJson.prompts -> PresetEntryUI[]
 function promptsToPresetEntryUI(prompts: PresetJson['prompts']): PresetEntryUI[] {
   return prompts.map((p, idx) => ({
@@ -872,7 +846,7 @@ export default function GlobalSettingsPage() {
     ]);
   };
 
-  // 修改 handleImportPreset 逻辑，支持文件名为模板名
+  // 修改 handleImportPreset 逻辑，导入后直接用导入预设的顺序
   const handleImportPreset = async () => {
     try {
       const result = await DocumentPicker.getDocumentAsync({
@@ -888,6 +862,7 @@ export default function GlobalSettingsPage() {
         ...cfg,
         presetJson,
       }));
+      // 直接用导入的 prompts 顺序
       setPresetEntries(promptsToPresetEntryUI(presetJson.prompts));
       if (selectedPresetId) {
         setGlobalPresetList(list =>
@@ -1856,15 +1831,19 @@ export default function GlobalSettingsPage() {
  const handleSave = async () => {
     setIsSaving(true);
     try {
-      // 合并 FIXED 条目
-      const mergedPresetEntries = ensureFixedPresetEntries(presetEntries);
-      const promptOrder = buildPromptOrderFromEntries(mergedPresetEntries);
+      // 直接用当前 presetEntries 顺序
+      const promptOrder = {
+        order: presetEntries.map(entry => ({
+          identifier: entry.identifier,
+          enabled: entry.enable
+        }))
+      };
       const normalizedPresetJson = {
-        prompts: presetEntryUIToPrompts(mergedPresetEntries),
+        prompts: presetEntryUIToPrompts(presetEntries),
         prompt_order: [promptOrder]
       };
 
-      // === 修正：保存时用最新的 presetEntries 更新 globalPresetList ===
+      // 保存时直接更新 globalPresetList
       const updatedGlobalPresetList = globalPresetList.map(tpl =>
         tpl.id === selectedPresetId
           ? { ...tpl, presetJson: normalizedPresetJson }

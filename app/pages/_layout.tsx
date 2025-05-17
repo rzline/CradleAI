@@ -63,8 +63,15 @@ export default function PagesLayout() {
           headerShown: false,
         }}
       />
-    </Stack>
-    
+                        <Stack.Screen
+        name="plugins"
+        options={{
+          presentation: 'modal',
+          headerShown: false,
+        }}
+      />
+      
+    </Stack> 
     
   );
 }
