@@ -37,10 +37,11 @@ jobs:
       - name: Run Expo Prebuild
         run: npx expo prebuild
 
-      # 修改 build.gradle 以启用 per-ABI 构建
-      - name: Configure build.gradle for split APKs
+      # 创建一个单独的脚本来修改 build.gradle
+      - name: Create script for modifying build.gradle
         run: |
-          echo "配置 build.gradle 来实现按架构分包"
+          cat > modify_gradle.sh << 'EOF'
+          #!/bin/bash
           BUILD_GRADLE="android/app/build.gradle"
           
           # 检查文件是否存在
@@ -52,41 +53,17 @@ jobs:
           # 备份原始文件
           cp $BUILD_GRADLE ${BUILD_GRADLE}.bak
           
-          # 创建一个带有 splits 配置的临时文件
-          cat > temp_config.txt << 'EOL'
-    // 配置按架构分包
-    splits {
-        abi {
-            enable true
-            reset()
-            include "armeabi-v7a", "arm64-v8a", "x86", "x86_64"
-            universalApk true
-        }
-    }
-EOL
+          # 添加分包配置到android块
+          perl -i -pe 's/(android\s*\{)/\1\n    splits {\n        abi {\n            enable true\n            reset()\n            include "armeabi-v7a", "arm64-v8a", "x86", "x86_64"\n            universalApk true\n        }\n    }/' $BUILD_GRADLE
           
-          # 在 android { 块中插入配置
-          awk '
-          /android \{/ {
-            print $0;
-            found=1;
-            next;
-          }
-          {
-            if (found && n++ == 0) {
-              system("cat temp_config.txt");
-            }
-            print $0;
-          }' $BUILD_GRADLE > ${BUILD_GRADLE}.new
+          echo "成功修改 build.gradle 文件"
+          EOF
           
-          # 替换原始文件
-          mv ${BUILD_GRADLE}.new $BUILD_GRADLE
-          
-          # 清理临时文件
-          rm -f temp_config.txt
-          
-          echo "修改后的 build.gradle:"
-          cat $BUILD_GRADLE
+          chmod +x modify_gradle.sh
+
+      # 执行修改脚本
+      - name: Modify build.gradle for split APKs
+        run: ./modify_gradle.sh
 
       # 构建 Android Release
       - name: Build Android Release
