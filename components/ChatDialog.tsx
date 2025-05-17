@@ -1,4 +1,4 @@
-import React, { useRef, useEffect, useState, useCallback } from 'react';
+import React, { useRef, useEffect, useState, useCallback, memo } from 'react';
 import {
   View,
   Text,
@@ -348,6 +348,109 @@ const enhanceHtmlWithMarkdown = (html: string): string => {
       </html>`;
   }
 };
+
+const ChatHistoryModal = memo(function ChatHistoryModal({
+  visible,
+  messages,
+  onClose,
+  selectedCharacter,
+  user,
+}: {
+  visible: boolean;
+  messages: Message[];
+  onClose: () => void;
+  selectedCharacter?: Character | null;
+  user?: User | null;
+}) {
+  const flatListRef = useRef<FlatList<Message>>(null);
+
+  // 只在打开时自动滚动到底部
+  useEffect(() => {
+    if (visible && flatListRef.current && messages.length > 0) {
+      setTimeout(() => {
+        try {
+          flatListRef.current?.scrollToEnd({ animated: false });
+        } catch {}
+      }, 100);
+    }
+  }, [visible, messages.length]);
+
+  const renderItem = useCallback(
+    ({ item, index }: { item: Message; index: number }) => {
+      const isUser = item.sender === 'user';
+      const showTime =
+        index === 0 ||
+        (index > 0 &&
+          new Date(item.timestamp || 0).getMinutes() !==
+            new Date(messages[index - 1]?.timestamp || 0).getMinutes());
+      return (
+        <View key={item.id} style={styles.historyMessageContainer}>
+          {showTime && item.timestamp && (
+            <Text style={styles.historyTimeText}>
+              {new Date(item.timestamp).toLocaleTimeString()}
+            </Text>
+          )}
+          <View
+            style={[
+              styles.historyMessage,
+              isUser ? styles.historyUserMessage : styles.historyBotMessage,
+            ]}
+          >
+            <Text
+              style={[
+                styles.historyMessageText,
+                isUser
+                  ? styles.historyUserMessageText
+                  : styles.historyBotMessageText,
+              ]}
+            >
+              {item.text}
+            </Text>
+          </View>
+        </View>
+      );
+    },
+    [messages]
+  );
+
+  return (
+    <Modal
+      visible={visible}
+      transparent={true}
+      animationType="fade"
+      onRequestClose={onClose}
+    >
+      <View style={styles.historyModalContainer}>
+        <FlatList
+          ref={flatListRef}
+          data={messages}
+          renderItem={renderItem}
+          keyExtractor={item => item.id}
+          style={styles.historyModalContent}
+          contentContainerStyle={{ paddingBottom: 40 }}
+          initialNumToRender={30}
+          maxToRenderPerBatch={20}
+          windowSize={21}
+          removeClippedSubviews={Platform.OS !== 'web'}
+        />
+        <TouchableOpacity
+          style={{
+            position: 'absolute',
+            top: 30,
+            right: 24,
+            zIndex: 100,
+            backgroundColor: 'rgba(0,0,0,0.5)',
+            borderRadius: 18,
+            padding: 8,
+          }}
+          onPress={onClose}
+        >
+          <Ionicons name="close" size={24} color="#fff" />
+        </TouchableOpacity>
+      </View>
+    </Modal>
+  );
+});
 
 const ChatDialog: React.FC<ExtendedChatDialogProps> = ({
   messages,
@@ -1000,26 +1103,25 @@ const processMessageContent = (text: string, isUser: boolean, opts?: { isHtmlPag
     );
   };
 
-  const getAiMessageIndex = (index: number): number => {
-    const message = messages[index];
-    if (message?.metadata?.aiIndex !== undefined) {
-      return message.metadata.aiIndex;
-    }
-    let aiMessageCount = 0;
-    for (let i = 0; i <= index; i++) {
-      if (messages[i].sender === 'bot' && !messages[i].isLoading) {
-        aiMessageCount++;
-      }
-    }
-    return aiMessageCount - 1;
-  };
+// 新增：根据消息id获取其在完整messages中的真实index
+function getRealMessageIndexById(messages: Message[], id: string): number {
+  return messages.findIndex(m => m.id === id);
+}
 
-  const getMessageRating = (messageId: string): boolean | null => {
-    if (messageId in ratedMessages) {
-      return ratedMessages[messageId];
+// 修改 getAiMessageIndex：始终基于完整 messages 计算
+const getAiMessageIndex = (realIndex: number): number => {
+  const message = messages[realIndex];
+  if (message?.metadata?.aiIndex !== undefined) {
+    return message.metadata.aiIndex;
+  }
+  let aiMessageCount = 0;
+  for (let i = 0; i <= realIndex; i++) {
+    if (messages[i].sender === 'bot' && !messages[i].isLoading) {
+      aiMessageCount++;
     }
-    return null;
-  };
+  }
+  return aiMessageCount - 1;
+};
 
   const renderTTSButtons = (message: Message) => {
     if (message.sender !== 'bot' || message.isLoading) return null;
@@ -1076,7 +1178,9 @@ const processMessageContent = (text: string, isUser: boolean, opts?: { isHtmlPag
   const handleEditButton = (message: Message, aiIndex: number) => {
     setEditModalText(message.text);
     setEditTargetMsgId(message.id);
-    setEditTargetAiIndex(aiIndex);
+    // 用完整 messages 找到真实 index
+    const realIndex = getRealMessageIndexById(messages, message.id);
+    setEditTargetAiIndex(getAiMessageIndex(realIndex));
     setEditModalVisible(true);
   };
 
@@ -1090,6 +1194,9 @@ const processMessageContent = (text: string, isUser: boolean, opts?: { isHtmlPag
           text: '删除',
           style: 'destructive',
           onPress: () => {
+            // 用完整 messages 找到真实 index
+            const realIndex = getRealMessageIndexById(messages, message.id);
+            const aiIndex = getAiMessageIndex(realIndex);
             if (onDeleteMessage) onDeleteMessage(message.id, aiIndex);
           }
         }
@@ -1184,12 +1291,14 @@ const renderMessageContent = (message: Message, isUser: boolean, index: number) 
   );
 };
 
-  const renderMessageActions = (message: Message, index: number) => {
+  const renderMessageActions = (message: Message, visibleIndex: number) => {
     if (message.isLoading) return null;
     const isBot = message.sender === 'bot' && !message.isLoading;
     const isAutoMessage = !!message.metadata?.isAutoMessageResponse;
     const isRegenerating = regeneratingMessageId === message.id;
-    const aiIndex = getAiMessageIndex(index);
+    // 用完整 messages 找到真实 index
+    const realIndex = getRealMessageIndexById(messages, message.id);
+    const aiIndex = getAiMessageIndex(realIndex);
 
     // --- 新增: 判断是否为first_mes ---
     let isFirstMes = false;
@@ -1263,7 +1372,7 @@ const renderMessageContent = (message: Message, isUser: boolean, index: number) 
             </>
           )}
           {/* 新增：最后一条消息显示log跳转按钮 */}
-          {isLastMessage(index) && (
+          {isLastMessage(visibleIndex) && (
             <TouchableOpacity
               style={[
                 styles.actionCircleButton,
@@ -1279,6 +1388,8 @@ const renderMessageContent = (message: Message, isUser: boolean, index: number) 
       </View>
     );
   };
+
+
 
   const handleOpenFullscreenImage = (imageId: string | null) => {
     if (imageId) {
@@ -1724,6 +1835,9 @@ const renderMessageContent = (message: Message, isUser: boolean, index: number) 
         (index > 0 && new Date(item.timestamp || 0).getHours() !==
           new Date(visibleMessages[index - 1]?.timestamp || 0).getHours());
 
+      // 用完整 messages 找到真实 index
+      const realIndex = getRealMessageIndexById(messages, item.id);
+
       return (
         <View key={item.id} style={styles.messageWrapper}>
           {showTime && item.timestamp && renderTimeGroup(item.timestamp)}
@@ -1733,12 +1847,12 @@ const renderMessageContent = (message: Message, isUser: boolean, index: number) 
               isUser ? styles.userMessageContainer : styles.botMessageContainer,
             ]}
           >
-            {renderMessageContent(item, isUser, index)}
+            {renderMessageContent(item, isUser, realIndex)}
           </View>
         </View>
       );
     },
-    [visibleMessages, selectedCharacter, ratedMessages, audioStates, user]
+    [visibleMessages, messages, selectedCharacter, ratedMessages, audioStates, user]
   );
 
   // 3. keyExtractor 只用 item.id，保证 key 稳定
@@ -1752,7 +1866,14 @@ const renderMessageContent = (message: Message, isUser: boolean, index: number) 
         <>
           <View style={[styles.container, style, styles.backgroundFocusContainer]} />
           {renderVisualNovelDialog()}
-          {renderHistoryModal()}
+          {/* 历史消息 Modal */}
+          <ChatHistoryModal
+            visible={!!isHistoryModalVisible}
+            messages={messages}
+            onClose={() => setHistoryModalVisible && setHistoryModalVisible(false)}
+            selectedCharacter={selectedCharacter}
+            user={user}
+          />
         </>
       ) : (
         <>
@@ -1799,7 +1920,14 @@ const renderMessageContent = (message: Message, isUser: boolean, index: number) 
               />
             )}
           </View>
-          {renderHistoryModal()}
+          {/* 历史消息 Modal */}
+          <ChatHistoryModal
+            visible={!!isHistoryModalVisible}
+            messages={messages}
+            onClose={() => setHistoryModalVisible && setHistoryModalVisible(false)}
+            selectedCharacter={selectedCharacter}
+            user={user}
+          />
         </>
       )}
       
@@ -1836,7 +1964,7 @@ const renderMessageContent = (message: Message, isUser: boolean, index: number) 
               style={styles.fullscreenImage}
               resizeMode="contain"
             />
-          )}
+                   )}
           
           <View style={styles.imageActionButtons}>
             <TouchableOpacity

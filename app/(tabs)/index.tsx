@@ -198,6 +198,7 @@ const [hasRestoredLastConversation, setHasRestoredLastConversation] = useState(f
 
   // UI state - core functionality
   const [selectedConversationId, setSelectedConversationId] = useState<string | null>(null);
+  // 只维护当前会话的消息
   const [messages, setMessages] = useState<Message[]>([]);
   const [fallbackCharacter, setFallbackCharacter] = useState<Character | null>(null);
   const [isWebViewTestVisible, setIsWebViewTestVisible] = useState(false);
@@ -1333,21 +1334,23 @@ const [hasRestoredLastConversation, setHasRestoredLastConversation] = useState(f
       setSelectedGroupId(id);
       setSelectedConversationId(null);
       setIsGroupMode(true);
+      setMessages([]); // 清空非群聊消息
     } else {
       setSelectedConversationId(id);
       setSelectedGroupId(null);
       setIsGroupMode(false);
+      // 动态加载该会话的消息
+      const msgs = getMessages(id);
+      setMessages([...msgs]);
     }
-    
     setIsSidebarVisible(false);
-    
     Animated.timing(contentSlideAnim, {
       toValue: 0,
       duration: 300,
       easing: Easing.inOut(Easing.ease),
       useNativeDriver: true,
     }).start();
-  }, [contentSlideAnim]);
+  }, [contentSlideAnim, getMessages]);
 
   // Handle avatar press
   const handleAvatarPress = useCallback(() => {
@@ -1381,10 +1384,6 @@ const [hasRestoredLastConversation, setHasRestoredLastConversation] = useState(f
     setIsMemoSheetVisible(!isMemoSheetVisible);
   }, [isMemoSheetVisible]);
 
-  // Handle save memo
-  const handleSaveMemo = useCallback((content: string) => {
-    console.log('Saving memo:', content);
-  }, []);
 
   // Handle save created
   const handleSaveCreated = useCallback((save: ChatSave) => {
