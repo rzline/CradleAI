@@ -1,14 +1,20 @@
-name: React Native Android Multi-Arch Build
+name: RN Android Multi-Arch Build
 
 on:
   push:
-    branches:
-      - main
+    branches: [ main ]
+    tags: [ 'v*' ]
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
 
 jobs:
   build:
     runs-on: ubuntu-latest
-    
+    strategy:
+      matrix:
+        abi: [ armeabi-v7a, arm64-v8a, x86, x86_64 ]
     steps:
       - name: Checkout code
         uses: actions/checkout@v3
@@ -17,100 +23,113 @@ jobs:
         uses: actions/setup-node@v3
         with:
           node-version: 19.x
+          cache: 'npm'
 
-      - name: Install dependencies
-        run: npm install
+      - name: Setup Java
+        uses: actions/setup-java@v3
+        with:
+          distribution: 'temurin'
+          java-version: 11
 
-      # 恢复 Gradle 缓存
+      - name: Install JS Dependencies
+        run: npm ci
+
       - name: Restore Gradle Cache
         uses: actions/cache@v3
         with:
           path: |
-            ~/.gradle/caches
-            ~/.gradle/wrapper
-          key: ${{ runner.os }}-gradle-${{ hashFiles('android/gradle/wrapper/gradle-wrapper.properties') }}-${{ hashFiles('android/build.gradle') }}-${{ hashFiles('android/app/build.gradle') }}
-          restore-keys: |
-            ${{ runner.os }}-gradle-
+            ~/.gradle/caches/
+            ~/.gradle/wrapper/
+          key: ${{ runner.os }}-gradle-${{ hashFiles('android/**/build.gradle','android/gradle/wrapper/gradle-wrapper.properties') }}
 
-      # 如果您选择在 CI 中生成原生目录，保留此步骤
-      # 如果您已将 android 和 ios 目录提交到仓库，请删除下面这一步
-      - name: Run Expo Prebuild
-        run: npx expo prebuild
+      - name: Expo Prebuild (if needed)
+        if: "!exists('android')"
+        run: npx expo prebuild --platform android
 
-      # 创建一个单独的脚本来修改 build.gradle
-      - name: Create script for modifying build.gradle
+      - name: Enable ABI splits in build.gradle
         run: |
-          cat > modify_gradle.sh << 'EOF'
-          #!/bin/bash
-          BUILD_GRADLE="android/app/build.gradle"
-          
-          # 检查文件是否存在
-          if [ ! -f "$BUILD_GRADLE" ]; then
-            echo "错误: $BUILD_GRADLE 不存在!"
-            exit 1
-          fi
-          
-          # 备份原始文件
-          cp $BUILD_GRADLE ${BUILD_GRADLE}.bak
-          
-          # 添加分包配置到android块
-          perl -i -pe 's/(android\s*\{)/\1\n    splits {\n        abi {\n            enable true\n            reset()\n            include "armeabi-v7a", "arm64-v8a", "x86", "x86_64"\n            universalApk true\n        }\n    }/' $BUILD_GRADLE
-          
-          echo "成功修改 build.gradle 文件"
-          EOF
-          
-          chmod +x modify_gradle.sh
+          grep -q "splits {" android/app/build.gradle || (
+            perl -i -pe 's/(android\s*\{)/\1\n  splits {\n    abi {\n      enable true\n      reset()\n      include "${{ matrix.abi }}"\n      universalApk true\n    }\n  }/' android/app/build.gradle
+          )
 
-      # 执行修改脚本
-      - name: Modify build.gradle for split APKs
-        run: ./modify_gradle.sh
+      - name: Assemble for ${{ matrix.abi }}
+        run: |
+          cd android
+          ./gradlew assembleRelease \
+            -PcdvAbi="${{ matrix.abi }}" \
+            --no-daemon
 
-      # 构建 Android Release
-      - name: Build Android Release
-        run: cd android && ./gradlew assembleRelease
+      - name: Collect APK
+        run: mkdir -p output && cp android/app/build/outputs/apk/release/app-${{ matrix.abi }}-release.apk output/
 
-      # 列出构建产物
-      - name: List Build Outputs
-        run: find android/app/build/outputs -type f -name "*.apk" | sort
+      - name: Upload APK ${{ matrix.abi }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: apk-${{ matrix.abi }}
+          path: output/app-${{ matrix.abi }}-release.apk
 
-      # 上传分架构 APK 文件
-      - name: Upload arm64-v8a APK
-        uses: actions/upload-artifact@v4
+    outputs:
+      artifacts: ${{ steps.build.outputs }}  # 可根据需要导出
+
+  bundle:
+    needs: build
+    runs-on: ubuntu-latest
+    steps:
+      - name: Download all APKs
+        uses: actions/download-artifact@v4
         with:
-          name: android-arm64-v8a
-          path: android/app/build/outputs/apk/release/app-arm64-v8a-release.apk
-          
-      - name: Upload armeabi-v7a APK
-        uses: actions/upload-artifact@v4
-        with:
-          name: android-armeabi-v7a
-          path: android/app/build/outputs/apk/release/app-armeabi-v7a-release.apk
-          
-      - name: Upload x86 APK
-        uses: actions/upload-artifact@v4
-        with:
-          name: android-x86
-          path: android/app/build/outputs/apk/release/app-x86-release.apk
-          
-      - name: Upload x86_64 APK
-        uses: actions/upload-artifact@v4
-        with:
-          name: android-x86_64
-          path: android/app/build/outputs/apk/release/app-x86_64-release.apk
-      
-      # 上传通用 APK
-      - name: Upload Universal APK
-        uses: actions/upload-artifact@v4
-        with:
-          name: android-universal
-          path: android/app/build/outputs/apk/release/app-universal-release.apk
-          
-      # 构建和上传 AAB 文件 (Google Play 格式)
-      - name: Build Android App Bundle
-        run: cd android && ./gradlew bundleRelease
-        
-      - name: Upload Android App Bundle
+          path: all-apks
+
+      - name: Build AAB
+        run: |
+          cd android
+          ./gradlew bundleRelease --no-daemon
+
+      - name: Upload AAB
         uses: actions/upload-artifact@v4
         with:
           name: android-app-bundle
           path: android/app/build/outputs/bundle/release/app-release.aab
+
+  release:
+    needs: [ build, bundle ]
+    if: startsWith(github.ref, 'refs/tags/')
+    runs-on: ubuntu-latest
+    steps:
+      - name: Get Version
+        id: get_version
+        run: echo "VERSION=${GITHUB_REF#refs/tags/}" >> $GITHUB_OUTPUT
+
+      - name: Download Artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: dist
+
+      - name: Create GitHub Release
+        id: create_release
+        uses: softprops/action-gh-release@v1
+        with:
+          name: Release ${{ steps.get_version.outputs.VERSION }}
+          files: |
+            dist/**/*.apk
+            dist/**/*.aab
+
+  push-to-release:
+    needs: [ build, bundle ]
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Download Artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: latest
+
+      - name: Push to Latest Release
+        uses: marvinpinto/action-automatic-releases@latest
+        with:
+          repo_token: ${{ secrets.GITHUB_TOKEN }}
+          automatic_release_tag: latest
+          title: "Latest Build"
+          files: |
+            latest/**/*.apk
+            latest/**/*.aab
