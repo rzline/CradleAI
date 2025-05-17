@@ -834,7 +834,9 @@ const CreateChar: React.FC<CreateCharProps> = ({
                 scriptName: script.scriptName || `正则脚本_${idx + 1}`,
                 flags: script.flags ?? 'g'
               })),
-              // 不设置 bindType/bindCharacterId
+              // 新增：自动绑定到当前角色
+              bindType: 'character',
+              bindCharacterId: characterId
             };
             // 合并到现有组
             const newGroups = Array.isArray(globalState.regexScriptGroups)
@@ -2076,44 +2078,42 @@ const CreateChar: React.FC<CreateCharProps> = ({
     disabledText: {
       color: '#666',
     },
-    // ...existing code...
-selectedArtistPromptContainer: {
-  backgroundColor: '#333',
-  borderRadius: 8,
-  padding: 10,
-  marginBottom: 8,
-  marginTop: 4,
-},
-selectedArtistPromptLabel: {
-  color: theme.colors.textSecondary,
-  fontSize: 13,
-  marginBottom: 4,
-},
-selectedArtistPromptRow: {
-  flexDirection: 'row',
-  alignItems: 'center',
-  justifyContent: 'space-between',
-},
-selectedArtistPromptText: {
-  color: '#FFD700',
-  fontSize: 14,
-  flex: 1,
-  marginRight: 8,
-},
-clearArtistPromptButton: {
-  flexDirection: 'row',
-  alignItems: 'center',
-  paddingHorizontal: 6,
-  paddingVertical: 2,
-  borderRadius: 6,
-  backgroundColor: 'rgba(255,255,255,0.08)',
-},
-clearArtistPromptText: {
-  color: '#aaa',
-  fontSize: 12,
-  marginLeft: 2,
-},
-// ...existing code...
+    selectedArtistPromptContainer: {
+      backgroundColor: '#333',
+      borderRadius: 8,
+      padding: 10,
+      marginBottom: 8,
+      marginTop: 4,
+    },
+    selectedArtistPromptLabel: {
+      color: theme.colors.textSecondary,
+      fontSize: 13,
+      marginBottom: 4,
+    },
+    selectedArtistPromptRow: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      justifyContent: 'space-between',
+    },
+    selectedArtistPromptText: {
+      color: '#FFD700',
+      fontSize: 14,
+      flex: 1,
+      marginRight: 8,
+    },
+    clearArtistPromptButton: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      paddingHorizontal: 6,
+      paddingVertical: 2,
+      borderRadius: 6,
+      backgroundColor: 'rgba(255,255,255,0.08)',
+    },
+    clearArtistPromptText: {
+      color: '#aaa',
+      fontSize: 12,
+      marginLeft: 2,
+    },
   });
 
   // For embedded usage in tabs, we'll now use the sidebar pattern similar to CradleCreateForm

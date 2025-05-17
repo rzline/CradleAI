@@ -247,7 +247,7 @@ export const CharactersProvider: React.FC<{ children: React.ReactNode }> = ({ ch
           ...(c.extraGreetings ? { extraGreetings: c.extraGreetings } : {})
         })))
       ).catch(error => {
-        console.error('[Context Error 4] Filesystem write failed:', error);
+        // console.error('[Context Error 4] Filesystem write failed:', error);
         throw error;
       });
     
@@ -258,10 +258,10 @@ export const CharactersProvider: React.FC<{ children: React.ReactNode }> = ({ ch
     const savedContent = await FileSystem.readAsStringAsync(
       FileSystem.documentDirectory + 'characters.json'
     );
-    console.log('[Context 6] savedContent:', savedContent); // 打印文件内容
+    // console.log('[Context 6] savedContent:', savedContent); // 打印文件内容
     
     const savedCharacters = JSON.parse(savedContent);
-    console.log('[Context 6] savedCharacters:', savedCharacters); // 打印解析后的对象
+    // console.log('[Context 6] savedCharacters:', savedCharacters); // 打印解析后的对象
     
     const savedCharacter = savedCharacters.find((c: Character) => {
         console.log('[Context 6] Comparing: c.id=', c.id, 'character.id=', character.id, 'c.id === character.id', c.id === character.id ); //增加比较的log
