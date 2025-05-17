@@ -41,7 +41,6 @@ jobs:
       - name: Configure build.gradle for split APKs
         run: |
           echo "配置 build.gradle 来实现按架构分包"
-          # 向 android/app/build.gradle 添加 splits 配置
           BUILD_GRADLE="android/app/build.gradle"
           
           # 检查文件是否存在
@@ -53,16 +52,8 @@ jobs:
           # 备份原始文件
           cp $BUILD_GRADLE ${BUILD_GRADLE}.bak
           
-          # 查找 android { 块结束位置
-          ANDROID_BLOCK_END=$(grep -n "}" $BUILD_GRADLE | grep -A1 "android {" | tail -n1 | cut -d: -f1)
-          
-          if [ -z "$ANDROID_BLOCK_END" ]; then
-            echo "无法找到 android { 块结束位置"
-            exit 1
-          fi
-          
-          # 在 android 块内添加 splits 配置
-          SPLITS_CONFIG='
+          # 创建一个带有 splits 配置的临时文件
+          cat > temp_config.txt << 'EOL'
     // 配置按架构分包
     splits {
         abi {
@@ -71,9 +62,28 @@ jobs:
             include "armeabi-v7a", "arm64-v8a", "x86", "x86_64"
             universalApk true
         }
-    }'
+    }
+EOL
           
-          sed -i "${ANDROID_BLOCK_END}i\\${SPLITS_CONFIG}" $BUILD_GRADLE
+          # 在 android { 块中插入配置
+          awk '
+          /android \{/ {
+            print $0;
+            found=1;
+            next;
+          }
+          {
+            if (found && n++ == 0) {
+              system("cat temp_config.txt");
+            }
+            print $0;
+          }' $BUILD_GRADLE > ${BUILD_GRADLE}.new
+          
+          # 替换原始文件
+          mv ${BUILD_GRADLE}.new $BUILD_GRADLE
+          
+          # 清理临时文件
+          rm -f temp_config.txt
           
           echo "修改后的 build.gradle:"
           cat $BUILD_GRADLE
