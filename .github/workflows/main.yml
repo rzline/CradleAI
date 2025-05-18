@@ -1,0 +1,115 @@
+name: RN Android Multi-Arch Build
+
+on:
+  push:
+    branches: [ main ]
+    tags: [ 'v*' ]
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        abi: [ armeabi-v7a, arm64-v8a, x86, x86_64 ]
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v3
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v3
+        with:
+          node-version: 19.x
+          cache: 'npm'
+
+      - name: Setup Java
+        uses: actions/setup-java@v3
+        with:
+          distribution: 'temurin'
+          java-version: 17
+
+      - name: Install JS Dependencies
+        run: npm ci
+
+      - name: Restore Gradle Cache
+        uses: actions/cache@v3
+        with:
+          path: |
+            ~/.gradle/caches/
+            ~/.gradle/wrapper/
+          key: ${{ runner.os }}-gradle-${{ hashFiles('android/**/build.gradle','android/gradle/wrapper/gradle-wrapper.properties') }}
+
+      - name: Expo Prebuild (if needed)
+        run: |
+          if [ ! -d android ]; then
+            echo "android 目录不存在，执行 expo prebuild"
+            npx expo prebuild --platform android
+          else
+            echo "android 目录已存在，跳过 prebuild"
+          fi
+
+      - name: Enable ABI splits in build.gradle
+        run: |
+          # 只插入一次 splits 配置，避免重复
+          if ! grep -q "splits {" android/app/build.gradle; then
+            perl -i -pe 's/(android\s*\{)/\1\n  splits {\n    abi {\n      enable true\n      reset()\n      include "${{ matrix.abi }}"\n      universalApk true\n    }\n  }/' android/app/build.gradle
+          fi
+
+      - name: Assemble for ${{ matrix.abi }}
+        run: |
+          cd android
+          ./gradlew assembleRelease \
+            -PcdvAbi="${{ matrix.abi }}" \
+            --no-daemon
+
+      - name: Collect APK
+        run: mkdir -p output && cp android/app/build/outputs/apk/release/app-${{ matrix.abi }}-release.apk output/
+
+      - name: Upload APK ${{ matrix.abi }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: apk-${{ matrix.abi }}
+          path: output/app-${{ matrix.abi }}-release.apk
+
+  release:
+    needs: [ build ]
+    if: startsWith(github.ref, 'refs/tags/')
+    runs-on: ubuntu-latest
+    steps:
+      - name: Get Version
+        id: get_version
+        run: echo "VERSION=${GITHUB_REF#refs/tags/}" >> $GITHUB_OUTPUT
+
+      - name: Download Artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: dist
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v1
+        with:
+          name: Release ${{ steps.get_version.outputs.VERSION }}
+          files: |
+            dist/**/*.apk
+
+  push-to-release:
+    needs: [ build ]
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Download Artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: latest
+
+      - name: Push to Latest Release
+        uses: marvinpinto/action-automatic-releases@latest
+        with:
+          repo_token: ${{ secrets.GITHUB_TOKEN }}
+          automatic_release_tag: latest
+          title: "Latest Build"
+          files: |
+            latest/**/*.apk
