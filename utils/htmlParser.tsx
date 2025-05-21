@@ -149,8 +149,9 @@ const StatusRenderer = ({
   tnode, 
   ...props 
 }: CustomRendererProps<TBlock>) => {
+  // 黑色背景，白色字体，类似 codeblock
   return (
-    <View style={styles.statusContainer}>
+    <View style={styles.statusBlockContainer}>
       <TNodeChildrenRenderer
         tnode={tnode}
       />
@@ -411,7 +412,19 @@ export const parseHtmlToReactNative = (
     br: { height: 12 }, // Add specific height to line breaks to ensure visibility
     // Add styles for mem and websearch tags to make all text inside them italic
     mem: { fontStyle: 'italic' as const },
-    websearch: { fontStyle: 'italic' as const }
+    websearch: { fontStyle: 'italic' as const },
+    status: { 
+      // 让 <status> 内部文本为白色
+      color: '#fff',
+    },
+    StatusBlock: { 
+      color: '#fff',
+    },
+    statusblock: { 
+      color: '#fff',
+    },
+    summary: { color: '#fff' },
+    details: { color: '#fff' },
   };
 
   return (
@@ -535,6 +548,14 @@ const styles = StyleSheet.create({
     borderRadius: 8,
     backgroundColor: 'rgba(255, 255, 255, 0.1)',
     padding: 10,
+  },
+  // 新增：黑底白字 codeblock 风格
+  statusBlockContainer: {
+    backgroundColor: '#111',
+    borderRadius: 6,
+    padding: 12,
+    marginVertical: 8,
+    color: '#fff',
   },
   imageWrapper: {
     marginVertical: 8,

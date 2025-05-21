@@ -311,6 +311,9 @@ const CharacterDetail: React.FC = () => {
   const [alternateGreetings, setAlternateGreetings] = useState<string[]>([]);
   const [selectedGreetingIndex, setSelectedGreetingIndex] = useState<number>(0);
 
+
+  const [artistSelectorVisible, setArtistSelectorVisible] = useState(false);
+
   const openTextEditorModal = (
     field: keyof RoleCardJson,
     title: string,
@@ -1185,83 +1188,134 @@ const CharacterDetail: React.FC = () => {
     setHasUnsavedChanges(true);
   };
 
-  const renderTagGenerationSection = () => (
-    <View style={styles.tagGenerateContainer}>
-      <Text style={styles.tagInstructionsText}>
-        请选择描述角色外观的正面和负面标签，这些标签将被保存作为角色描述的一部分
+const renderTagGenerationSection = () => (
+  <View style={styles.tagGenerateContainer}>
+    <Text style={styles.tagInstructionsText}>
+      请选择描述角色外观的正面和负面标签，这些标签将被保存作为角色描述的一部分
+    </Text>
+    <View style={styles.cradleInfoContainer}>
+      <Ionicons name="information-circle-outline" size={20} color={theme.colors.info} />
+      <Text style={styles.cradleInfoText}>
+        选择的标签将保存为角色的外观描述数据，但不会自动生成图像
       </Text>
-      
-      <View style={styles.cradleInfoContainer}>
-        <Ionicons name="information-circle-outline" size={20} color={theme.colors.info} />
-        <Text style={styles.cradleInfoText}>
-          选择的标签将保存为角色的外观描述数据，但不会自动生成图像
-        </Text>
-      </View>
-      
-      <ArtistReferenceSelector 
-        selectedGender={character?.gender as 'male' | 'female' | 'other'}
-        onSelectArtist={setSelectedArtistPrompt}
-        selectedArtistPrompt={selectedArtistPrompt}
-      />
-      
-      <View style={styles.tagSummaryContainer}>
-        <Text style={styles.tagSummaryTitle}>已选标签</Text>
-        <View style={styles.selectedTagsRow}>
-          {positiveTags.length > 0 ? (
-            <ScrollView horizontal showsHorizontalScrollIndicator={false}>
-              {positiveTags.map((tag, index) => (
-                <TouchableOpacity
-                  key={`pos-${index}`}
-                  style={styles.selectedPositiveTag}
-                  onPress={() => {
-                    setPositiveTags(tags => tags.filter(t => t !== tag));
-                  }}
-                >
-                  <Text style={styles.selectedTagText} numberOfLines={1}>{tag}</Text>
-                  <Ionicons name="close-circle" size={14} color="rgba(0,0,0,0.5)" />
-                </TouchableOpacity>
-              ))}
-            </ScrollView>
-          ) : (
-            <Text style={styles.noTagsSelectedText}>未选择正面标签</Text>
-          )}
-        </View>
-        
-        <View style={styles.selectedTagsRow}>
-          {negativeTags.length > 0 ? (
-            <ScrollView horizontal showsHorizontalScrollIndicator={false}>
-              {negativeTags.map((tag, index) => (
-                <TouchableOpacity
-                  key={`neg-${index}`}
-                  style={styles.selectedNegativeTag}
-                  onPress={() => {
-                    setNegativeTags(tags => tags.filter(t => t !== tag));
-                  }}
-                >
-                  <Text style={styles.selectedTagText} numberOfLines={1}>{tag}</Text>
-                  <Ionicons name="close-circle" size={14} color="rgba(255,255,255,0.5)" />
-                </TouchableOpacity>
-              ))}
-            </ScrollView>
-          ) : (
-            <Text style={styles.noTagsSelectedText}>未选择负面标签</Text>
-          )}
-        </View>
-        
-        <Text style={styles.defaultTagsInfo}>
-          选择的标签仅用于保存角色外观描述，不会触发图像生成
-        </Text>
-      </View>
-      
-      <TouchableOpacity 
-        style={styles.openTagSelectorButton}
-        onPress={() => setTagSelectorVisible(true)}
-      >
-        <Ionicons name="pricetag-outline" size={20} color="#fff" />
-        <Text style={styles.openTagSelectorText}>浏览标签并添加</Text>
-      </TouchableOpacity>
     </View>
-  );
+
+    {/* 已选画师风格区域 */}
+    {selectedArtistPrompt ? (
+      <View style={styles.selectedArtistPromptContainer}>
+        <Text style={styles.selectedArtistPromptLabel}>已选画师风格：</Text>
+        <View style={styles.selectedArtistPromptRow}>
+          <Text style={styles.selectedArtistPromptText} numberOfLines={1}>
+            {selectedArtistPrompt}
+          </Text>
+          <TouchableOpacity
+            style={styles.clearArtistPromptButton}
+            onPress={() => setSelectedArtistPrompt(null)}
+          >
+            <Ionicons name="close-circle" size={18} color="#aaa" />
+            <Text style={styles.clearArtistPromptText}>清除</Text>
+          </TouchableOpacity>
+        </View>
+      </View>
+    ) : null}
+
+    {/* ArtistReferenceSelector 入口按钮 */}
+    <TouchableOpacity
+      style={styles.openTagSelectorButton}
+      onPress={() => setArtistSelectorVisible(true)}
+    >
+      <Ionicons name="color-palette-outline" size={20} color="#fff" />
+      <Text style={styles.openTagSelectorText}>
+        选择画师风格（可选）
+      </Text>
+    </TouchableOpacity>
+
+    {/* Tag selection summary */}
+    <View style={styles.tagSummaryContainer}>
+      <Text style={styles.tagSummaryTitle}>已选标签</Text>
+      <View style={styles.selectedTagsRow}>
+        {positiveTags.length > 0 ? (
+          <ScrollView horizontal showsHorizontalScrollIndicator={false}>
+            {positiveTags.map((tag, index) => (
+              <TouchableOpacity
+                key={`pos-${index}`}
+                style={styles.selectedPositiveTag}
+                onPress={() => {
+                  setPositiveTags(tags => tags.filter(t => t !== tag));
+                }}
+              >
+                <Text style={styles.selectedTagText} numberOfLines={1}>{tag}</Text>
+                <Ionicons name="close-circle" size={14} color="rgba(0,0,0,0.5)" />
+              </TouchableOpacity>
+            ))}
+          </ScrollView>
+        ) : (
+          <Text style={styles.noTagsSelectedText}>未选择正面标签</Text>
+        )}
+      </View>
+      <View style={styles.selectedTagsRow}>
+        {negativeTags.length > 0 ? (
+          <ScrollView horizontal showsHorizontalScrollIndicator={false}>
+            {negativeTags.map((tag, index) => (
+              <TouchableOpacity
+                key={`neg-${index}`}
+                style={styles.selectedNegativeTag}
+                onPress={() => {
+                  setNegativeTags(tags => tags.filter(t => t !== tag));
+                }}
+              >
+                <Text style={styles.selectedTagText} numberOfLines={1}>{tag}</Text>
+                <Ionicons name="close-circle" size={14} color="rgba(255,255,255,0.5)" />
+              </TouchableOpacity>
+            ))}
+          </ScrollView>
+        ) : (
+          <Text style={styles.noTagsSelectedText}>未选择负面标签</Text>
+        )}
+      </View>
+      <Text style={styles.defaultTagsInfo}>
+        选择的标签仅用于保存角色外观描述，不会触发图像生成
+      </Text>
+    </View>
+
+    {/* Open tag selector button */}
+    <TouchableOpacity 
+      style={styles.openTagSelectorButton}
+      onPress={() => setTagSelectorVisible(true)}
+    >
+      <Ionicons name="pricetag-outline" size={20} color="#fff" />
+      <Text style={styles.openTagSelectorText}>浏览标签并添加</Text>
+    </TouchableOpacity>
+
+    {/* ArtistReferenceSelector Modal */}
+    <Modal
+      visible={artistSelectorVisible}
+      transparent={false}
+      animationType="slide"
+      onRequestClose={() => setArtistSelectorVisible(false)}
+    >
+      <View style={{ flex: 1, backgroundColor: '#222' }}>
+        <View style={styles.tagSelectorHeader}>
+          <Text style={styles.tagSelectorTitle}>选择画师风格</Text>
+          <TouchableOpacity 
+            style={styles.tagSelectorCloseButton}
+            onPress={() => setArtistSelectorVisible(false)}
+          >
+            <Ionicons name="close" size={24} color="#fff" />
+          </TouchableOpacity>
+        </View>
+        <ArtistReferenceSelector
+          selectedGender={character?.gender as 'male' | 'female' | 'other'}
+          onSelectArtist={prompt => {
+            setSelectedArtistPrompt(prompt || null);
+            setArtistSelectorVisible(false);
+          }}
+          selectedArtistPrompt={selectedArtistPrompt}
+        />
+      </View>
+    </Modal>
+  </View>
+);
 
   const renderVoiceSection = () => (
     <View style={[styles.tabContent, { flex: 1 }]}>
@@ -1280,113 +1334,140 @@ const CharacterDetail: React.FC = () => {
     </View>
   );
 
-  const renderAppearanceSection = () => (
-    <View style={styles.tabContent}>
-      
-      <View style={styles.modeSelectionContainer}>
-        <TouchableOpacity 
-          style={[styles.modeButton, uploadMode === 'upload' && styles.activeMode]}
-          onPress={() => setUploadMode('upload')}
-        >
-          <View style={styles.modeIconContainer}>
-            <Ionicons 
-              name="cloud-upload-outline" 
-              size={24} 
-              color={uploadMode === 'upload' ? theme.colors.primary : "#888"}
-            />
+const renderAppearanceSection = () => (
+  <View style={styles.tabContent}>
+    <View style={styles.modeSelectionContainer}>
+      <TouchableOpacity 
+        style={[styles.modeButton, uploadMode === 'upload' && styles.activeMode]}
+        onPress={() => setUploadMode('upload')}
+      >
+        <View style={styles.modeIconContainer}>
+          <Ionicons 
+            name="cloud-upload-outline" 
+            size={24} 
+            color={uploadMode === 'upload' ? theme.colors.primary : "#888"}
+          />
+        </View>
+        <View style={styles.modeTextContainer}>
+          <Text style={[styles.modeText, uploadMode === 'upload' && styles.activeModeText]}>
+            自己上传图片
+          </Text>
+          <Text style={styles.modeDescription}>
+            上传您准备好的角色形象图片
+          </Text>
+        </View>
+      </TouchableOpacity>
+      <TouchableOpacity 
+        style={[styles.modeButton, uploadMode === 'generate' && styles.activeMode]}
+        onPress={() => setUploadMode('generate')}
+      >
+        <View style={styles.modeIconContainer}>
+          <Ionicons 
+            name="color-wand-outline" 
+            size={24} 
+            color={uploadMode === 'generate' ? theme.colors.primary : "#888"} 
+          />
+        </View>
+        <View style={styles.modeTextContainer}>
+          <Text style={[styles.modeText, uploadMode === 'generate' && styles.activeModeText]}>
+            选择角色TAG
+          </Text>
+          <Text style={styles.modeDescription}>
+            通过组合标签描述角色形象
+          </Text>
+        </View>
+      </TouchableOpacity>
+    </View>
+    {uploadMode === 'upload' ? (
+      <View style={styles.uploadContainer}>
+        <View style={styles.cardPreviewSection}>
+          <Text style={styles.inputLabel}>角色卡图片 (9:16)</Text>
+          <View style={styles.cardImageContainer}>
+            <TouchableOpacity
+              style={styles.cardImagePicker}
+              onPress={pickBackground}
+            >
+              {character?.backgroundImage ? (
+                <Image
+                  source={{
+                    uri:
+                      typeof character.backgroundImage === 'string'
+                        ? character.backgroundImage
+                        : character.backgroundImage?.localUri ||
+                          character.backgroundImage?.url ||
+                          ''
+                  }}
+                  style={styles.cardImagePreview}
+                />
+              ) : (
+                <>
+                  <Ionicons name="card-outline" size={40} color="#aaa" />
+                  <Text style={styles.imageButtonText}>添加角色卡图片</Text>
+                  <Text style={styles.imageButtonSubtext}>(9:16比例)</Text>
+                </>
+              )}
+            </TouchableOpacity>
           </View>
-          <View style={styles.modeTextContainer}>
-            <Text style={[styles.modeText, uploadMode === 'upload' && styles.activeModeText]}>
-              自己上传图片
-            </Text>
-            <Text style={styles.modeDescription}>
-              上传您准备好的角色形象图片
-            </Text>
+          <View style={styles.imageSeparator}>
+            <View style={styles.imageSeparatorLine} />
+            <Text style={styles.imageSeparatorText}>或</Text>
+            <View style={styles.imageSeparatorLine} />
           </View>
-        </TouchableOpacity>
-        
-        <TouchableOpacity 
-          style={[styles.modeButton, uploadMode === 'generate' && styles.activeMode]}
-          onPress={() => setUploadMode('generate')}
-        >
-          <View style={styles.modeIconContainer}>
-            <Ionicons 
-              name="color-wand-outline" 
-              size={24} 
-              color={uploadMode === 'generate' ? theme.colors.primary : "#888"} 
-            />
-          </View>
-          <View style={styles.modeTextContainer}>
-            <Text style={[styles.modeText, uploadMode === 'generate' && styles.activeModeText]}>
-              根据Tag生成图片
-            </Text>
-            <Text style={styles.modeDescription}>
-              通过组合标签生成符合需求的角色形象
-            </Text>
-          </View>
-        </TouchableOpacity>
-      </View>
-      
-      {uploadMode === 'upload' ? (
-        <View style={styles.uploadContainer}>
-          <View style={styles.cardPreviewSection}>
-            <Text style={styles.inputLabel}>角色卡图片 (9:16)</Text>
-            <View style={styles.cardImageContainer}>
-              <TouchableOpacity
-                style={styles.cardImagePicker}
-                onPress={pickBackground}
-              >
-                {character?.backgroundImage ? (
-                  <Image
-                    source={{
-                      uri:
-                        typeof character.backgroundImage === 'string'
-                          ? character.backgroundImage
-                          : character.backgroundImage?.localUri ||
-                            character.backgroundImage?.url ||
-                            ''
-                    }}
-                    style={styles.cardImagePreview}
-                  />
-                ) : (
-                  <>
-                    <Ionicons name="card-outline" size={40} color="#aaa" />
-                    <Text style={styles.imageButtonText}>添加角色卡图片</Text>
-                    <Text style={styles.imageButtonSubtext}>(9:16比例)</Text>
-                  </>
-                )}
-              </TouchableOpacity>
-            </View>
-            
-            <View style={styles.imageSeparator}>
-              <View style={styles.imageSeparatorLine} />
-              <Text style={styles.imageSeparatorText}>或</Text>
-              <View style={styles.imageSeparatorLine} />
-            </View>
-            
-            <Text style={styles.inputLabel}>头像图片 (方形)</Text>
-            <View style={styles.imageSelectionContainer}>
-              <TouchableOpacity
-                style={styles.avatarButton}
-                onPress={pickAvatar}
-              >
-                {character?.avatar ? (
-                  <Image source={{ uri: character.avatar }} style={styles.avatarPreview} />
-                ) : (
-                  <>
-                    <Ionicons name="person-circle-outline" size={40} color="#aaa" />
-                    <Text style={styles.imageButtonText}>添加头像</Text>
-                  </>
-                )}
-              </TouchableOpacity>
-            </View>
+          <Text style={styles.inputLabel}>头像图片 (方形)</Text>
+          <View style={styles.imageSelectionContainer}>
+            <TouchableOpacity
+              style={styles.avatarButton}
+              onPress={pickAvatar}
+            >
+              {character?.avatar ? (
+                <Image source={{ uri: character.avatar }} style={styles.avatarPreview} />
+              ) : (
+                <>
+                  <Ionicons name="person-circle-outline" size={40} color="#aaa" />
+                  <Text style={styles.imageButtonText}>添加头像</Text>
+                </>
+              )}
+            </TouchableOpacity>
           </View>
         </View>
-      ) : (
-        renderTagGenerationSection()
-      )}
-    </View>
-  );
+      </View>
+    ) : (
+      renderTagGenerationSection()
+    )}
+    {/* TagSelector Modal (moved here for clarity) */}
+    <Modal
+      visible={tagSelectorVisible}
+      transparent={false}
+      animationType="slide"
+      onRequestClose={() => setTagSelectorVisible(false)}
+    >
+      <View style={styles.tagSelectorModalContainer}>
+        <View style={styles.tagSelectorHeader}>
+          <Text style={styles.tagSelectorTitle}>选择标签</Text>
+          <TouchableOpacity 
+            style={styles.tagSelectorCloseButton}
+            onPress={() => setTagSelectorVisible(false)}
+          >
+            <Ionicons name="close" size={24} color="#fff" />
+          </TouchableOpacity>
+        </View>
+        <View style={styles.tagSelectorContent}>
+          <TagSelector 
+            onClose={() => setTagSelectorVisible(false)}
+            onAddPositive={(tag) => setPositiveTags(prev => [...prev, tag])}
+            onAddNegative={(tag) => setNegativeTags(prev => [...prev, tag])}
+            existingPositiveTags={positiveTags}
+            existingNegativeTags={negativeTags}
+            onPositiveTagsChange={setPositiveTags}
+            onNegativeTagsChange={setNegativeTags}
+            sidebarWidth="auto"
+          />
+        </View>
+      </View>
+    </Modal>
+  </View>
+);
+
 
 
   if (isLoading) {
@@ -2119,6 +2200,43 @@ const styles = StyleSheet.create({
   },
   disabledText: {
     color: '#666',
+  },
+  
+  selectedArtistPromptContainer: {
+    backgroundColor: '#333',
+    borderRadius: 8,
+    padding: 10,
+    marginBottom: 8,
+    marginTop: 4,
+  },
+  selectedArtistPromptLabel: {
+    color: theme.colors.textSecondary,
+    fontSize: 13,
+    marginBottom: 4,
+  },
+  selectedArtistPromptRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+  },
+  selectedArtistPromptText: {
+    color: '#FFD700',
+    fontSize: 14,
+    flex: 1,
+    marginRight: 8,
+  },
+  clearArtistPromptButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: 6,
+    paddingVertical: 2,
+    borderRadius: 6,
+    backgroundColor: 'rgba(255,255,255,0.08)',
+  },
+  clearArtistPromptText: {
+    color: '#aaa',
+    fontSize: 12,
+    marginLeft: 2,
   },
 });
 

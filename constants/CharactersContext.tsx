@@ -11,6 +11,7 @@ import { GeminiAdapter } from '@/NodeST/nodest/utils/gemini-adapter';
 import { OpenRouterAdapter } from '@/NodeST/nodest/utils/openrouter-adapter';
 import { CharacterGeneratorService } from '@/NodeST/nodest/services/character-generator-service';
 import { NodeSTManager } from '@/utils/NodeSTManager';
+import { getApiSettings } from '@/utils/settings-helper';
 
 const CharactersContext = createContext<CharactersContextType | undefined>(undefined);
 // Initialize CradleService with API key from environment or settings
@@ -1226,9 +1227,9 @@ const generateCharacterFromCradle = async (cradleIdOrCharacter: string | CradleC
     
     
     // Get user API settings
-    const userSettings = user?.settings;
-    const apiProvider = userSettings?.chat?.apiProvider || 'gemini';
-    const apiKey = userSettings?.chat?.characterApiKey || '';
+    const apiSettings = getApiSettings();
+    const apiProvider = apiSettings.apiProvider || 'gemini';
+    const apiKey = apiSettings.apiKey || '';
     
     console.log(`[摇篮生成] 使用API提供商: ${apiProvider}`);
     
@@ -1240,23 +1241,23 @@ const generateCharacterFromCradle = async (cradleIdOrCharacter: string | CradleC
       // 使用LLM生成角色数据
       console.log('[摇篮生成] 准备调用LLM生成角色数据');
       
-      // Select API adapter based on user settings
+      // Select API adapter based on settings-helper
       let llmAdapter;
       if (apiProvider === 'gemini') {
-        console.log('[摇篮生成] 使用Gemini适配器');
         llmAdapter = new GeminiAdapter(apiKey);
       } else if (apiProvider === 'openrouter') {
-        console.log('[摇篮生成] 使用OpenRouter适配器');
-        const model = userSettings?.chat?.openrouter?.model || "anthropic/claude-3-haiku";
-        
-        // 修复：这里应该使用 openrouter 的 apiKey，而不是 gemini 的 apiKey
-        // 检查角色对象是否包含 API 设置，优先使用角色对象中的设置
-        const openRouterApiKey = cradleCharacter.apiSettings?.openrouter?.apiKey || 
-                                userSettings?.chat?.openrouter?.apiKey || 
-                                apiKey;
-        
-        console.log(`[摇篮生成] OpenRouter API Key 有效性: ${!!openRouterApiKey}`);
+        const model = apiSettings.openrouter?.model || "anthropic/claude-3-haiku";
+        const openRouterApiKey = apiSettings.openrouter?.apiKey || apiKey;
         llmAdapter = new OpenRouterAdapter(openRouterApiKey, model);
+      } else if (apiProvider === 'openai-compatible') {
+        // 支持openai-compatible渠道
+        const { endpoint, apiKey: openaiKey, model } = apiSettings.OpenAIcompatible || {};
+        const { OpenAIAdapter } = require('@/NodeST/nodest/utils/openai-adapter');
+        llmAdapter = new OpenAIAdapter({
+          endpoint: endpoint || '',
+          apiKey: openaiKey || '',
+          model: model || 'gpt-3.5-turbo'
+        });
       } else {
         throw new Error(`不支持的API提供商: ${apiProvider}`);
       }
@@ -1411,7 +1412,7 @@ const generateCharacterFromCradle = async (cradleIdOrCharacter: string | CradleC
       // Update the character with the generated data
       const updatedCharacter: Character = {
         ...cradleCharacter,
-        name: result.roleCard.name, // Use the possibly enhanced name from LLM
+        name: result.roleCard.name,
         description: result.roleCard.description,
         personality: result.roleCard.personality,
         updatedAt: Date.now(),
@@ -1430,15 +1431,13 @@ const generateCharacterFromCradle = async (cradleIdOrCharacter: string | CradleC
       try {
         // Initialize character data structure before adding to characters list
         console.log('[摇篮生成] 初始化角色数据结构');
+        // === 修改：apiSettings 也从 getApiSettings() 获取并传递 ===
         const initResult = await NodeSTManager.processChatMessage({
           userMessage: "你好！",
-          conversationId: updatedCharacter.id, 
-          status: "新建角色", // CHANGED: Use "新建角色" status for initialization
+          conversationId: updatedCharacter.id,
+          status: "新建角色",
           apiKey,
-          apiSettings: {
-            apiProvider,
-            openrouter: userSettings?.chat?.openrouter
-          },
+          apiSettings, // 统一传递 settings-helper 获取的 apiSettings
           character: updatedCharacter
         });
         

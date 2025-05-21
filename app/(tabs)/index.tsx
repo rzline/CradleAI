@@ -45,25 +45,16 @@ import Mem0Service from '@/src/memory/services/Mem0Service';
 import { ttsService } from '@/services/ttsService';
 import { useDialogMode } from '@/constants/DialogModeContext';
 import { CharacterLoader } from '@/src/utils/character-loader';
-import { StorageAdapter } from '@/NodeST/nodest/utils/storage-adapter';
-import { GeminiAdapter } from '@/NodeST/nodest/utils/gemini-adapter';
-import { DEFAULT_NEGATIVE_PROMPTS, DEFAULT_POSITIVE_PROMPTS } from '@/constants/defaultPrompts';
-import NovelAIService from '@/components/NovelAIService';
-import { CloudServiceProvider } from '@/services/cloud-service-provider';
-import type CloudServiceProviderClass from '@/services/cloud-service-provider';
 import * as FileSystem from 'expo-file-system';
 import { importDefaultCharactersIfNeeded, resetDefaultCharacterImported } from '@/components/DefaultCharacterImporter';
 import { loadGlobalSettingsState } from '@/app/pages/global-settings';
 import { getApiSettings } from '@/utils/settings-helper';
-import { OpenRouterAdapter } from '@/NodeST/nodest/utils/openrouter-adapter';
 import { isTableMemoryEnabled, setTableMemoryEnabled } from '@/src/memory/integration/table-memory-integration';
 import { getWebViewExampleHtml } from '@/utils/webViewExample';
 import { Ionicons } from '@expo/vector-icons';
 import { DeviceEventEmitter } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import PostChatService from '@/services/PostChat-service';
-// Lazy load non-critical components to improve initial load time
-const NovelAITestModal = lazy(() => import('@/components/NovelAITestModal'));
 
 // Global cache objects
 declare global {

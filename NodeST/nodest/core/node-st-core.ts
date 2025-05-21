@@ -1762,40 +1762,40 @@ export class NodeSTCore {
             let globalRegexScripts: any[] = [];
             let globalRegexEnabled = false;
             try {
-                // 只用新方法，移除旧方法
-                const regexGroups = await StorageAdapter.loadGlobalRegexScriptGroups?.() || [];
-                    if (regexGroups.length > 0) {
-                        globalRegexScripts = regexGroups
-                            .filter(g =>
-                                g.bindType === 'all' ||
-                                (g.bindType === 'character' && g.bindCharacterId && characterId && g.bindCharacterId === characterId) ||
-                                typeof g.bindType === 'undefined'
-                            )
-                            .flatMap(g => {
-                                if (Array.isArray(g.scripts)) {
-                                    const scriptsWithBind = g.scripts.map(s => ({
-                                        ...s,
-                                        groupBindType: g.bindType,
-                                        groupBindCharacterId: g.bindCharacterId
-                                    }));
-                                    console.log(`[全局正则] 处理脚本组，组bindType=${g.bindType}，组bindCharacterId=${g.bindCharacterId}，该组脚本数=${g.scripts.length}，已为每个脚本赋值绑定信息`);
-                                    return scriptsWithBind;
-                                }
-                                return [];
-                            });
-                    }
-                // 不再 fallback 到 loadGlobalRegexScriptList
-                const regexEnabledVal = await (await import('@react-native-async-storage/async-storage')).default.getItem('nodest_global_regex_enabled');
-                globalRegexEnabled = regexEnabledVal === 'true';
+                // // 只用新方法，移除旧方法
+                // const regexGroups = await StorageAdapter.loadGlobalRegexScriptGroups?.() || [];
+                //     if (regexGroups.length > 0) {
+                //         globalRegexScripts = regexGroups
+                //             .filter(g =>
+                //                 g.bindType === 'all' ||
+                //                 (g.bindType === 'character' && g.bindCharacterId && characterId && g.bindCharacterId === characterId) ||
+                //                 typeof g.bindType === 'undefined'
+                //             )
+                //             .flatMap(g => {
+                //                 if (Array.isArray(g.scripts)) {
+                //                     const scriptsWithBind = g.scripts.map(s => ({
+                //                         ...s,
+                //                         groupBindType: g.bindType,
+                //                         groupBindCharacterId: g.bindCharacterId
+                //                     }));
+                //                     console.log(`[全局正则] 处理脚本组，组bindType=${g.bindType}，组bindCharacterId=${g.bindCharacterId}，该组脚本数=${g.scripts.length}，已为每个脚本赋值绑定信息`);
+                //                     return scriptsWithBind;
+                //                 }
+                //                 return [];
+                //             });
+                //     }
+                // // 不再 fallback 到 loadGlobalRegexScriptList
+                // const regexEnabledVal = await (await import('@react-native-async-storage/async-storage')).default.getItem('nodest_global_regex_enabled');
+                // globalRegexEnabled = regexEnabledVal === 'true';
             } catch (e) {
-                console.warn('[NodeSTCore][GlobalRegex] 加载全局正则脚本失败:', e);
+                // console.warn('[NodeSTCore][GlobalRegex] 加载全局正则脚本失败:', e);
             }
 
             const applyAllRegex = (text: string) => {
                 let t = text;
-                if (globalRegexEnabled && globalRegexScripts.length > 0) {
-                    t = NodeSTCore.applyGlobalRegexScripts(t, globalRegexScripts, 1, characterId);
-                }
+                // if (globalRegexEnabled && globalRegexScripts.length > 0) {
+                //     t = NodeSTCore.applyGlobalRegexScripts(t, globalRegexScripts, 1, characterId);
+                // }
                 if (roleCard?.data?.extensions?.regex_scripts) {
                     t = this.applyRegexScripts(t, roleCard.data.extensions.regex_scripts);
                 }
@@ -1882,23 +1882,23 @@ export class NodeSTCore {
             );
 
             // === 新增：对rframework整体应用全局正则（placement=1），但不影响chathistory和D-entry逻辑 ===
-            if (globalRegexEnabled && globalRegexScripts.length > 0) {
-                cleanedContents = cleanedContents.map(msg => {
-                    // 只对非chathistory的内容应用正则，且只对placement=1的脚本
-                    if (
-                        msg.role === "user" || msg.role === "model"
-                    ) {
-                        return {
-                            ...msg,
-                            parts: msg.parts.map(part => ({
-                                ...part,
-                                text: NodeSTCore.applyGlobalRegexScripts(part.text || "", globalRegexScripts, 1,characterId)
-                            }))
-                        };
-                    }
-                    return msg;
-                });
-            }
+            // if (globalRegexEnabled && globalRegexScripts.length > 0) {
+            //     cleanedContents = cleanedContents.map(msg => {
+            //         // 只对非chathistory的内容应用正则，且只对placement=1的脚本
+            //         if (
+            //             msg.role === "user" || msg.role === "model"
+            //         ) {
+            //             return {
+            //                 ...msg,
+            //                 parts: msg.parts.map(part => ({
+            //                     ...part,
+            //                     text: NodeSTCore.applyGlobalRegexScripts(part.text || "", globalRegexScripts, 1,characterId)
+            //                 }))
+            //             };
+            //         }
+            //         return msg;
+            //     });
+            // }
 
             // 添加最终请求内容的完整日志
             console.log('[NodeSTCore] Final Gemini request structure:', {
@@ -2257,53 +2257,53 @@ export class NodeSTCore {
             );
 
            // === 新增：对rframework整体应用全局正则（placement=1），但不影响chathistory和D-entry逻辑 ===
-           if (globalRegexEnabled && globalRegexScripts.length > 0) {
-            cleanedContents = cleanedContents.map(msg => {
-                if (msg.role === "user" || msg.role === "model") {
-                    return {
-                        ...msg,
-                        parts: msg.parts.map(part => {
-                            const before = part.text || "";
-                            let after = before;
-                            let anyChanged = false;
-                            let usedScripts: string[] = [];
-                            for (const script of globalRegexScripts) {
-                                if (script.disabled) continue;
-                                if (!script.placement || !script.placement.includes(1)) continue;
-                                let findRegex = script.findRegex;
-                                const replaceString = script.replaceString ?? '';
-                                if (!findRegex) continue;
-                                let pattern = findRegex;
-                                let flags = script.flags || '';
-                                const regexMatch = /^\/(.+)\/([a-z]*)$/i.exec(findRegex);
-                                if (regexMatch) {
-                                    pattern = regexMatch[1];
-                                    flags = regexMatch[2] || flags;
-                                }
-                                const regex = new RegExp(pattern, flags);
-                                const replaced = after.replace(regex, replaceString);
-                                if (replaced !== after) {
-                                    anyChanged = true;
-                                    usedScripts.push(`${script.scriptName}(${pattern}/${flags})`);
-                                    console.log(`[全局正则][rframework] 应用脚本: ${script.scriptName}，查找: ${pattern}，替换为: ${replaceString}，flags: ${flags}，原文: ${after}，结果: ${replaced}`);
-                                }
-                                after = replaced;
-                            }
-                            if (!anyChanged) {
-                                console.log(`[全局正则][rframework] 未匹配任何脚本，原文未变: ${before}`);
-                            } else {
-                                console.log(`[全局正则][rframework] 总结: 原文: ${before}，最终结果: ${after}，用到脚本: ${usedScripts.join(', ')}`);
-                            }
-                            return {
-                                ...part,
-                                text: after
-                            };
-                        })
-                    };
-                }
-                return msg;
-            });
-            }
+        //    if (globalRegexEnabled && globalRegexScripts.length > 0) {
+        //     cleanedContents = cleanedContents.map(msg => {
+        //         if (msg.role === "user" || msg.role === "model") {
+        //             return {
+        //                 ...msg,
+        //                 parts: msg.parts.map(part => {
+        //                     const before = part.text || "";
+        //                     let after = before;
+        //                     let anyChanged = false;
+        //                     let usedScripts: string[] = [];
+        //                     for (const script of globalRegexScripts) {
+        //                         if (script.disabled) continue;
+        //                         if (!script.placement || !script.placement.includes(1)) continue;
+        //                         let findRegex = script.findRegex;
+        //                         const replaceString = script.replaceString ?? '';
+        //                         if (!findRegex) continue;
+        //                         let pattern = findRegex;
+        //                         let flags = script.flags || '';
+        //                         const regexMatch = /^\/(.+)\/([a-z]*)$/i.exec(findRegex);
+        //                         if (regexMatch) {
+        //                             pattern = regexMatch[1];
+        //                             flags = regexMatch[2] || flags;
+        //                         }
+        //                         const regex = new RegExp(pattern, flags);
+        //                         const replaced = after.replace(regex, replaceString);
+        //                         if (replaced !== after) {
+        //                             anyChanged = true;
+        //                             usedScripts.push(`${script.scriptName}(${pattern}/${flags})`);
+        //                             console.log(`[全局正则][rframework] 应用脚本: ${script.scriptName}，查找: ${pattern}，替换为: ${replaceString}，flags: ${flags}，原文: ${after}，结果: ${replaced}`);
+        //                         }
+        //                         after = replaced;
+        //                     }
+        //                     if (!anyChanged) {
+        //                         console.log(`[全局正则][rframework] 未匹配任何脚本，原文未变: ${before}`);
+        //                     } else {
+        //                         console.log(`[全局正则][rframework] 总结: 原文: ${before}，最终结果: ${after}，用到脚本: ${usedScripts.join(', ')}`);
+        //                     }
+        //                     return {
+        //                         ...part,
+        //                         text: after
+        //                     };
+        //                 })
+        //             };
+        //         }
+        //         return msg;
+        //     });
+        //     }
 
             // 添加最终请求内容的完整日志
             console.log('[NodeSTCore] Final Gemini request structure:', {
