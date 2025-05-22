@@ -155,11 +155,6 @@ export class NodeSTCore {
                 const before = result;
                 const regex = new RegExp(pattern, flags);
                 result = result.replace(regex, replaceString);
-                // if (before !== result) {
-                //     // console.log(`[全局正则] 应用脚本: ${script.scriptName}，查找: ${pattern}，替换为: ${replaceString}，flags: ${flags}，placement: ${script.placement}，原文: ${before}，结果: ${result}`);
-                // } else {
-                //     // console.log(`[全局正则] 脚本: ${script.scriptName} 未匹配内容，原文未变。`);
-                // }
             } catch (e) {
                 console.warn('[NodeSTCore][GlobalRegex] 正则脚本执行异常:', script?.scriptName, e);
                 continue;
@@ -312,25 +307,12 @@ export class NodeSTCore {
                 retryDelay: geminiOptions?.retryDelay || this.retryDelay
             }
         );
-        
-        // console.log('[NodeSTCore] GeminiAdapter initialized with load balancing options:', {
-        //     useModelLoadBalancing: apiSettings?.useGeminiModelLoadBalancing || false,
-        //     useKeyRotation: apiSettings?.useGeminiKeyRotation || false,
-        //     additionalKeysCount: apiSettings?.additionalGeminiKeys?.length || 0,
-        //     usingCloudFallback: !apiKey,
-        //     primaryModel: this.geminiPrimaryModel,
-        //     backupModel: this.geminiBackupModel,
-        //     retryDelay: this.retryDelay
-        // });
+
         
         // 初始化 OpenRouter 如果已启用且有 API 密钥
         if (apiSettings?.apiProvider === 'openrouter' && 
             apiSettings.openrouter?.enabled && 
             apiSettings.openrouter?.apiKey) {
-            // console.log('[NodeSTCore] Initializing OpenRouter adapter with:', {
-            //     apiKeyLength: apiSettings.openrouter.apiKey.length,
-            //     model: apiSettings.openrouter.model || 'openai/gpt-3.5-turbo'
-            // });
             this.openRouterAdapter = new OpenRouterAdapter(
                 apiSettings.openrouter.apiKey,
                 apiSettings.openrouter.model || 'openai/gpt-3.5-turbo'
@@ -353,10 +335,6 @@ export class NodeSTCore {
                 apiKey: apiSettings.OpenAIcompatible.apiKey,
                 model: apiSettings.OpenAIcompatible.model
             });
-            // console.log('[NodeSTCore] OpenAIAdapter 初始化:', {
-            //     endpoint: apiSettings.OpenAIcompatible.endpoint,
-            //     model: apiSettings.OpenAIcompatible.model
-            // });
         } else {
             this.openAICompatibleAdapter = null;
         }
@@ -991,19 +969,6 @@ export class NodeSTCore {
         onStream?: (delta: string) => void // 新增参数
     ): Promise<string | null> {
         try {
-            // console.log('[NodeSTCore] Starting continueChat:', {
-            //     conversationId,
-            //     messageLength: userMessage.length,
-            //     apiProvider: this.apiSettings?.apiProvider,
-            //     useGeminiLoadBalancing: this.apiSettings?.useGeminiModelLoadBalancing,
-            //     useGeminiKeyRotation: this.apiSettings?.useGeminiKeyRotation,
-            //     additionalKeysCount: this.apiSettings?.additionalGeminiKeys?.length || 0,
-            //     hasCustomUserName: !!customUserName,
-            //     useToolCalls: useToolCalls,
-            //     apiKeyProvided: !!apiKey,
-            //     characterId: characterId,
-            //     onStream : !!onStream
-            // });
     
             // 确保 Adapter 已初始化 - 传递 apiKey 即使它是 null
             if (!this.geminiAdapter || !this.openRouterAdapter || !this.openAICompatibleAdapter) {
@@ -1247,17 +1212,6 @@ export class NodeSTCore {
                     // Continue without custom settings if there's an error
                 }
             }
-
-            // console.log('[NodeSTCore] D-entries for chat:', {
-            //     totalEntries: dEntries.length,
-            //     entriesByType: {
-            //         position4: dEntries.filter(d => d.position === 4).length,
-            //         authorNote: dEntries.filter(d => d.is_author_note).length,
-            //         position2: dEntries.filter(d => d.position === 2).length,
-            //         position3: dEntries.filter(d => d.position === 3).length,
-            //         customSetting: dEntries.filter(d => d.name === "自设" || d.name?.includes("自设")).length
-            //     }
-            // });
 
             // 记忆搜索功能，在消息发送前尝试检索相关记忆
             let memorySearchResults = null;
@@ -1762,40 +1716,12 @@ export class NodeSTCore {
             let globalRegexScripts: any[] = [];
             let globalRegexEnabled = false;
             try {
-                // // 只用新方法，移除旧方法
-                // const regexGroups = await StorageAdapter.loadGlobalRegexScriptGroups?.() || [];
-                //     if (regexGroups.length > 0) {
-                //         globalRegexScripts = regexGroups
-                //             .filter(g =>
-                //                 g.bindType === 'all' ||
-                //                 (g.bindType === 'character' && g.bindCharacterId && characterId && g.bindCharacterId === characterId) ||
-                //                 typeof g.bindType === 'undefined'
-                //             )
-                //             .flatMap(g => {
-                //                 if (Array.isArray(g.scripts)) {
-                //                     const scriptsWithBind = g.scripts.map(s => ({
-                //                         ...s,
-                //                         groupBindType: g.bindType,
-                //                         groupBindCharacterId: g.bindCharacterId
-                //                     }));
-                //                     console.log(`[全局正则] 处理脚本组，组bindType=${g.bindType}，组bindCharacterId=${g.bindCharacterId}，该组脚本数=${g.scripts.length}，已为每个脚本赋值绑定信息`);
-                //                     return scriptsWithBind;
-                //                 }
-                //                 return [];
-                //             });
-                //     }
-                // // 不再 fallback 到 loadGlobalRegexScriptList
-                // const regexEnabledVal = await (await import('@react-native-async-storage/async-storage')).default.getItem('nodest_global_regex_enabled');
-                // globalRegexEnabled = regexEnabledVal === 'true';
             } catch (e) {
                 // console.warn('[NodeSTCore][GlobalRegex] 加载全局正则脚本失败:', e);
             }
 
             const applyAllRegex = (text: string) => {
                 let t = text;
-                // if (globalRegexEnabled && globalRegexScripts.length > 0) {
-                //     t = NodeSTCore.applyGlobalRegexScripts(t, globalRegexScripts, 1, characterId);
-                // }
                 if (roleCard?.data?.extensions?.regex_scripts) {
                     t = this.applyRegexScripts(t, roleCard.data.extensions.regex_scripts);
                 }
@@ -2255,55 +2181,6 @@ export class NodeSTCore {
                 customUserName || "",
                 roleCard
             );
-
-           // === 新增：对rframework整体应用全局正则（placement=1），但不影响chathistory和D-entry逻辑 ===
-        //    if (globalRegexEnabled && globalRegexScripts.length > 0) {
-        //     cleanedContents = cleanedContents.map(msg => {
-        //         if (msg.role === "user" || msg.role === "model") {
-        //             return {
-        //                 ...msg,
-        //                 parts: msg.parts.map(part => {
-        //                     const before = part.text || "";
-        //                     let after = before;
-        //                     let anyChanged = false;
-        //                     let usedScripts: string[] = [];
-        //                     for (const script of globalRegexScripts) {
-        //                         if (script.disabled) continue;
-        //                         if (!script.placement || !script.placement.includes(1)) continue;
-        //                         let findRegex = script.findRegex;
-        //                         const replaceString = script.replaceString ?? '';
-        //                         if (!findRegex) continue;
-        //                         let pattern = findRegex;
-        //                         let flags = script.flags || '';
-        //                         const regexMatch = /^\/(.+)\/([a-z]*)$/i.exec(findRegex);
-        //                         if (regexMatch) {
-        //                             pattern = regexMatch[1];
-        //                             flags = regexMatch[2] || flags;
-        //                         }
-        //                         const regex = new RegExp(pattern, flags);
-        //                         const replaced = after.replace(regex, replaceString);
-        //                         if (replaced !== after) {
-        //                             anyChanged = true;
-        //                             usedScripts.push(`${script.scriptName}(${pattern}/${flags})`);
-        //                             console.log(`[全局正则][rframework] 应用脚本: ${script.scriptName}，查找: ${pattern}，替换为: ${replaceString}，flags: ${flags}，原文: ${after}，结果: ${replaced}`);
-        //                         }
-        //                         after = replaced;
-        //                     }
-        //                     if (!anyChanged) {
-        //                         console.log(`[全局正则][rframework] 未匹配任何脚本，原文未变: ${before}`);
-        //                     } else {
-        //                         console.log(`[全局正则][rframework] 总结: 原文: ${before}，最终结果: ${after}，用到脚本: ${usedScripts.join(', ')}`);
-        //                     }
-        //                     return {
-        //                         ...part,
-        //                         text: after
-        //                     };
-        //                 })
-        //             };
-        //         }
-        //         return msg;
-        //     });
-        //     }
 
             // 添加最终请求内容的完整日志
             console.log('[NodeSTCore] Final Gemini request structure:', {
@@ -3501,8 +3378,6 @@ export class NodeSTCore {
         }
     }
 
-
-    
         /**
      * 构建rframework（prompt消息数组），并插入自定义chatHistory内容
      * @param inputText 聊天历史内容（字符串）
@@ -3633,8 +3508,126 @@ export class NodeSTCore {
                 }));
             }
     
-            return result;
+            return result;           
         }
+        
+    /**
+     * 删除指定 userIndex 的用户消息及其对应的AI消息
+     * @param conversationId 会话ID
+     * @param messageIndex userIndex+1
+     * @returns true/false
+     */
+    async deleteUserMessageByIndex(
+        conversationId: string,
+        messageIndex: number
+    ): Promise<boolean> {
+        try {
+            const chatHistory = await this.loadJson<ChatHistoryEntity>(
+                this.getStorageKey(conversationId, '_history')
+            );
+            if (!chatHistory) {
+                console.error('[NodeSTCore] deleteUserMessageByIndex: 未找到聊天历史');
+                return false;
+            }
+            const realMessages = chatHistory.parts.filter(msg => !msg.is_d_entry);
+            const userMessages = realMessages.filter(msg =>
+                msg.role === "user" && !msg.is_first_mes
+            );
+            if (messageIndex < 1 || messageIndex > userMessages.length) {
+                console.error('[NodeSTCore] deleteUserMessageByIndex: messageIndex超出范围');
+                return false;
+            }
+            const targetUserMsg = userMessages[messageIndex - 1];
+            const userIdxInReal = realMessages.findIndex(msg => msg === targetUserMsg);
+            if (userIdxInReal === -1) {
+                console.error('[NodeSTCore] deleteUserMessageByIndex: 找不到用户消息在realMessages中的索引');
+                return false;
+            }
+            // 向后找到对应的AI消息
+            let aiIdxInReal = -1;
+            for (let i = userIdxInReal + 1; i < realMessages.length; i++) {
+                if (realMessages[i].role === "model" || realMessages[i].role === "assistant") {
+                    aiIdxInReal = i;
+                    break;
+                }
+            }
+            // 构建新的parts（只移除这两条，保留D类条目）
+            const aiMsgToDelete = aiIdxInReal !== -1 ? realMessages[aiIdxInReal] : null;
+            const userMsgToDelete = realMessages[userIdxInReal];
+            const newParts = chatHistory.parts.filter(msg =>
+                msg.is_d_entry ||
+                (msg !== userMsgToDelete && msg !== aiMsgToDelete)
+            );
+            const updatedHistory: ChatHistoryEntity = {
+                ...chatHistory,
+                parts: newParts
+            };
+            await this.saveJson(
+                this.getStorageKey(conversationId, '_history'),
+                updatedHistory
+            );
+            console.log(`[NodeSTCore] 已删除用户消息及其AI消息，userIndex=${messageIndex}, 新消息数=${updatedHistory.parts.length}`);
+            return true;
+        } catch (error) {
+            console.error('[NodeSTCore] deleteUserMessageByIndex error:', error);
+            return false;
+        }
+    }
+
+    /**
+     * 编辑指定 userIndex 的用户消息内容
+     * @param conversationId 会话ID
+     * @param messageIndex userIndex+1
+     * @param newContent 新内容
+     * @returns true/false
+     */
+    async editUserMessageByIndex(
+        conversationId: string,
+        messageIndex: number,
+        newContent: string
+    ): Promise<boolean> {
+        try {
+            const chatHistory = await this.loadJson<ChatHistoryEntity>(
+                this.getStorageKey(conversationId, '_history')
+            );
+            if (!chatHistory) {
+                console.error('[NodeSTCore] editUserMessageByIndex: 未找到聊天历史');
+                return false;
+            }
+            const realMessages = chatHistory.parts.filter(msg => !msg.is_d_entry);
+            const userMessages = realMessages.filter(msg =>
+                msg.role === "user" && !msg.is_first_mes
+            );
+            if (messageIndex < 1 || messageIndex > userMessages.length) {
+                console.error('[NodeSTCore] editUserMessageByIndex: messageIndex超出范围');
+                return false;
+            }
+            const targetUserMsg = userMessages[messageIndex - 1];
+            const userMsgIdxInParts = chatHistory.parts.findIndex(msg => msg === targetUserMsg);
+            if (userMsgIdxInParts === -1) {
+                console.error('[NodeSTCore] editUserMessageByIndex: 找不到用户消息在parts中的索引');
+                return false;
+            }
+            const updatedParts = [...chatHistory.parts];
+            updatedParts[userMsgIdxInParts] = {
+                ...targetUserMsg,
+                parts: [{ text: newContent }]
+            };
+            const updatedHistory: ChatHistoryEntity = {
+                ...chatHistory,
+                parts: updatedParts
+            };
+            await this.saveJson(
+                this.getStorageKey(conversationId, '_history'),
+                updatedHistory
+            );
+            console.log(`[NodeSTCore] 已编辑用户消息内容，userIndex=${messageIndex}，新内容已保存`);
+            return true;
+        } catch (error) {
+            console.error('[NodeSTCore] editUserMessageByIndex error:', error);
+            return false;
+        }
+    }
         
 }
 

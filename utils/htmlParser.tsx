@@ -257,11 +257,8 @@ export const parseHtmlToReactNative = (
     maxImageHeight = 300,
   } = options;
 
-  // Pre-process HTML to preserve line breaks by replacing \n with <br/>
-  // but only when not inside a tag
-  const processedHtml = html.replace(/(?<=>|^)([^<]+)(?=<|$)/g, (match) => {
-    return match.replace(/\n/g, '<br/>');
-  });
+  // 直接传递原始 html，不做换行替换
+  // const processedHtml = html.replace(...); // <-- 删除这一行
 
   // 定义已知标签列表
   const knownTags = [
@@ -430,7 +427,8 @@ export const parseHtmlToReactNative = (
   return (
     <RenderHTML
       contentWidth={MAX_CONTENT_WIDTH}
-      source={{ html: processedHtml }}
+      // source={{ html: processedHtml }} // <-- 改为如下
+      source={{ html }}
       tagsStyles={tagsStyles}
       customHTMLElementModels={customHTMLElementModels}
       renderers={renderers}

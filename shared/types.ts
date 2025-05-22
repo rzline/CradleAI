@@ -170,6 +170,9 @@ export interface MessagePart {
 }
 
 export interface ChatMessage {
+    id?: string;
+    messageIndex?: number;
+    rating?: number;
     role: string;
     parts: MessagePart[]  ;
     content?: string; // 直接内容
@@ -349,7 +352,7 @@ export interface Character {
 export interface Message {
     id: string;
     text: string;
-    sender: 'user' | 'bot';
+    sender: string;
     isLoading?: boolean;
     timestamp?: number;
     rating?: number;

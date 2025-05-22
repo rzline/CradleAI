@@ -12,6 +12,7 @@ import { OpenRouterAdapter } from '@/NodeST/nodest/utils/openrouter-adapter';
 import { CharacterGeneratorService } from '@/NodeST/nodest/services/character-generator-service';
 import { NodeSTManager } from '@/utils/NodeSTManager';
 import { getApiSettings } from '@/utils/settings-helper';
+import { StorageAdapter } from '@/NodeST/nodest/utils/storage-adapter';
 
 const CharactersContext = createContext<CharactersContextType | undefined>(undefined);
 // Initialize CradleService with API key from environment or settings
@@ -514,8 +515,20 @@ const updateCharacter = async (character: Character) => {
   };
 
   // New message management functions
-  const getMessages = (conversationId: string) => {
-    return messagesMap[conversationId] || [];
+  // 重构 getMessages: 直接异步从 StorageAdapter 获取消息，并做角色转换
+  const getMessages = async (conversationId: string) => {
+    // 从 StorageAdapter 获取干净的消息历史
+    const chatMessages = await StorageAdapter.getCleanChatHistory(conversationId);
+    // 转换为 context 统一的 Message 格式
+    return chatMessages.map(msg => ({
+      id: msg.id || `${conversationId}_${msg.timestamp || Date.now()}_${Math.random().toString(36).slice(2, 8)}`,
+      text: msg.parts?.[0]?.text || '',
+      sender: (msg.role === 'user') ? 'user' : 'bot',
+      isLoading: false,
+      timestamp: msg.timestamp,
+      rating: msg.rating,
+
+    }));
   };
 
   const addMessage = async (conversationId: string, message: Message) => {
@@ -1734,7 +1747,7 @@ const generateCharacterFromCradle = async (cradleIdOrCharacter: string | CradleC
         getMessages,
         addMessage,
         clearMessages,
-        removeMessage, // Add the new function to the context
+        removeMessage,
         addMemo,
         updateMemo,
         deleteMemo,

@@ -3,6 +3,7 @@ import * as FileSystem from 'expo-file-system';
 import { ChatHistoryEntity, ChatMessage, } from '../../../shared/types';
 import { CircleMemory } from '../../../shared/types/circle-types';
 import { GlobalPresetConfig, GlobalWorldbookConfig, WorldBookJson, PresetJson } from '../../../shared/types';
+import { NodeSTCore } from '../core/node-st-core';
 
 /**
  * StorageAdapter provides a clean interface for managing chat-related storage operations,
@@ -89,12 +90,20 @@ export class StorageAdapter {
       }
 
       // Filter to include only real user/AI messages (no D-entries, no framework)
-      const cleanedMessages = chatHistory.parts.filter(message => {
-        // Only include actual conversation messages (exclude D entries and system messages)
-        return (!message.is_d_entry &&
-          (message.role === "user" || message.role === "model" || message.role === "assistant") &&
-          message.parts?.[0]?.text);
-      });
+      const cleanedMessages = chatHistory.parts
+        .filter(message => {
+          // Only include actual conversation messages (exclude D entries and system messages)
+          return (!message.is_d_entry &&
+            (message.role === "user" || message.role === "model" || message.role === "assistant") &&
+            message.parts?.[0]?.text);
+        })
+        .map((message, index) => {
+          // Add messageIndex to each message
+          return {
+            ...message,
+            messageIndex: index
+          };
+        });
 
       console.log(`[StorageAdapter] Retrieved ${cleanedMessages.length} clean messages`);
 
@@ -785,5 +794,53 @@ export class StorageAdapter {
    */
   static async loadSelectedGlobalRegexScriptId(): Promise<string | null> {
     return await AsyncStorage.getItem('nodest_selected_global_regex_script_id');
+  }
+
+  /**
+   * 删除指定 AI 消息及其对应的用户消息
+   */
+  static async deleteAiMessageByIndex(conversationId: string, messageIndex: number, apiKey: string): Promise<boolean> {
+    const core = new NodeSTCore(apiKey);
+    return await core.deleteAiMessageByIndex(conversationId, messageIndex);
+  }
+
+  /**
+   * 编辑指定 AI 消消息内容
+   */
+  static async editAiMessageByIndex(conversationId: string, messageIndex: number, newContent: string, apiKey: string): Promise<boolean> {
+    const core = new NodeSTCore(apiKey);
+    return await core.editAiMessageByIndex(conversationId, messageIndex, newContent);
+  }
+
+  /**
+   * 重生成指定 AI 消息
+   */
+  static async regenerateAiMessageByIndex(
+    conversationId: string,
+    messageIndex: number,
+    apiKey: string,
+    characterId?: string,
+    customUserName?: string,
+    apiSettings?: any,
+    onStream?: (delta: string) => void
+  ): Promise<string | null> {
+    const core = new NodeSTCore(apiKey, apiSettings);
+    return await core.regenerateFromMessage(conversationId, messageIndex, apiKey, characterId, customUserName, apiSettings, onStream);
+  }
+
+  /**
+   * 删除指定用户消息及其对应的AI消息
+   */
+  static async deleteUserMessageByIndex(conversationId: string, messageIndex: number, apiKey: string): Promise<boolean> {
+    const core = new NodeSTCore(apiKey);
+    return await core.deleteUserMessageByIndex(conversationId, messageIndex);
+  }
+
+  /**
+   * 编辑指定用户消息内容
+   */
+  static async editUserMessageByIndex(conversationId: string, messageIndex: number, newContent: string, apiKey: string): Promise<boolean> {
+    const core = new NodeSTCore(apiKey);
+    return await core.editUserMessageByIndex(conversationId, messageIndex, newContent);
   }
 }

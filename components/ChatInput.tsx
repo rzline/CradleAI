@@ -262,7 +262,7 @@ const ChatInput: React.FC<ChatInputProps> = ({
         }
       }
       
-      onSendMessage('', 'bot', true);
+      onSendMessage('', 'bot', true); // 只插入一次 loading
       
       // console.log('[ChatInput] 开始同一角色继续对话处理...');
       // console.log(`[ChatInput] 用户消息: "${messageToSend}"`);
@@ -297,7 +297,7 @@ const ChatInput: React.FC<ChatInputProps> = ({
 
       if (result.success) {
         const processedResponse = applyRegexTools(result.text || '抱歉，未收到有效回复。', 'ai');
-        onSendMessage(processedResponse, 'bot');
+        onSendMessage(processedResponse, 'bot'); // 只调用一次
         
         if (userMemoryAdded && selectedCharacter?.id && !isImageRelated) {
           try {
