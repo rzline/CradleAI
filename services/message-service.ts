@@ -2,6 +2,7 @@ import { Message, Character } from '@/shared/types';
 import { StorageAdapter } from '@/NodeST/nodest/utils/storage-adapter';
 import { NodeSTCore } from '@/NodeST/nodest/core/node-st-core';
 import { getApiSettings } from '@/utils/settings-helper';
+import { updateCharacterGreeting } from '@/app/pages/character-detail';
 
 /**
  * Service for managing chat messages with direct integration to StorageAdapter
@@ -216,6 +217,46 @@ class MessageService {
     } catch (error) {
       console.error('Error in handleDeleteUserMessage:', error);
       return { success: false };
+    }
+  }
+
+  /**
+   * Switch a character's greeting to a specific alternative greeting
+   * @param character The character to update
+   * @param greetingIndex The index of the greeting to switch to
+   * @param user User context with settings
+   * @returns Promise with success status and updated character if successful
+   */
+  async switchCharacterGreeting(
+    character: Character,
+    greetingIndex: number,
+    user?: any
+  ): Promise<{ success: boolean; error?: string; updatedCharacter?: Character }> {
+    try {
+      if (!character || !character.id) {
+        return { success: false, error: 'Invalid character' };
+      }
+      
+      const userContext = user ? {
+        settings: {
+          chat: user.settings?.chat,
+          self: { nickname: user.settings?.self?.nickname }
+        }
+      } : undefined;
+      
+      const result = await updateCharacterGreeting(
+        character,
+        greetingIndex,
+        userContext
+      );
+      
+      return result;
+    } catch (error) {
+      console.error('Error switching character greeting:', error);
+      return { 
+        success: false, 
+        error: error instanceof Error ? error.message : 'Failed to switch character greeting'
+      };
     }
   }
 

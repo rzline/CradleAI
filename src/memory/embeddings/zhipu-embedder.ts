@@ -1,4 +1,5 @@
 import { Embedder } from './base';
+import { getApiSettings } from '@/utils/settings-helper'; // 新增
 
 /**
  * 智谱嵌入器 - 用于向量嵌入的服务
@@ -12,12 +13,14 @@ export class ZhipuEmbedder implements Embedder {
   private dimensions: number = 1024;
   private fallbackVector: number[] | null = null;
 
-  constructor(config: { apiKey: string; model?: string; url?: string; dimensions?: number }) {
-    this.apiKey = config.apiKey;
+  constructor(config: { apiKey?: string; model?: string; url?: string; dimensions?: number }) {
+    // 优先从 settings-helper 获取 apiKey
+    const apiSettings = getApiSettings();
+    this.apiKey = apiSettings.zhipuApiKey || config.apiKey || '';
     this.model = config.model || 'embedding-3';
     this.endpoint = config.url || 'https://open.bigmodel.cn/api/paas/v4/embeddings';
     this.dimensions = config.dimensions || 1024;
-    
+
     if (!this.apiKey) {
       console.warn('[ZhipuEmbedder] 初始化时未提供API密钥，需要后续设置');
       this.initialized = false;
@@ -50,93 +53,18 @@ export class ZhipuEmbedder implements Embedder {
       console.warn('[ZhipuEmbedder] 尝试用空API密钥更新，忽略更新');
       return;
     }
-    
-    // 仅当密钥不同时才更新，避免重复日志
     if (this.apiKey === apiKey) {
       console.log('[ZhipuEmbedder] 相同的API密钥，跳过更新');
       return;
     }
-    
     console.log('[ZhipuEmbedder] 更新API密钥，新密钥长度:', apiKey.length);
     this.apiKey = apiKey;
     this.initialized = true;
-    
-    // 清除备用向量，因为现在我们有了有效的API密钥
     if (this.fallbackVector) {
       console.log('[ZhipuEmbedder] 密钥已更新，清除备用向量');
       this.fallbackVector = null;
     }
-    
-    // 异步保存到存储，确保其他地方也能访问
-    this.saveApiKeyToStorage(apiKey).catch(err => {
-      console.warn('[ZhipuEmbedder] 保存API密钥到存储失败:', err);
-    });
-  }
-
-  /**
-   * 将API密钥保存到Storage
-   * @param apiKey 要保存的API密钥
-   */
-  private async saveApiKeyToStorage(apiKey: string): Promise<void> {
-    try {
-      if (typeof require !== 'undefined') {
-        const AsyncStorage = require('@react-native-async-storage/async-storage').default;
-        const settings = await AsyncStorage.getItem('user_settings').then((data: string | null) => 
-          data ? JSON.parse(data) : {}
-        ).catch(() => ({}));
-        
-        // 确保存在chat对象
-        if (!settings.chat) settings.chat = {};
-        
-        // 避免相同的值重复写入
-        if (settings.chat.zhipuApiKey !== apiKey) {
-          settings.chat.zhipuApiKey = apiKey;
-          await AsyncStorage.setItem('user_settings', JSON.stringify(settings));
-          console.log('[ZhipuEmbedder] API密钥已保存到AsyncStorage');
-        }
-      }
-    } catch (error) {
-      console.error('[ZhipuEmbedder] 保存API密钥到存储失败:', error);
-    }
-  }
-
-  /**
-   * 尝试从存储中获取API密钥
-   * 当初始化时没有提供密钥时使用
-   */
-  private async tryGetApiKeyFromStorage(): Promise<string | null> {
-    try {
-      if (typeof require !== 'undefined') {
-        try {
-          const AsyncStorage = require('@react-native-async-storage/async-storage').default;
-          const settings = await AsyncStorage.getItem('user_settings');
-          if (settings) {
-            const parsedSettings = JSON.parse(settings);
-            if (parsedSettings?.chat?.zhipuApiKey) {
-              console.log('[ZhipuEmbedder] 从AsyncStorage获取到API密钥');
-              return parsedSettings.chat.zhipuApiKey;
-            }
-          }
-        } catch (e) {
-          console.log('[ZhipuEmbedder] 从AsyncStorage获取设置失败:', e);
-        }
-      }
-      
-      // 尝试从localStorage获取（Web环境备用）
-      if (typeof localStorage !== 'undefined') {
-        const settings = localStorage.getItem('user_settings');
-        if (settings) {
-          const parsedSettings = JSON.parse(settings);
-          if (parsedSettings?.chat?.zhipuApiKey) {
-            console.log('[ZhipuEmbedder] 从localStorage获取到API密钥');
-            return parsedSettings.chat.zhipuApiKey;
-          }
-        }
-      }
-    } catch (error) {
-      console.error('[ZhipuEmbedder] 尝试获取API密钥失败:', error);
-    }
-    return null;
+    // 不再保存到本地存储，由settings-helper负责持久化
   }
 
   /**
@@ -145,16 +73,17 @@ export class ZhipuEmbedder implements Embedder {
    * @returns 向量数组
    */
   async embed(text: string): Promise<number[]> {
-    // 如果没有初始化或API密钥为空，尝试从存储获取
-    if (!this.initialized || !this.apiKey) {
-      const storedKey = await this.tryGetApiKeyFromStorage();
-      if (storedKey) {
-        this.apiKey = storedKey;
-        this.initialized = true;
-        console.log('[ZhipuEmbedder] 使用从存储获取的API密钥');
-      } else {
-        throw new Error('[ZhipuEmbedder] 智谱嵌入API密钥未设置');
-      }
+    // 每次调用都从 settings-helper 获取最新的 apiKey
+    const apiSettings = getApiSettings();
+    if (!apiSettings.zhipuApiKey && !this.apiKey) {
+      throw new Error('[ZhipuEmbedder] 智谱嵌入API密钥未设置');
+    }
+    if (apiSettings.zhipuApiKey && apiSettings.zhipuApiKey !== this.apiKey) {
+      this.apiKey = apiSettings.zhipuApiKey;
+      this.initialized = true;
+    }
+    if (!this.apiKey) {
+      throw new Error('[ZhipuEmbedder] 智谱嵌入API密钥未设置');
     }
 
     // 确保文本不为空

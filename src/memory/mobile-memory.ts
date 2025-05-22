@@ -553,7 +553,6 @@ export class MobileMemory {
         console.log(`[MobileMemory] 上下文搜索结果数量: ${searchResults?.length || 0}`);
         
         if (searchResults && searchResults.length > 0) {
-          // ...existing code for building conversation context...
         }
       } catch (error) {
         console.warn('[MobileMemory] 获取聊天上下文失败，将使用单条消息进行事实提取:', error);
