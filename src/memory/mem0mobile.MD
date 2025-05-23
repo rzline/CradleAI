@@ -53,7 +53,7 @@ f:\my-app\src\memory\
 │   └── mobile-file.ts         # 文件系统向量存储实现
 ├── components/
 │   ├── Mem0Initializer.tsx    # 初始化组件
-│   └── MemoryProcessingControl.tsx # 记忆管理界面
+│   └── MemoOverlay.tsx # 记忆管理界面
 ├── hooks/
 │   └── useMemory.ts           # 记忆系统Hook
 ├── memory.types.ts            # 记忆操作类型定义
@@ -126,7 +126,7 @@ const memoryConfig = {
 
 ### 4.6 记忆管理界面 (MemoryProcessingControl)
 
-新增的`MemoryProcessingControl`组件提供了全面的记忆管理功能：
+新增的`MemoOverlay`组件提供了全面的记忆管理功能：
 
 - **全屏界面**：采用全屏Modal布局，提供更好的交互体验
 - **标签导航**：包含"记忆"、"统计"和"设置"三个主要功能区
