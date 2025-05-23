@@ -32,6 +32,8 @@ import { updateAuthorNoteDataForCharacter } from '@/app/pages/character-detail';
 import { InputImagen } from '@/services/InputImagen'; 
 import { CloudServiceProvider } from '@/services/cloud-service-provider'; 
 import { getApiSettings } from '@/utils/settings-helper'; 
+import { TableMemoryService } from '@/services/table-memory-service'; // 新增
+import { TableMemory } from '@/src/memory';
 interface ChatInputProps {
   onSendMessage: (text: string, sender: 'user' | 'bot', isLoading?: boolean, metadata?: Record<string, any>) => void;
   selectedConversationId: string | null;
@@ -195,71 +197,83 @@ const ChatInput: React.FC<ChatInputProps> = ({
     const messageToSend = text.trim();
     setText('');
     setIsLoading(true);
-    
+
+    // 新增：判断 useZhipuEmbedding
+    const apiSettings = getApiSettings();
+    const useZhipuEmbedding = !!apiSettings.useZhipuEmbedding;
+
     try {
       const processedMessage = applyRegexTools(messageToSend, 'user');
       const isImageRelated = processedMessage.includes('![') && processedMessage.includes(')');
       
+      // === 记忆系统分支 ===
       if (selectedCharacter?.id && !isImageRelated) {
-        try {
-          console.log('[ChatInput] 尝试检索与用户消息相关的记忆');
-          const mem0Service = Mem0Service.getInstance();
-          const memoryResults = await mem0Service.searchMemories(
-            processedMessage,
-            selectedCharacter.id,
-            selectedConversationId,
-            5
-          );
-          
-          const resultCount = memoryResults?.results?.length || 0;
-          if (resultCount > 0) {
-            console.log(`[ChatInput] 为用户消息找到 ${resultCount} 条相关记忆:`);
+        if (useZhipuEmbedding) {
+          // 仅在 useZhipuEmbedding 开启时调用 Mem0Service
+          try {
+            console.log('[ChatInput] 尝试检索与用户消息相关的记忆');
+            const mem0Service = Mem0Service.getInstance();
+            const memoryResults = await mem0Service.searchMemories(
+              processedMessage,
+              selectedCharacter.id,
+              selectedConversationId,
+              5
+            );
             
-            interface MemoryResult {
-              memory: string;
-              score: number;
-              metadata?: {
-                aiResponse?: string;
-              };
-            }
-
-            interface MemorySearchResults {
-              results: MemoryResult[];
-            }
-
-            (memoryResults as MemorySearchResults).results.forEach((item: MemoryResult, index: number) => {
-              console.log(`[ChatInput] 记忆 #${index + 1}:`);
-              console.log(`  内容: ${item.memory}`);
-              console.log(`  相似度: ${item.score}`);
-              if (item.metadata?.aiResponse) {
-                console.log(`  AI响应: ${item.metadata.aiResponse.substring(0, 100)}${item.metadata.aiResponse.length > 100 ? '...' : ''}`);
+            const resultCount = memoryResults?.results?.length || 0;
+            if (resultCount > 0) {
+              console.log(`[ChatInput] 为用户消息找到 ${resultCount} 条相关记忆:`);
+              
+              interface MemoryResult {
+                memory: string;
+                score: number;
+                metadata?: {
+                  aiResponse?: string;
+                };
               }
-            });
-          } else {
-            console.log('[ChatInput] 未找到相关记忆');
+
+              interface MemorySearchResults {
+                results: MemoryResult[];
+              }
+
+              (memoryResults as MemorySearchResults).results.forEach((item: MemoryResult, index: number) => {
+                console.log(`[ChatInput] 记忆 #${index + 1}:`);
+                console.log(`  内容: ${item.memory}`);
+                console.log(`  相似度: ${item.score}`);
+                if (item.metadata?.aiResponse) {
+                  console.log(`  AI响应: ${item.metadata.aiResponse.substring(0, 100)}${item.metadata.aiResponse.length > 100 ? '...' : ''}`);
+                }
+              });
+            } else {
+              console.log('[ChatInput] 未找到相关记忆');
+            }
+          } catch (searchError) {
+            console.warn('[ChatInput] 搜索相关记忆失败:', searchError);
           }
-        } catch (searchError) {
-          console.warn('[ChatInput] 搜索相关记忆失败:', searchError);
         }
+        // 否则，不做任何向量记忆操作
       }
       
       onSendMessage(processedMessage, 'user');
       
       let userMemoryAdded = false;
       if (selectedCharacter?.id && !isImageRelated) {
-        try {
-          const mem0Service = Mem0Service.getInstance();
-          await mem0Service.addChatMemory(
-            processedMessage,
-            'user',
-            selectedCharacter.id,
-            selectedConversationId
-          );
-          userMemoryAdded = true;
-          console.log('[ChatInput] 用户消息已成功添加到记忆系统的消息缓存');
-        } catch (memoryError) {
-          console.error('[ChatInput] 添加用户消息到记忆系统失败:', memoryError);
+        if (useZhipuEmbedding) {
+          try {
+            const mem0Service = Mem0Service.getInstance();
+            await mem0Service.addChatMemory(
+              processedMessage,
+              'user',
+              selectedCharacter.id,
+              selectedConversationId
+            );
+            userMemoryAdded = true;
+            console.log('[ChatInput] 用户消息已成功添加到记忆系统的消息缓存');
+          } catch (memoryError) {
+            console.error('[ChatInput] 添加用户消息到记忆系统失败:', memoryError);
+          }
         }
+        // 否则，不做任何向量记忆操作
       }
       
       onSendMessage('', 'bot', true); // 只插入一次 loading
@@ -276,7 +290,7 @@ const ChatInput: React.FC<ChatInputProps> = ({
         status: '同一角色继续对话',
         conversationId: conversationId,
         apiKey: user?.settings?.chat.characterApiKey || '',
-        apiSettings: getApiSettings(), 
+        apiSettings: apiSettings,
         // 新增：传递gemini模型和retryDelay参数
         geminiOptions: {
           geminiPrimaryModel: user?.settings?.chat.geminiPrimaryModel,
@@ -299,7 +313,55 @@ const ChatInput: React.FC<ChatInputProps> = ({
         const processedResponse = applyRegexTools(result.text || '抱歉，未收到有效回复。', 'ai');
         onSendMessage(processedResponse, 'bot'); // 只调用一次
         
-        if (userMemoryAdded && selectedCharacter?.id && !isImageRelated) {
+        // === AI回复后，异步调用表格记忆服务（仅在 useZhipuEmbedding 关闭时） ===
+        if (
+          selectedCharacter?.id &&
+          !isImageRelated &&
+          !useZhipuEmbedding
+        ) {
+          (async () => {
+            try {
+              // 获取最近10条消息
+              const recentMessages = await StorageAdapter.getRecentMessages(selectedConversationId, 10);
+              // 转换为 TableMemoryService 需要的格式
+              const messages = recentMessages
+                .map(msg => {
+                  let role: 'user' | 'assistant' | undefined;
+                  if (msg.role === 'user') role = 'user';
+                  else if (msg.role === 'model' || msg.role === 'assistant') role = 'assistant';
+                  else return undefined;
+                  return {
+                    role,
+                    content: msg.parts?.[0]?.text || ''
+                  };
+                })
+                .filter(Boolean) as { role: 'user' | 'assistant'; content: string }[];
+
+      // 新增：获取所有表格，构建名称到sheetId映射
+      const tableDataResult = await TableMemory.getCharacterTablesData(selectedCharacter.id, selectedConversationId);
+      const tableNameToId: Record<string, string> = {};
+      if (tableDataResult?.tables?.length) {
+        tableDataResult.tables.forEach(tbl => {
+          tableNameToId[tbl.name] = tbl.id;
+        });
+      }
+
+      // 调用表格记忆服务，传递表名到ID映射
+      await TableMemoryService.process({
+        characterId: selectedCharacter.id,
+        conversationId: selectedConversationId,
+        messages,
+        tableNameToId // 新增参数
+      });
+      console.log('[ChatInput] 表格记忆服务已异步处理完成');
+    } catch (e) {
+      console.warn('[ChatInput] 表格记忆服务处理失败:', e);
+    }
+  })();
+        }
+
+        // === AI回复添加到记忆系统 ===
+        if (userMemoryAdded && selectedCharacter?.id && !isImageRelated && useZhipuEmbedding) {
           try {
             const mem0Service = Mem0Service.getInstance();
             
@@ -317,7 +379,7 @@ const ChatInput: React.FC<ChatInputProps> = ({
           } catch (memoryError) {
             console.error('[ChatInput] 添加AI回复到记忆系统失败:', memoryError);
           }
-        } else if (!userMemoryAdded) {
+        } else if (!userMemoryAdded && useZhipuEmbedding) {
           console.log('[ChatInput] 由于用户消息未成功添加到记忆，跳过添加AI回复');
         }
       } else {

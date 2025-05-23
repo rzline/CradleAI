@@ -353,6 +353,55 @@ export class MobileMemory {
       };
     }
 
+    // ----------- 新增: 动态检测useZhipuEmbedding配置 -----------
+    let useZhipuEmbedding = true;
+    try {
+      // 动态引入settings-helper，避免循环依赖
+      const { getApiSettings } = require('@/utils/settings-helper');
+      useZhipuEmbedding = !!getApiSettings().useZhipuEmbedding;
+    } catch (e) {
+      // 如果获取失败，默认true
+      useZhipuEmbedding = true;
+    }
+
+    // 如果useZhipuEmbedding为false，则直接走表格记忆兜底
+    if (!useZhipuEmbedding && this.isTableMemoryEnabled() && filters.agentId) {
+      try {
+        const tableMemoryIntegration = require('./integration/table-memory-integration');
+        const characterId = filters.agentId;
+        const conversationId = filters.runId;
+        const tables = await tableMemoryIntegration.getTableDataForPrompt(characterId, conversationId);
+        if (tables && Array.isArray(tables) && tables.length > 0) {
+          // 构造原始对话内容
+          const userName = metadata.userName || '用户';
+          const aiName = metadata.aiName || 'AI';
+          let chatContent: string;
+          if (typeof messages === 'string') {
+            chatContent = messages;
+          } else {
+            chatContent = messages.map(m => {
+              const role = m.role === 'assistant' ? aiName : (m.role === 'user' ? userName : m.role);
+              const content = typeof m.content === 'string' ? m.content : JSON.stringify(m.content);
+              return `${role}: ${content}`;
+            }).join('\n\n');
+          }
+          // 直接处理表格记忆
+          await tableMemoryIntegration.processChat(
+            chatContent,
+            characterId,
+            conversationId,
+            { userName, aiName, isMultiRound }
+          );
+          // 返回空向量记忆结果，仅表格记忆已处理
+          return { results: [] };
+        }
+      } catch (error) {
+        console.error('[MobileMemory] useZhipuEmbedding=false时表格记忆兜底处理失败:', error);
+        return { results: [] };
+      }
+    }
+    // ----------- 新增逻辑结束 -----------
+
     // ----------- 新增: 智谱API密钥未设置时允许表格记忆兜底 -----------
     // 检查嵌入器可用性
     let embedderAvailable = true;

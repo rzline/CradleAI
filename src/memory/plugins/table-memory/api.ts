@@ -137,7 +137,7 @@ export async function processChat(
     let messageContent: string;
     if (options.chatContent) {
       messageContent = options.chatContent;
-      console.log('[TableMemory] 使用外部传入的 chatContent');
+      console.log('[TableMemory] 使用外部传入的 chatContent,内容详情:', messageContent);
     } else {
       messageContent = typeof messages === 'string'
         ? messages
@@ -147,25 +147,232 @@ export async function processChat(
             return `${role}: ${content}`;
           }).join('\n\n');
     }
-    
+
+    // ----------- 新增：用LLM生成tableActions -----------
+    let initialTableActions = options.initialTableActions;
+    if (!initialTableActions) {
+      try {
+        // 获取LLM实例
+        const llm = await getLLMInstance();
+        if (llm) {
+          // 构建系统提示词和用户提示词
+          const systemPrompt = `你是一名专业的表格管理助手。请仔细分析对话内容，并根据提供的规则更新表格。
+你需要返回完整的表格内容，并且确保数据遵循指定格式。返回的格式应为markdown表格，或者是JSON格式的表格操作指令。`;
+
+          // 获取所有表格文本，便于 LLM 参考
+          const allSheetTexts: Record<string, string> = {};
+          sheets.forEach(sheet => {
+            allSheetTexts[sheet.uid] = `表格名称: ${sheet.name}\n${toText(sheet)}`;
+          });
+
+          // 构建每个表格的 insert 示例，确保 sheetId 与实际表格一致
+          const insertExamples = sheets.map(sheet => {
+            return `{
+  "action": "insert",
+  "sheetId": "${sheet.uid}",
+  "rowData": {"0": "第一列的值", "1": "第二列的值"}
+}`;
+          }).join(',\n');
+
+          // 构建用户提示词，包含所有表格文本和对话内容
+          let userPrompt = `当前所有表格如下:\n${Object.values(allSheetTexts).join('\n\n')}\n\n对话内容:\n${messageContent}\n\n请分析对话内容，生成每个需要更新的表格的操作指令。你必须以markdown表格形式返回完整表格，从标题行开始，确保格式正确。
+你也可以选择返回JSON格式的表格操作指令，例如:
+{
+  "tableActions": [
+    ${insertExamples}
+  ]
+}`;
+
+          // 调用LLM
+          const response = await llm.generateResponse(
+            [
+              { role: "user", content: systemPrompt },
+              { role: "user", content: userPrompt }
+            ],
+            { type: "json_object" }
+          );
+          // 解析响应，提取tableActions
+          let cleanResponse = typeof response === 'string' ? response : response.content;
+          // --------- 增强JSON解析，兼容markdown code block和宽松提取 ---------
+          // 去除 ```json ... ``` 或 ``` ... ``` 包裹
+          cleanResponse = cleanResponse
+            .replace(/^\s*```json\s*/i, '')
+            .replace(/^\s*```\s*/i, '')
+            .replace(/\s*```[\s\n]*$/i, '')
+            .trim();
+          // 尝试宽松提取第一个大括号包裹的JSON
+          try {
+            // 先尝试直接解析
+            let jsonData: any = null;
+            try {
+              jsonData = JSON.parse(cleanResponse);
+            } catch {
+              // fallback: 提取第一个 {...} 片段
+              const jsonMatch = cleanResponse.match(/\{[\s\S]*\}/);
+              if (jsonMatch) {
+                jsonData = JSON.parse(jsonMatch[0]);
+              }
+            }
+            if (jsonData && jsonData.tableActions && Array.isArray(jsonData.tableActions)) {
+              initialTableActions = jsonData.tableActions;
+              console.log(`[TableMemory] LLM生成了${initialTableActions?.length || 0}条tableActions`);
+            }
+          } catch (e) {
+            // fallback: 尝试补全缺失的右大括号
+            try {
+              let fixed = cleanResponse;
+              const leftCount = (fixed.match(/\{/g) || []).length;
+              const rightCount = (fixed.match(/\}/g) || []).length;
+              if (leftCount > rightCount) {
+                fixed += '}'.repeat(leftCount - rightCount);
+                const jsonData = JSON.parse(fixed);
+                if (jsonData && jsonData.tableActions && Array.isArray(jsonData.tableActions)) {
+                  initialTableActions = jsonData.tableActions;
+                  console.log(`[TableMemory] LLM生成了${initialTableActions?.length || 0}条tableActions(补全大括号)`);
+                }
+              }
+            } catch (e2) {
+              console.warn('[TableMemory] 解析LLM响应tableActions失败:', e, e2);
+            }
+          }
+          // --------- 增强JSON解析结束 ---------
+        }
+      } catch (e) {
+        console.warn('[TableMemory] LLM生成tableActions失败:', e);
+      }
+    }
+
+    // 新增：对initialTableActions进行预处理，将表格名称转换为表格ID
+    if (initialTableActions && initialTableActions.length > 0) {
+      console.log(`[TableMemory] 开始预处理${initialTableActions.length}条tableActions，转换表格名称为ID`);
+      
+      // 创建表格名称到ID的映射
+      const nameToIdMap = new Map<string, string>();
+      sheets.forEach(sheet => {
+        nameToIdMap.set(sheet.name, sheet.uid);
+        // 同时支持去掉"表格"后缀的匹配
+        const nameWithoutSuffix = sheet.name.replace(/表格$/, '');
+        if (nameWithoutSuffix !== sheet.name) {
+          nameToIdMap.set(nameWithoutSuffix, sheet.uid);
+        }
+      });
+      
+      // 转换每个action中的sheetId
+      initialTableActions = initialTableActions.map((action, index) => {
+        const originalSheetId = action.sheetId;
+        
+        // 如果sheetId已经是UUID格式，直接使用
+        if (typeof originalSheetId === 'string' && 
+            originalSheetId.match(/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i)) {
+          console.log(`[TableMemory] Action ${index + 1}: sheetId已是UUID格式，保持不变: ${originalSheetId}`);
+          return action;
+        }
+        
+        // 尝试通过名称查找表格ID
+        let actualSheetId = nameToIdMap.get(originalSheetId);
+        
+        // 如果找不到精确匹配，尝试模糊匹配
+        if (!actualSheetId) {
+          for (const [name, id] of nameToIdMap.entries()) {
+            if (name.includes(originalSheetId) || originalSheetId.includes(name)) {
+              actualSheetId = id;
+              console.log(`[TableMemory] Action ${index + 1}: 通过模糊匹配找到表格ID: "${originalSheetId}" -> "${name}" (${id})`);
+              break;
+            }
+          }
+        } else {
+          console.log(`[TableMemory] Action ${index + 1}: 表格名称转换成功: "${originalSheetId}" -> ${actualSheetId}`);
+        }
+        
+        if (!actualSheetId) {
+          console.warn(`[TableMemory] Action ${index + 1}: 无法找到表格"${originalSheetId}"对应的ID，该操作将被跳过`);
+          return null; // 标记为无效操作
+        }
+        
+        // 返回更新后的action
+        return {
+          ...action,
+          sheetId: actualSheetId
+        };
+      }).filter(Boolean); // 过滤掉无效操作
+      
+      console.log(`[TableMemory] tableActions预处理完成，有效操作数: ${initialTableActions.length}`);
+    }
+    // ----------- 新增结束 -----------
+
     // 使用顺序处理模式 - 不再支持批处理模式
     console.log(`[TableMemory] 使用顺序处理模式处理 ${sheets.length} 个表格`);
+    console.log(`[TableMemory] 处理内容: ${messageContent.substring(0, 100)}...，准备调用 SheetManager.processSheets`);
     
-    // 使用顺序处理方法处理所有表格
-    const updatedSheets = await SheetManager.processSheets(
-      sheets,
-      messageContent,
-      {
-        isMultiRound: options.isMultiRound,
-        userName: options.userName,
-        aiName: options.aiName,
-        initialTableActions: options.initialTableActions // 传递已经提取的表格操作
+    try {
+      // 记录 initialTableActions 的重要信息
+      if (initialTableActions && initialTableActions.length > 0) {
+        console.log(`[TableMemory] 将向 SheetManager 传递 ${initialTableActions.length} 条tableActions`);
+        initialTableActions.forEach((action, idx) => {
+          console.log(`[TableMemory] TableAction ${idx + 1}: action=${action.action}, sheetId=${action.sheetId}`);
+        });
       }
-    );
-    
-    console.log(`[TableMemory] 处理完成，共更新了 ${updatedSheets.length} 个表格`);
-    
-    return { updatedSheets };
+      
+      // 使用顺序处理方法处理所有表格
+      const updatedSheets = await SheetManager.processSheets(
+        sheets,
+        messageContent,
+        {
+          isMultiRound: options.isMultiRound,
+          userName: options.userName,
+          aiName: options.aiName,
+          initialTableActions // 传递LLM生成的表格操作
+        }
+      );
+      
+      console.log(`[TableMemory] 处理完成，共更新了 ${updatedSheets.length} 个表格`);
+      return { updatedSheets };
+    } catch (error) {
+      console.error('[TableMemory] 调用 SheetManager.processSheets 失败:', error);
+      // 尝试恢复：手动调用每个表格操作
+      if (initialTableActions && initialTableActions.length > 0) {
+        console.log('[TableMemory] 尝试手动处理表格操作进行恢复...');
+        const recoveredSheetIds = new Set<string>();
+        
+        for (const action of initialTableActions) {
+          try {
+            switch (action.action) {
+              case 'insert':
+                if (action.sheetId && action.rowData) {
+                  await SheetManager.insertRow(action.sheetId, action.rowData);
+                  recoveredSheetIds.add(action.sheetId);
+                  console.log(`[TableMemory] 恢复模式: 成功插入行到表格 ${action.sheetId}`);
+                }
+                break;
+              case 'update':
+                if (action.sheetId && action.rowIndex !== undefined && action.rowData) {
+                  await SheetManager.updateRow(action.sheetId, action.rowIndex, action.rowData);
+                  recoveredSheetIds.add(action.sheetId);
+                  console.log(`[TableMemory] 恢复模式: 成功更新表格 ${action.sheetId} 的行 ${action.rowIndex}`);
+                }
+                break;
+              case 'delete':
+                if (action.sheetId && action.rowIndex !== undefined) {
+                  await SheetManager.deleteRow(action.sheetId, action.rowIndex);
+                  recoveredSheetIds.add(action.sheetId);
+                  console.log(`[TableMemory] 恢复模式: 成功删除表格 ${action.sheetId} 的行 ${action.rowIndex}`);
+                }
+                break;
+            }
+          } catch (innerError) {
+            console.error(`[TableMemory] 恢复模式执行表格操作失败:`, innerError);
+          }
+        }
+        
+        if (recoveredSheetIds.size > 0) {
+          const recoveredIds = Array.from(recoveredSheetIds);
+          console.log(`[TableMemory] 恢复模式: 成功更新了 ${recoveredIds.length} 个表格: ${recoveredIds.join(', ')}`);
+          return { updatedSheets: recoveredIds };
+        }
+      }
+      
+      return { updatedSheets: [] };
+    }
   } catch (error) {
     console.error('[TableMemory] 处理聊天消息失败:', error);
     return { updatedSheets: [] };
@@ -176,7 +383,7 @@ export async function processChat(
  * 获取 LLM 实例
  * 从 SheetManager 中提取出来方便复用
  */
-async function getLLMInstance(): Promise<any> {
+export async function getLLMInstance(): Promise<any> {
   try {
     // 直接使用SheetManager的方法获取LLM实例，确保一致性
     return await SheetManager['getLLM']();
