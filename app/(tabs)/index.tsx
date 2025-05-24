@@ -1726,7 +1726,7 @@ useEffect(() => {
                   const globalSettings = typeof window !== 'undefined' && window.__globalSettingsCache
                     ? window.__globalSettingsCache
                     : await loadGlobalSettingsState();
-                    
+                  
                   if (
                     globalSettings &&
                     globalSettings.regexEnabled &&
@@ -2489,6 +2489,13 @@ useEffect(() => {
                   onSaveCreated={handleSaveCreated}
                   onLoadSave={handleLoadSave}
                   onPreviewSave={handlePreviewSave}
+                  // 新增：onChatRestored 回调，强制刷新消息列表
+                  onChatRestored={async () => {
+                    if (selectedConversationId) {
+                      const refreshed = await getMessages(selectedConversationId);
+                      setMessages(refreshed);
+                    }
+                  }}
                 />
               )}
               

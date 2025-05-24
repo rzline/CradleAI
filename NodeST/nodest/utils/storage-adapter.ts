@@ -843,4 +843,51 @@ export class StorageAdapter {
     const core = new NodeSTCore(apiKey);
     return await core.editUserMessageByIndex(conversationId, messageIndex, newContent);
   }
+
+  /**
+   * 备份指定会话的聊天历史到带时间戳的备份文件
+   * @param conversationId 会话ID
+   * @param timestamp 备份时间戳（建议为Date.now()）
+   * @returns true/false
+   */
+  static async backupChatHistory(conversationId: string, timestamp: number): Promise<boolean> {
+    // 这里无需API key，仅做本地文件操作
+    const core = new NodeSTCore('');
+    return await core.backupChatHistory(conversationId, timestamp);
+  }
+
+  /**
+   * 通过conversationId和时间戳，从备份文件恢复聊天历史
+   * @param conversationId 会话ID
+   * @param timestamp 备份时间戳
+   * @returns true/false
+   */
+  static async restoreChatHistoryFromBackup(conversationId: string, timestamp: number): Promise<boolean> {
+    try {
+      const backupKey = `nodest_${conversationId}_history_backup_${timestamp}`;
+      const filePath = StorageAdapter.characterDataDir + backupKey + '.json';
+      const fileInfo = await FileSystem.getInfoAsync(filePath);
+      if (!fileInfo.exists) {
+        console.error(`[StorageAdapter] restoreChatHistoryFromBackup: 备份文件不存在: ${filePath}`);
+        return false;
+      }
+      const content = await FileSystem.readAsStringAsync(filePath);
+      const chatHistory = JSON.parse(content);
+
+      // === 新增：打印备份文件内容的消息数量和摘要 ===
+      if (chatHistory && Array.isArray(chatHistory.parts)) {
+        console.log(`[StorageAdapter] 备份文件消息数: ${chatHistory.parts.length}`);
+        chatHistory.parts.slice(0, 3).forEach((msg: any, idx: number) => {
+          console.log(`[StorageAdapter] 备份消息#${idx + 1}: ${msg.role} - ${msg.parts?.[0]?.text?.substring(0, 50)}`);
+        });
+      }
+      // ===
+
+      const core = new NodeSTCore('');
+      return await core.restoreChatHistory(conversationId, chatHistory);
+    } catch (error) {
+      console.error('[StorageAdapter] restoreChatHistoryFromBackup error:', error);
+      return false;
+    }
+  }
 }

@@ -552,71 +552,6 @@ console.log(`[NodeSTManager] Setting search enabled to: ${enabled}`); // Add log
       };
     }
   }
-
-  /**
-   * 从特定消息位置重新生成聊天
-   * @param params 重新生成所需的参数
-   */
-  async regenerateFromMessage(params: {
-    messageIndex: number;
-    conversationId: string;
-    apiKey: string;
-    apiSettings?: Pick<GlobalSettings['chat'], 'apiProvider' | 'openrouter'>;
-    character?: Character;
-    customUserName?: string;
-    onStream?: (delta: string) => void; // 新增
-  }): Promise<Message> {
-    try {
-        console.log('[NodeSTManager] 从消息索引重新生成:', params.messageIndex);
-
-        if (!params.apiKey) {
-            console.error('[NodeSTManager] 重新生成失败: 缺少API密钥');
-            throw new Error('重新生成需要API密钥');
-        }
-
-        // 更新API设置
-        this.updateApiSettings(params.apiKey, params.apiSettings);
-
-        // 记录调用参数
-        console.log('[NodeSTManager] 重新生成参数:', {
-            conversationId: params.conversationId,
-            messageIndex: params.messageIndex,
-            apiProvider: params.apiSettings?.apiProvider || 'gemini',
-            characterId: params.character?.id,
-            customUserName: params.character?.customUserName || 'User'
-        });
-
-        // 确保NodeST实例存在
-        if (!this.nodeST) {
-            console.error('[NodeSTManager] NodeST实例未初始化');
-            throw new Error('NodeST实例未初始化');
-        }
-
-        // 调用NodeST的regenerateFromMessage方法，补充apiSettings参数
-        const response = await this.nodeST.regenerateFromMessage(
-            params.conversationId,
-            params.messageIndex,
-            params.apiKey,
-            params.character?.id, // 传递角色ID用于记忆服务
-            params.character?.customUserName, // 传递自定义用户名
-            params.apiSettings, // <--- 新增，传递apiSettings
-            params.onStream // 新增，透传onStream
-        );
-
-        console.log('[NodeSTManager] 重新生成成功');
-        return {
-            success: true,
-            text: response || ''
-        };
-    } catch (error) {
-        console.error('[NodeSTManager] 重新生成消息时出错:', error);
-        return {
-            success: false,
-            error: error instanceof Error ? error.message : '未知错误'
-        };
-    }
-  }
-
   /**
    * 生成文本 - 用于角色创作助手对话
    * @param messages 消息数组，包含对话历史
@@ -960,7 +895,7 @@ console.log(`[NodeSTManager] Setting search enabled to: ${enabled}`); // Add log
 }
 
 // Create and export a singleton instance
-interface ProcessChatOptions {
+export interface ProcessChatOptions {
   userMessage: string;
   status?: "更新人设" | "新建角色" | "同一角色继续对话";
   conversationId: string;

@@ -2995,7 +2995,13 @@ export class NodeSTCore {
                 conversationId,
                 messagesCount: chatHistory.parts.length
             });
-            
+
+                        // === 新增：打印即将恢复的聊天记录摘要 ===
+            chatHistory.parts.slice(0, 3).forEach((msg, idx) => {
+                console.log(`[NodeSTCore] 即将恢复的消息#${idx + 1}: ${msg.role} - ${msg.parts?.[0]?.text?.substring(0, 50)}`);
+            });
+            // ===
+
             // First, load the current history to preserve its identifier and structure
             const currentHistory = await this.loadJson<ChatHistoryEntity>(
                 this.getStorageKey(conversationId, '_history')
@@ -3005,7 +3011,7 @@ export class NodeSTCore {
                 console.error('[NodeSTCore] Cannot restore chat history - current history not found');
                 return false;
             }
-            
+
             // Create a new history entity that preserves the structure but uses saved messages
             const restoredHistory: ChatHistoryEntity = {
                 ...currentHistory,
@@ -3014,6 +3020,11 @@ export class NodeSTCore {
             
             console.log('[NodeSTCore] Saving restored chat history with', restoredHistory.parts.length, 'messages');
             
+            // === 新增：打印恢复后将要保存的聊天记录摘要 ===
+            restoredHistory.parts.slice(0, 3).forEach((msg, idx) => {
+                console.log(`[NodeSTCore] 恢复后将保存的消息#${idx + 1}: ${msg.role} - ${msg.parts?.[0]?.text?.substring(0, 50)}`);
+            });
+            // ===
             // Save the restored history
             await this.saveJson(
                 this.getStorageKey(conversationId, '_history'),
@@ -3628,6 +3639,33 @@ export class NodeSTCore {
             return false;
         }
     }
-        
+            /**
+     * 备份指定会话的聊天历史到带时间戳的备份文件
+     * @param conversationId 会话ID
+     * @param timestamp 备份时间戳（建议为Date.now()）
+     * @returns true/false
+     */
+    async backupChatHistory(conversationId: string, timestamp: number): Promise<boolean> {
+        try {
+            // 加载当前聊天历史
+            const chatHistory = await this.loadJson<ChatHistoryEntity>(
+                this.getStorageKey(conversationId, '_history')
+            );
+            if (!chatHistory) {
+                console.error('[NodeSTCore] backupChatHistory: 未找到聊天历史');
+                return false;
+            }
+            // 构造备份文件路径
+            const backupKey = `nodest_${conversationId}_history_backup_${timestamp}`;
+            await FileSystem.makeDirectoryAsync(NodeSTCore.characterDataDir, { intermediates: true }).catch(() => {});
+            const filePath = NodeSTCore.characterDataDir + backupKey + '.json';
+            await FileSystem.writeAsStringAsync(filePath, JSON.stringify(chatHistory));
+            console.log(`[NodeSTCore] 聊天历史已备份: ${filePath}`);
+            return true;
+        } catch (error) {
+            console.error('[NodeSTCore] backupChatHistory error:', error);
+            return false;
+        }
+    }
 }
 
