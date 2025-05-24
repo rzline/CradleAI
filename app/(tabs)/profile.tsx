@@ -115,6 +115,15 @@ const Profile: React.FC = () => {
           onPress={() => router.push('/pages/global-settings')}
         />
         
+        {/* Chat UI Settings button */}
+        <ListItem
+          title="聊天界面设置"
+          leftIcon="color-palette-outline"
+          chevron={true}
+          onPress={() => router.push('/pages/chat-ui-settings')}
+          subtitle="自定义聊天界面外观"
+        />
+        
         {/* New: Plugin manager option */}
         {/* <ListItem
           title="插件管理"

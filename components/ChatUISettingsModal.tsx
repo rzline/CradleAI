@@ -12,8 +12,8 @@ import {
 import { BlurView } from 'expo-blur';
 import { Ionicons } from '@expo/vector-icons';
 import Slider from '@react-native-community/slider';
+import * as FileSystem from 'expo-file-system';
 import ColorPicker from './common/ColorPicker';
-import AsyncStorage from '@react-native-async-storage/async-storage';
 import { theme } from '@/constants/theme';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
@@ -71,19 +71,21 @@ const DEFAULT_SETTINGS: ChatUISettings = {
   textSizeMultiplier: 1.0
 };
 
-const STORAGE_KEY = '@chat_ui_settings';
+const SETTINGS_FILE = `${FileSystem.documentDirectory}chat_ui_settings.json`;
 
 export const useChatUISettings = () => {
   const [settings, setSettings] = useState<ChatUISettings>(DEFAULT_SETTINGS);
   const [loaded, setLoaded] = useState(false);
   
-  // Load settings from storage
+  // Load settings from file system
   useEffect(() => {
     const loadSettings = async () => {
       try {
-        const storedSettings = await AsyncStorage.getItem(STORAGE_KEY);
-        if (storedSettings) {
-          setSettings(JSON.parse(storedSettings));
+        const fileInfo = await FileSystem.getInfoAsync(SETTINGS_FILE);
+        
+        if (fileInfo.exists) {
+          const fileContent = await FileSystem.readAsStringAsync(SETTINGS_FILE);
+          setSettings(JSON.parse(fileContent));
         }
         setLoaded(true);
       } catch (error) {
@@ -95,10 +97,10 @@ export const useChatUISettings = () => {
     loadSettings();
   }, []);
   
-  // Save settings to storage
+  // Save settings to file system
   const saveSettings = async (newSettings: ChatUISettings) => {
     try {
-      await AsyncStorage.setItem(STORAGE_KEY, JSON.stringify(newSettings));
+      await FileSystem.writeAsStringAsync(SETTINGS_FILE, JSON.stringify(newSettings));
       setSettings(newSettings);
       return true;
     } catch (error) {
