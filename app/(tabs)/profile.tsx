@@ -16,7 +16,6 @@ import { Ionicons } from '@expo/vector-icons';
 import * as ImagePicker from 'expo-image-picker';
 import { useUser } from '@/constants/UserContext';
 import { useRouter } from 'expo-router';
-import { NodeSTCleanupButton } from '@/components/settings/NodeSTCleanupButton';
 import ListItem from '@/components/ListItem';
 import ConfirmDialog from '@/components/ConfirmDialog';
 import LoadingIndicator from '@/components/LoadingIndicator';

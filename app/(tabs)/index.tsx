@@ -48,7 +48,6 @@ import { CharacterLoader } from '@/src/utils/character-loader';
 import * as FileSystem from 'expo-file-system';
 import { importDefaultCharactersIfNeeded, resetDefaultCharacterImported } from '@/components/DefaultCharacterImporter';
 import { loadGlobalSettingsState } from '@/app/pages/global-settings';
-import { getApiSettings } from '@/utils/settings-helper';
 import { isTableMemoryEnabled, setTableMemoryEnabled } from '@/src/memory/integration/table-memory-integration';
 import { getWebViewExampleHtml } from '@/utils/webViewExample';
 import { Ionicons } from '@expo/vector-icons';
@@ -56,7 +55,7 @@ import { DeviceEventEmitter } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import PostChatService from '@/services/PostChat-service';
 import MessageService from '@/services/message-service';
-
+import AutoMessageService from '@/services/automessage-service';
 
 // Global cache objects
 declare global {
@@ -154,6 +153,8 @@ const App = () => {
   // Initialize the message service for use throughout the component
   const messageService = useMemo(() => MessageService, []);
 
+  // AutoMessageService 实例 ===
+  const autoMessageService = useMemo(() => AutoMessageService.getInstance(), []);
   const insets = useSafeAreaInsets();
   // References to avoid re-creating functions on each render
   const asyncStorageOperations = useRef<Set<Promise<any>>>(new Set());
@@ -236,12 +237,7 @@ const [hasRestoredLastConversation, setHasRestoredLastConversation] = useState(f
   const firstMessageSentRef = useRef<Record<string, boolean>>({});
   const firstMesSentRef = useRef<Record<string, boolean>>({});
   
-  // Auto-message feature state
-  const [autoMessageEnabled, setAutoMessageEnabled] = useState(true);
-  const autoMessageTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const autoMessageIntervalRef = useRef<number>(5);
-  const lastMessageTimeRef = useRef<number>(Date.now());
-  const waitingForUserReplyRef = useRef<boolean>(false);
+
 
   // Chat scroll positions with improved handling
   const [chatScrollPositions, setChatScrollPositions] = useState<Record<string, number>>({});
@@ -719,17 +715,19 @@ const [hasRestoredLastConversation, setHasRestoredLastConversation] = useState(f
     }
 
     // Update user reply state
-    if (sender === 'user' && !isLoading) {
-      waitingForUserReplyRef.current = false;
+    if (sender === 'user' && !isLoading && selectedConversationId) {
+      // waitingForUserReplyRef.current = false;
+      // updateUnreadMessagesCount(0);
+      autoMessageService.onUserMessage(selectedConversationId);
       updateUnreadMessagesCount(0);
     }
 
     // Reset auto message timer
-    if (!isLoading) {
-      lastMessageTimeRef.current = Date.now();
-      setupAutoMessageTimer();
+    if (!isLoading && selectedConversationId) {
+      // lastMessageTimeRef.current = Date.now();
+      // setupAutoMessageTimer();
+      autoMessageService.onAnyMessage(selectedConversationId);
     }
-
     // Update search preference
     if (sender === 'user' && !isLoading) {
       try {
@@ -740,7 +738,7 @@ const [hasRestoredLastConversation, setHasRestoredLastConversation] = useState(f
     }
   }, [
     isPreviewMode, exitPreviewMode, selectedConversationId,
-    sendMessageInternal, braveSearchEnabled, removeMessage
+    sendMessageInternal, braveSearchEnabled, removeMessage, autoMessageService
   ]);
 
   // Handle group messages
@@ -1149,8 +1147,6 @@ const [hasRestoredLastConversation, setHasRestoredLastConversation] = useState(f
                   timestamp: Date.now()
                 });
                 
-                lastMessageTimeRef.current = Date.now();
-                setupAutoMessageTimer();
               }
             } catch (e) {
               console.error('Error adding first message after reset:', e);
@@ -1364,78 +1360,31 @@ const [hasRestoredLastConversation, setHasRestoredLastConversation] = useState(f
     });
   }, []);
 
-  // Set up auto message timer
-  const setupAutoMessageTimer = useCallback(() => {
-    if (autoMessageTimerRef.current) {
-      clearTimeout(autoMessageTimerRef.current);
-      autoMessageTimerRef.current = null;
-    }
-    
-    if (!autoMessageEnabled || !characterToUse?.id || waitingForUserReplyRef.current) {
-      return;
+  // Setup auto message when character or conversation changes
+  useEffect(() => {
+    if (characterToUse && selectedConversationId && user) {
+      autoMessageService.setupAutoMessage({
+        enabled: characterToUse.autoMessage === true,
+        intervalMinutes: characterToUse.autoMessageInterval || 5,
+        characterId: characterToUse.id,
+        conversationId: selectedConversationId,
+        character: characterToUse,
+        user: user,
+        messages: messages,
+        onMessageAdded: addMessage,
+        onUnreadCountUpdate: updateUnreadMessagesCount
+      });
+    } else if (selectedConversationId) {
+      // Clear auto message if character not available
+      autoMessageService.clearAutoMessage(selectedConversationId);
     }
 
-    if (characterToUse.autoMessage !== true) {
-      return;
-    }
-
-    autoMessageIntervalRef.current = characterToUse.autoMessageInterval || 5;
-    
-    const intervalMs = autoMessageIntervalRef.current * 60 * 1000;
-    
-    autoMessageTimerRef.current = setTimeout(async () => {
-      if (characterToUse && selectedConversationId) {
-        autoMessageTimerRef.current = null;
-        
-        try {
-          const uniqueAutoMsgId = `auto-${Date.now()}-${Math.random().toString(36).substring(2, 9)}`;
-          
-          const result = await NodeSTManager.processChatMessage({
-            userMessage: "[AUTO_MESSAGE] 用户已经一段时间没有回复了。请基于上下文和你的角色设定，主动发起一条合适的消息。这条消息应该自然，不要直接提及用户长时间未回复的事实。",
-            status: "同一角色继续对话",
-            conversationId: selectedConversationId,
-            apiKey: user?.settings?.chat?.characterApiKey || '',
-            apiSettings: {
-              apiProvider: user?.settings?.chat?.apiProvider || 'gemini',
-              openrouter: user?.settings?.chat?.openrouter,
-              useGeminiModelLoadBalancing: user?.settings?.chat.useGeminiModelLoadBalancing,
-              useGeminiKeyRotation: user?.settings?.chat.useGeminiKeyRotation,
-              additionalGeminiKeys: user?.settings?.chat.additionalGeminiKeys
-            },
-            character: characterToUse
-          });
-          
-          if (result.success && result.text) {
-            const aiMessageCount = messages.filter(m => m.sender === 'bot' && !m.isLoading).length;
-            
-            await addMessage(selectedConversationId, {
-              id: uniqueAutoMsgId,
-              text: result.text,
-              sender: 'bot',
-              timestamp: Date.now(),
-              metadata: {
-                isAutoMessageResponse: true,
-                aiIndex: aiMessageCount,
-                autoMessageCreatedAt: Date.now()
-              }
-            });
-            
-            lastMessageTimeRef.current = Date.now();
-            waitingForUserReplyRef.current = true;
-            
-            if (characterToUse.notificationEnabled === true) {
-              updateUnreadMessagesCount(1);
-            }
-          }
-        } catch (error) {
-          console.error('[App] Error generating auto message:', error);
-        }
+    return () => {
+      if (selectedConversationId) {
+        autoMessageService.clearAutoMessage(selectedConversationId);
       }
-    }, intervalMs);
-  }, [
-    autoMessageEnabled, characterToUse, selectedConversationId,
-    messages, user, addMessage, updateUnreadMessagesCount
-  ]);
+    };
+  }, [characterToUse, selectedConversationId, user, messages, addMessage, updateUnreadMessagesCount, autoMessageService]);
 
   // Initialize default characters and load preferences
   useEffect(() => {
@@ -1877,38 +1826,14 @@ useEffect(() => {
     }
   }, [characterId, characters, getMessages, messages, addMessage]);
 
-  // Auto message timer setup
+
+  // Cleanup auto message service on unmount
   useEffect(() => {
-    if (characterToUse) {
-      const newAutoMessageEnabled = characterToUse.autoMessage === true;
-      
-      if (autoMessageEnabled !== newAutoMessageEnabled) {
-        console.log(`[App] Auto message setting changed to: ${newAutoMessageEnabled}`);
-        setAutoMessageEnabled(newAutoMessageEnabled);
-      }
-      
-      autoMessageIntervalRef.current = characterToUse.autoMessageInterval || 5;
-      
-
-      if (newAutoMessageEnabled) {
-        setTimeout(() => {
-          setupAutoMessageTimer();
-        }, 100);
-      } else if (autoMessageTimerRef.current) {
-        clearTimeout(autoMessageTimerRef.current);
-        autoMessageTimerRef.current = null;
-        console.log('[App] Auto message timer cleared due to setting change');
-      }
-    }
-
     return () => {
-
-      if (autoMessageTimerRef.current) {
-        clearTimeout(autoMessageTimerRef.current);
-        autoMessageTimerRef.current = null;
-      }
+      autoMessageService.clearAll();
     };
-  }, [characterToUse, setupAutoMessageTimer]);
+  }, [autoMessageService]);
+
 
   // TTS enhancer settings listener
   useEffect(() => {
@@ -1929,14 +1854,6 @@ useEffect(() => {
       }
     };
   }, []);
-
-  // Reset auto message timer when messages change
-  useEffect(() => {
-    if (messages.length > 0) {
-      lastMessageTimeRef.current = Date.now();
-      setupAutoMessageTimer();
-    }
-  }, [messages, setupAutoMessageTimer]);
 
   // Handle keyboard events
   useEffect(() => {
