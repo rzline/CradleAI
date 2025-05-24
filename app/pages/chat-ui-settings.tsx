@@ -44,6 +44,17 @@ export interface ChatUISettings {
   // Global sizes
   bubblePaddingMultiplier: number;
   textSizeMultiplier: number;
+  
+  // Markdown styles
+  markdownHeadingColor: string;
+  markdownCodeBackgroundColor: string;
+  markdownCodeTextColor: string;
+  markdownQuoteColor: string;
+  markdownQuoteBackgroundColor: string;
+  markdownLinkColor: string;
+  markdownBoldColor: string;
+  markdownTextScale: number;
+  markdownCodeScale: number;
 }
 
 const DEFAULT_SETTINGS: ChatUISettings = {
@@ -70,14 +81,25 @@ const DEFAULT_SETTINGS: ChatUISettings = {
   
   // Global sizes
   bubblePaddingMultiplier: 1.0,
-  textSizeMultiplier: 1.0
+  textSizeMultiplier: 1.0,
+  
+  // Markdown styles - matching current ChatDialog defaults
+  markdownHeadingColor: '#ff79c6',
+  markdownCodeBackgroundColor: '#111',
+  markdownCodeTextColor: '#fff',
+  markdownQuoteColor: '#d0d0d0',
+  markdownQuoteBackgroundColor: '#111',
+  markdownLinkColor: '#3498db',
+  markdownBoldColor: '#ff79c6',
+  markdownTextScale: 1.0,
+  markdownCodeScale: 1.0
 };
 
 const SETTINGS_FILE = `${FileSystem.documentDirectory}chat_ui_settings.json`;
 
 const ChatUISettingsScreen: React.FC = () => {
   const [settings, setSettings] = useState<ChatUISettings>(DEFAULT_SETTINGS);
-  const [activeTab, setActiveTab] = useState<'regular' | 'bg-focus' | 'visual-novel' | 'global'>('regular');
+  const [activeTab, setActiveTab] = useState<'regular' | 'bg-focus' | 'visual-novel' | 'global' | 'markdown'>('regular');
   const [isLoading, setIsLoading] = useState(true);
   const [hasChanges, setHasChanges] = useState(false);
   const router = useRouter();
@@ -96,9 +118,9 @@ const ChatUISettingsScreen: React.FC = () => {
       if (fileInfo.exists) {
         const fileContent = await FileSystem.readAsStringAsync(SETTINGS_FILE);
         const loadedSettings = JSON.parse(fileContent);
-        setSettings(loadedSettings);
+        // Merge loaded settings with DEFAULT_SETTINGS to ensure all fields exist
+        setSettings({ ...DEFAULT_SETTINGS, ...loadedSettings });
       } else {
-        // If file doesn't exist, use default settings
         setSettings(DEFAULT_SETTINGS);
       }
     } catch (error) {
@@ -184,12 +206,12 @@ const ChatUISettingsScreen: React.FC = () => {
       <Text style={styles.settingLabel}>{label}</Text>
       <View style={styles.settingRow}>
         <ColorPicker
-          color={color}
+          color={color || '#ffffff'}
           onColorChange={onColorChange}
           style={styles.colorPicker}
         />
       </View>
-      <View style={[styles.colorPreview, { backgroundColor: color }]}>
+      <View style={[styles.colorPreview, { backgroundColor: color || '#ffffff' }]}>
         <Text style={{ color: '#fff', fontWeight: 'bold', textShadowColor: 'rgba(0,0,0,0.7)', textShadowRadius: 2 }}>示例文本</Text>
       </View>
     </View>
@@ -278,6 +300,13 @@ const ChatUISettingsScreen: React.FC = () => {
           onPress={() => setActiveTab('global')}
         >
           <Text style={[styles.tabText, activeTab === 'global' && styles.activeTabText]}>全局</Text>
+        </TouchableOpacity>
+        
+        <TouchableOpacity 
+          style={[styles.tab, activeTab === 'markdown' && styles.activeTab]} 
+          onPress={() => setActiveTab('markdown')}
+        >
+          <Text style={[styles.tabText, activeTab === 'markdown' && styles.activeTabText]}>Markdown</Text>
         </TouchableOpacity>
       </View>
 
@@ -407,6 +436,108 @@ const ChatUISettingsScreen: React.FC = () => {
               <Ionicons name="refresh-circle" size={20} color="#fff" />
               <Text style={styles.resetButtonText}>重置为默认值</Text>
             </TouchableOpacity>
+          </View>
+        )}
+        
+        {activeTab === 'markdown' && (
+          <View style={styles.settingsSection}>
+            <Text style={styles.sectionTitle}>Markdown 样式设置</Text>
+            
+            {/* Markdown Text Scale */}
+            {renderSizeSlider(
+              'Markdown 文本缩放',
+              settings.markdownTextScale,
+              (value) => handleUpdateSetting('markdownTextScale', value),
+              0.8,
+              1.5
+            )}
+            
+            {/* Markdown Code Scale */}
+            {renderSizeSlider(
+              '代码块文本缩放',
+              settings.markdownCodeScale,
+              (value) => handleUpdateSetting('markdownCodeScale', value),
+              0.8,
+              1.5
+            )}
+            
+            {/* Heading Color */}
+            {renderTextColorSetting(
+              '标题颜色',
+              settings.markdownHeadingColor,
+              (color) => handleUpdateSetting('markdownHeadingColor', color)
+            )}
+            
+            {/* Bold Text Color */}
+            {renderTextColorSetting(
+              '粗体文本颜色',
+              settings.markdownBoldColor,
+              (color) => handleUpdateSetting('markdownBoldColor', color)
+            )}
+            
+            {/* Link Color */}
+            {renderTextColorSetting(
+              '链接颜色',
+              settings.markdownLinkColor,
+              (color) => handleUpdateSetting('markdownLinkColor', color)
+            )}
+            
+            {/* Code Background Color */}
+            {renderTextColorSetting(
+              '代码块背景色',
+              settings.markdownCodeBackgroundColor,
+              (color) => handleUpdateSetting('markdownCodeBackgroundColor', color)
+            )}
+            
+            {/* Code Text Color */}
+            {renderTextColorSetting(
+              '代码块文本颜色',
+              settings.markdownCodeTextColor,
+              (color) => handleUpdateSetting('markdownCodeTextColor', color)
+            )}
+            
+            {/* Blockquote Background Color */}
+            {renderTextColorSetting(
+              '引用块背景色',
+              settings.markdownQuoteBackgroundColor,
+              (color) => handleUpdateSetting('markdownQuoteBackgroundColor', color)
+            )}
+            
+            {/* Blockquote Text Color */}
+            {renderTextColorSetting(
+              '引用块文本颜色',
+              settings.markdownQuoteColor,
+              (color) => handleUpdateSetting('markdownQuoteColor', color)
+            )}
+            
+            {/* Preview */}
+            <View style={styles.markdownPreviewContainer}>
+              <Text style={styles.settingLabel}>预览</Text>
+              <View style={styles.markdownPreview}>
+                <View style={[styles.markdownPreviewContent, {backgroundColor: '#333'}]}>
+                  <Text style={{color: settings.markdownHeadingColor, fontSize: 20 * settings.markdownTextScale, fontWeight: 'bold', marginBottom: 8}}>
+                    标题示例
+                  </Text>
+                  <Text style={{color: '#fff', fontSize: 16 * settings.markdownTextScale, marginBottom: 8}}>
+                    这是普通文本，包含<Text style={{color: settings.markdownBoldColor, fontWeight: 'bold'}}>粗体文本</Text>和
+                    <Text style={{color: settings.markdownLinkColor, textDecorationLine: 'underline'}}>链接文本</Text>。
+                  </Text>
+                  <View style={{backgroundColor: settings.markdownQuoteBackgroundColor, borderLeftWidth: 4, borderLeftColor: '#aaa', padding: 8, marginVertical: 8}}>
+                    <Text style={{color: settings.markdownQuoteColor, fontSize: 16 * settings.markdownTextScale}}>
+                      这是引用块内容
+                    </Text>
+                  </View>
+                  <View style={{backgroundColor: settings.markdownCodeBackgroundColor, padding: 12, borderRadius: 6, marginTop: 8}}>
+                    <Text style={{color: settings.markdownCodeTextColor, fontFamily: Platform.OS === 'ios' ? 'Menlo' : 'monospace', fontSize: 14 * settings.markdownCodeScale}}>
+                      // 这是代码块示例{'\n'}
+                      function example() {'{'}
+                      {'\n'}  console.log("Hello world");
+                      {'\n'}{' }'}
+                    </Text>
+                  </View>
+                </View>
+              </View>
+            </View>
           </View>
         )}
         
@@ -587,6 +718,20 @@ const styles = StyleSheet.create({
     color: '#fff',
     fontWeight: 'bold',
     marginLeft: 8,
+  },
+  markdownPreviewContainer: {
+    marginTop: 20,
+    marginBottom: 16,
+  },
+  markdownPreview: {
+    borderWidth: 1,
+    borderColor: '#555',
+    borderRadius: 8,
+    overflow: 'hidden',
+  },
+  markdownPreviewContent: {
+    padding: 16,
+    backgroundColor: '#333',
   },
 });
 

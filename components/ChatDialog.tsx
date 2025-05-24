@@ -68,7 +68,18 @@ const DEFAULT_UI_SETTINGS: ChatUISettings = {
   
   // Global sizes
   bubblePaddingMultiplier: 1.0,
-  textSizeMultiplier: 1.0
+  textSizeMultiplier: 1.0,
+  
+  // Markdown styles - matching current ChatDialog defaults
+  markdownHeadingColor: '#ff79c6',
+  markdownCodeBackgroundColor: '#111',
+  markdownCodeTextColor: '#fff',
+  markdownQuoteColor: '#d0d0d0',
+  markdownQuoteBackgroundColor: '#111',
+  markdownLinkColor: '#3498db',
+  markdownBoldColor: '#ff79c6',
+  markdownTextScale: 1.0,
+  markdownCodeScale: 1.0
 };
 
 // Hook to load UI settings
@@ -907,61 +918,101 @@ function getBubblePadding() {
             style={{
               body: isUser ? styles.userMessageText : styles.botMessageText,
               text: isUser ? styles.userMessageText : styles.botMessageText,
-              // Enhanced code block styling
+              // Enhanced code block styling with UI settings
               code_block: { 
-                backgroundColor: '#111',
-                color: '#fff',
+                backgroundColor: uiSettings.markdownCodeBackgroundColor,
+                color: uiSettings.markdownCodeTextColor,
                 borderRadius: 6,
                 padding: 12,
-                fontSize: 14,
+                fontSize: 14 * uiSettings.markdownCodeScale,
                 fontFamily: Platform.OS === 'ios' ? 'Menlo' : 'monospace',
                 marginVertical: 10,
               },
               code_block_text: {
-                backgroundColor: '#111', // 显式设置背景
-                color: '#fff',           // 显式设置字体颜色
-                fontSize: 14,
+                backgroundColor: uiSettings.markdownCodeBackgroundColor,
+                color: uiSettings.markdownCodeTextColor,
+                fontSize: 14 * uiSettings.markdownCodeScale,
                 fontFamily: Platform.OS === 'ios' ? 'Menlo' : 'monospace',
                 padding: 0,
               },
               fence: {
-                backgroundColor: '#111',
+                backgroundColor: uiSettings.markdownCodeBackgroundColor,
                 borderRadius: 6,
                 marginVertical: 10,
                 width: '100%',
               },
               fence_code: {
-                backgroundColor: '#111',
-                color: '#fff',
+                backgroundColor: uiSettings.markdownCodeBackgroundColor,
+                color: uiSettings.markdownCodeTextColor,
                 borderRadius: 6,
                 padding: 12,
-                fontSize: 14,
+                fontSize: 14 * uiSettings.markdownCodeScale,
                 fontFamily: Platform.OS === 'ios' ? 'Menlo' : 'monospace',
                 width: '100%',
               },
               fence_code_text: {
-                backgroundColor: '#111',
-                color: '#fff',
-                fontSize: 14,
+                backgroundColor: uiSettings.markdownCodeBackgroundColor,
+                color: uiSettings.markdownCodeTextColor,
+                fontSize: 14 * uiSettings.markdownCodeScale,
                 fontFamily: Platform.OS === 'ios' ? 'Menlo' : 'monospace',
                 padding: 0,
               },
-              heading1: { fontSize: 24, fontWeight: 'bold', marginVertical: 10 },
-              heading2: { fontSize: 22, fontWeight: 'bold', marginVertical: 8 },
-              heading3: { fontSize: 20, fontWeight: 'bold', marginVertical: 6 },
-              heading4: { fontSize: 18, fontWeight: 'bold', marginVertical: 5 },
-              heading5: { fontSize: 16, fontWeight: 'bold', marginVertical: 4 },
-              heading6: { fontSize: 14, fontWeight: 'bold', marginVertical: 3 },
+              heading1: { 
+                fontSize: 24 * uiSettings.markdownTextScale, 
+                fontWeight: 'bold', 
+                marginVertical: 10,
+                color: uiSettings.markdownHeadingColor 
+              },
+              heading2: { 
+                fontSize: 22 * uiSettings.markdownTextScale, 
+                fontWeight: 'bold', 
+                marginVertical: 8,
+                color: uiSettings.markdownHeadingColor
+              },
+              heading3: { 
+                fontSize: 20 * uiSettings.markdownTextScale, 
+                fontWeight: 'bold', 
+                marginVertical: 6,
+                color: uiSettings.markdownHeadingColor
+              },
+              heading4: { 
+                fontSize: 18 * uiSettings.markdownTextScale, 
+                fontWeight: 'bold', 
+                marginVertical: 5,
+                color: uiSettings.markdownHeadingColor
+              },
+              heading5: { 
+                fontSize: 16 * uiSettings.markdownTextScale, 
+                fontWeight: 'bold', 
+                marginVertical: 4,
+                color: uiSettings.markdownHeadingColor
+              },
+              heading6: { 
+                fontSize: 14 * uiSettings.markdownTextScale, 
+                fontWeight: 'bold', 
+                marginVertical: 3,
+                color: uiSettings.markdownHeadingColor
+              },
               bullet_list: { marginVertical: 6 },
               ordered_list: { marginVertical: 6 },
               list_item: { flexDirection: 'row', alignItems: 'flex-start', marginVertical: 2 },
-              blockquote: { backgroundColor: '#111', borderLeftWidth: 4, borderLeftColor: '#aaa', padding: 8, marginVertical: 6 },
+              blockquote: { 
+                backgroundColor: uiSettings.markdownQuoteBackgroundColor, 
+                borderLeftWidth: 4, 
+                borderLeftColor: '#aaa', 
+                padding: 8, 
+                marginVertical: 6 
+              },
+              blockquote_text: {
+                color: uiSettings.markdownQuoteColor,
+              },
               table: { borderWidth: 1, borderColor: '#666', marginVertical: 8 },
               th: { backgroundColor: '#444', color: '#fff', fontWeight: 'bold', padding: 6 },
               tr: { borderBottomWidth: 1, borderColor: '#666' },
               td: { padding: 6, color: '#fff' },
               hr: { borderBottomWidth: 1, borderColor: '#aaa', marginVertical: 8 },
-              link: { color: '#3498db', textDecorationLine: 'underline' },
+              link: { color: uiSettings.markdownLinkColor, textDecorationLine: 'underline' },
+              strong: { color: uiSettings.markdownBoldColor, fontWeight: 'bold' },
               image: { width: 220, height: 160, borderRadius: 8, marginVertical: 8, alignSelf: 'center' },
             }}
             onLinkPress={(url: string) => {
