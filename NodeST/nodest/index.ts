@@ -953,4 +953,25 @@ export class NodeST {
             error: data.errorMessage // Map errorMessage to error property
         };
     }
+
+    /**
+     * 静态方法：构建rframework并插入自定义chatHistory内容，返回最终消息数组（适配器格式）
+     * @param inputText 聊天历史内容
+     * @param presetJsonStr 预设JSON字符串
+     * @param adapterType 适配器类型
+     * @param worldBookJsonStr 世界书JSON字符串（可选）
+     */
+    static async buildRFrameworkWithChatHistory(
+        inputText: string,
+        presetJsonStr: string,
+        adapterType: 'gemini' | 'openrouter' | 'openai-compatible',
+        worldBookJsonStr?: string
+    ): Promise<any[]> {
+        return await NodeSTCore.buildRFrameworkWithChatHistory(
+            inputText,
+            presetJsonStr,
+            adapterType,
+            worldBookJsonStr
+        );
+    }
 }

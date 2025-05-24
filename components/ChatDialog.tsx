@@ -78,6 +78,7 @@ const DEFAULT_UI_SETTINGS: ChatUISettings = {
   markdownQuoteBackgroundColor: '#111',
   markdownLinkColor: '#3498db',
   markdownBoldColor: '#ff79c6',
+  markdownTextColor: '#fff', // 新增
   markdownTextScale: 1.0,
   markdownCodeScale: 1.0
 };
@@ -916,8 +917,14 @@ function getBubblePadding() {
         <View style={{ width: '100%' }}>
           <Markdown
             style={{
-              body: isUser ? styles.userMessageText : styles.botMessageText,
-              text: isUser ? styles.userMessageText : styles.botMessageText,
+              body: {
+                ...(isUser ? styles.userMessageText : styles.botMessageText),
+                color: uiSettings.markdownTextColor, // 应用自定义颜色
+              },
+              text: {
+                ...(isUser ? styles.userMessageText : styles.botMessageText),
+                color: uiSettings.markdownTextColor, // 应用自定义颜色
+              },
               // Enhanced code block styling with UI settings
               code_block: { 
                 backgroundColor: uiSettings.markdownCodeBackgroundColor,

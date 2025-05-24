@@ -53,6 +53,7 @@ export interface ChatUISettings {
   markdownQuoteBackgroundColor: string;
   markdownLinkColor: string;
   markdownBoldColor: string;
+  markdownTextColor: string; // 新增
   markdownTextScale: number;
   markdownCodeScale: number;
 }
@@ -91,6 +92,7 @@ const DEFAULT_SETTINGS: ChatUISettings = {
   markdownQuoteBackgroundColor: '#111',
   markdownLinkColor: '#3498db',
   markdownBoldColor: '#ff79c6',
+  markdownTextColor: '#fff', // 新增
   markdownTextScale: 1.0,
   markdownCodeScale: 1.0
 };
@@ -136,7 +138,7 @@ const ChatUISettingsScreen: React.FC = () => {
       setIsLoading(true);
       await FileSystem.writeAsStringAsync(SETTINGS_FILE, JSON.stringify(settings));
       setHasChanges(false);
-      Alert.alert('Success', 'Settings saved successfully');
+      Alert.alert('成功', 'UI设置保存成功');
     } catch (error) {
       console.error('Error saving UI settings:', error);
       Alert.alert('Error', 'Failed to save settings');
@@ -482,6 +484,13 @@ const ChatUISettingsScreen: React.FC = () => {
               (color) => handleUpdateSetting('markdownLinkColor', color)
             )}
             
+            {/* Markdown Text Color */}
+            {renderTextColorSetting(
+              '普通文本颜色',
+              settings.markdownTextColor,
+              (color) => handleUpdateSetting('markdownTextColor', color)
+            )}
+            
             {/* Code Background Color */}
             {renderTextColorSetting(
               '代码块背景色',
@@ -518,7 +527,7 @@ const ChatUISettingsScreen: React.FC = () => {
                   <Text style={{color: settings.markdownHeadingColor, fontSize: 20 * settings.markdownTextScale, fontWeight: 'bold', marginBottom: 8}}>
                     标题示例
                   </Text>
-                  <Text style={{color: '#fff', fontSize: 16 * settings.markdownTextScale, marginBottom: 8}}>
+                  <Text style={{color: settings.markdownTextColor, fontSize: 16 * settings.markdownTextScale, marginBottom: 8}}>
                     这是普通文本，包含<Text style={{color: settings.markdownBoldColor, fontWeight: 'bold'}}>粗体文本</Text>和
                     <Text style={{color: settings.markdownLinkColor, textDecorationLine: 'underline'}}>链接文本</Text>。
                   </Text>

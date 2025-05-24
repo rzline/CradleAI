@@ -3389,138 +3389,270 @@ export class NodeSTCore {
         }
     }
 
-        /**
+     /**
      * 构建rframework（prompt消息数组），并插入自定义chatHistory内容
      * @param inputText 聊天历史内容（字符串）
      * @param presetJsonStr 预设JSON字符串（标准格式）
      * @param adapterType 适配器类型："gemini" | "openrouter" | "openai-compatible"
-     * @returns 格式化后的消息数组
+     * @param worldBookJsonStr 世界书JSON字符串（可选）
+     * @returns 格式化后的消息数组（最终发送给适配器的格式，不做正则替换）
      */
-        static async buildRFrameworkWithChatHistory(
-            inputText: string,
-            presetJsonStr: string,
-            adapterType: 'gemini' | 'openrouter' | 'openai-compatible'
-        ): Promise<any[]> {
-            // 1. 解析预设JSON
-            let preset: any;
+    static async buildRFrameworkWithChatHistory(
+        inputText: string,
+        presetJsonStr: string,
+        adapterType: 'gemini' | 'openrouter' | 'openai-compatible',
+        worldBookJsonStr?: string
+    ): Promise<any[]> {
+        // 1. 解析预设JSON
+        let preset: any;
+        try {
+            preset = typeof presetJsonStr === 'string' ? JSON.parse(presetJsonStr) : presetJsonStr;
+        } catch (e) {
+            throw new Error('Invalid presetJsonStr: ' + (e instanceof Error ? e.message : String(e)));
+        }
+        if (!preset || !Array.isArray(preset.prompts) || !Array.isArray(preset.prompt_order)) {
+            throw new Error('Invalid preset format');
+        }
+
+        // 2. 解析worldBookJson（可选）
+        let worldBook: any = null;
+        if (worldBookJsonStr) {
             try {
-                preset = typeof presetJsonStr === 'string' ? JSON.parse(presetJsonStr) : presetJsonStr;
+                worldBook = typeof worldBookJsonStr === 'string' ? JSON.parse(worldBookJsonStr) : worldBookJsonStr;
             } catch (e) {
-                throw new Error('Invalid presetJsonStr: ' + (e instanceof Error ? e.message : String(e)));
+                throw new Error('Invalid worldBookJsonStr: ' + (e instanceof Error ? e.message : String(e)));
             }
-            if (!preset || !Array.isArray(preset.prompts) || !Array.isArray(preset.prompt_order)) {
-                throw new Error('Invalid preset format');
+        }
+
+        // 3. 查找chatHistory identifier
+        const promptOrderArr = preset.prompt_order[0]?.order || [];
+        let chatHistoryIdentifier = '';
+        for (const item of promptOrderArr) {
+            if (
+                typeof item.identifier === 'string' &&
+                (item.identifier.toLowerCase().includes('chathistory') ||
+                 item.identifier.toLowerCase().includes('chat_history'))
+            ) {
+                chatHistoryIdentifier = item.identifier;
+                break;
             }
-    
-            // 2. 查找chatHistory identifier
-            const promptOrderArr = preset.prompt_order[0]?.order || [];
-            let chatHistoryIdentifier = '';
-            for (const item of promptOrderArr) {
-                if (
-                    typeof item.identifier === 'string' &&
-                    (item.identifier.toLowerCase().includes('chathistory') ||
-                     item.identifier.toLowerCase().includes('chat_history'))
-                ) {
-                    chatHistoryIdentifier = item.identifier;
-                    break;
+        }
+        if (!chatHistoryIdentifier) {
+            // fallback: 尝试找第一个role为system或user的prompt
+            const fallback = preset.prompts.find((p: any) =>
+                typeof p.identifier === 'string' &&
+                (p.identifier.toLowerCase().includes('chathistory') ||
+                 p.identifier.toLowerCase().includes('chat_history'))
+            );
+            chatHistoryIdentifier = fallback?.identifier || 'chatHistory';
+        }
+
+        // 4. 构造chatHistory消息对象
+        // 支持多轮对话（如输入为多行，偶数行为user，奇数行为assistant）
+        let chatHistoryMessages: any[] = [];
+        if (inputText.includes('\n')) {
+            // 尝试按常见对话格式分割
+            // 支持格式：用户: ...\n角色: ...\n
+            const lines = inputText.split('\n').map(l => l.trim()).filter(Boolean);
+            for (const line of lines) {
+                if (/^(用户|user)[:：]/i.test(line)) {
+                    chatHistoryMessages.push({
+                        role: 'user',
+                        content: line.replace(/^(用户|user)[:：]/i, '').trim()
+                    });
+                } else if (/^(角色|assistant|model|bot)[:：]/i.test(line)) {
+                    chatHistoryMessages.push({
+                        role: 'assistant',
+                        content: line.replace(/^(角色|assistant|model|bot)[:：]/i, '').trim()
+                    });
+                } else {
+                    // fallback: 交替分配
+                    const last = chatHistoryMessages[chatHistoryMessages.length - 1];
+                    chatHistoryMessages.push({
+                        role: (!last || last.role === 'assistant') ? 'user' : 'assistant',
+                        content: line
+                    });
                 }
             }
-            if (!chatHistoryIdentifier) {
-                // fallback: 尝试找第一个role为system或user的prompt
-                const fallback = preset.prompts.find((p: any) =>
-                    typeof p.identifier === 'string' &&
-                    (p.identifier.toLowerCase().includes('chathistory') ||
-                     p.identifier.toLowerCase().includes('chat_history'))
-                );
-                chatHistoryIdentifier = fallback?.identifier || 'chatHistory';
-            }
-    
-            // 3. 构造chatHistory消息对象
-            // 支持多轮对话（如输入为多行，偶数行为user，奇数行为assistant）
-            let chatHistoryMessages: any[] = [];
-            if (inputText.includes('\n')) {
-                // 尝试按常见对话格式分割
-                // 支持格式：用户: ...\n角色: ...\n
-                const lines = inputText.split('\n').map(l => l.trim()).filter(Boolean);
-                for (const line of lines) {
-                    if (/^(用户|user)[:：]/i.test(line)) {
-                        chatHistoryMessages.push({
-                            role: 'user',
-                            content: line.replace(/^(用户|user)[:：]/i, '').trim()
-                        });
-                    } else if (/^(角色|assistant|model|bot)[:：]/i.test(line)) {
-                        chatHistoryMessages.push({
-                            role: 'assistant',
-                            content: line.replace(/^(角色|assistant|model|bot)[:：]/i, '').trim()
-                        });
-                    } else {
-                        // fallback: 交替分配
-                        const last = chatHistoryMessages[chatHistoryMessages.length - 1];
-                        chatHistoryMessages.push({
-                            role: (!last || last.role === 'assistant') ? 'user' : 'assistant',
-                            content: line
-                        });
-                    }
+        } else {
+            // 单条输入，默认为user
+            chatHistoryMessages.push({
+                role: 'user',
+                content: inputText
+            });
+        }
+
+        // 5. 按prompt_order组装rframework
+        const promptMap = new Map<string, any>();
+        for (const p of preset.prompts) {
+            if (p.identifier) promptMap.set(p.identifier, p);
+        }
+        const rframework: any[] = [];
+        for (const orderItem of promptOrderArr) {
+            const identifier = orderItem.identifier;
+            if (identifier === chatHistoryIdentifier) {
+                // 插入chatHistory消息数组
+                for (const msg of chatHistoryMessages) {
+                    rframework.push({
+                        role: msg.role,
+                        content: msg.content
+                    });
                 }
-            } else {
-                // 单条输入，默认为user
-                chatHistoryMessages.push({
-                    role: 'user',
-                    content: inputText
-                });
-            }
-    
-            // 4. 按prompt_order组装rframework
-            const promptMap = new Map<string, any>();
-            for (const p of preset.prompts) {
-                if (p.identifier) promptMap.set(p.identifier, p);
-            }
-            const rframework: any[] = [];
-            for (const orderItem of promptOrderArr) {
-                const identifier = orderItem.identifier;
-                if (identifier === chatHistoryIdentifier) {
-                    // 插入chatHistory消息数组
-                    for (const msg of chatHistoryMessages) {
-                        rframework.push({
-                            role: msg.role,
-                            content: msg.content
-                        });
-                    }
-                } else if (promptMap.has(identifier)) {
-                    const prompt = promptMap.get(identifier);
-                    if (prompt && prompt.content && prompt.content.trim() !== '') {
-                        rframework.push({
-                            role: prompt.role || 'user',
-                            content: prompt.content
-                        });
-                    }
+            } else if (promptMap.has(identifier)) {
+                const prompt = promptMap.get(identifier);
+                if (prompt && prompt.content && prompt.content.trim() !== '') {
+                    rframework.push({
+                        role: prompt.role || 'user',
+                        content: prompt.content
+                    });
                 }
             }
-    
-            // 5. 按适配器类型转换格式
-            let result: any[] = [];
+        }
+
+        // 6. 如果没有worldBook，直接返回rframework（转换格式）
+        if (!worldBook || !worldBook.entries || Object.keys(worldBook.entries).length === 0) {
+            // 只构建rframework，不插入D类条目
             if (adapterType === 'gemini' || adapterType === 'openrouter') {
-                // gemini: assistant→model, 其它保持user
-                result = rframework.map(msg => ({
+                return rframework.map(msg => ({
                     role: msg.role === 'assistant' ? 'model' : (msg.role === 'model' ? 'model' : 'user'),
                     parts: [{ text: msg.content }]
                 }));
             } else if (adapterType === 'openai-compatible') {
-                // openai: 保持assistant/user
-                result = rframework.map(msg => ({
+                return rframework.map(msg => ({
                     role: msg.role === 'model' ? 'assistant' : msg.role,
                     content: msg.content
                 }));
             } else {
-                // 默认openai格式
-                result = rframework.map(msg => ({
+                return rframework.map(msg => ({
                     role: msg.role === 'model' ? 'assistant' : msg.role,
                     content: msg.content
                 }));
             }
-    
-            return result;           
         }
+
+        // 7. 有worldBook时，插入D类条目（以inputText为基准，参考NodeSTCore.insertDEntriesToHistory）
+        // 先组装chatHistoryEntity
+        const chatHistoryParts = chatHistoryMessages.map(msg => ({
+            role: msg.role === 'assistant' ? 'model' : (msg.role === 'model' ? 'model' : 'user'),
+            parts: [{ text: msg.content }]
+        }));
+        const chatHistoryEntity = {
+            name: "Chat History",
+            role: "system",
+            parts: chatHistoryParts,
+            identifier: chatHistoryIdentifier
+        };
+
+        // 提取D类条目（仿照CharacterUtils.extractDEntries）
+        const dEntries: any[] = [];
+        // 只处理position=4的D类条目
+        Object.values(worldBook.entries).forEach((entry: any) => {
+            if (entry && entry.position === 4) {
+                dEntries.push({
+                    name: entry.name || '',
+                    role: entry.role || 'user',
+                    parts: [{ text: entry.content || '' }],
+                    is_d_entry: true,
+                    position: 4,
+                    injection_depth: entry.depth || 0,
+                    constant: entry.constant ?? true,
+                    key: Array.isArray(entry.key) ? entry.key : []
+                });
+            }
+        });
+
+        // 插入D类条目（仿照NodeSTCore.insertDEntriesToHistory）
+        function insertDEntriesToHistory(chatHistory: any, dEntries: any[], userMessage: string) {
+            // 1. 先移除所有旧的D类条目
+            const chatMessages = chatHistory.parts.filter((msg: any) => !msg.is_d_entry);
+            // 2. 找到基准消息（最新的用户消息）的索引
+            const baseMessageIndex = chatMessages.findIndex(
+                (msg: any) => msg.role === "user" && msg.parts[0]?.text === userMessage
+            );
+            if (baseMessageIndex === -1) {
+                return { ...chatHistory, parts: chatMessages };
+            }
+            // 3. 过滤 constant=true 的D类条目
+            const validDEntries = dEntries.filter(entry => entry.constant === true);
+            // 按注入深度分组
+            const position4EntriesByDepth = validDEntries
+                .filter(entry => entry.position === 4)
+                .reduce((acc: Record<number, any[]>, entry) => {
+                    const depth = typeof entry.injection_depth === 'number' ? entry.injection_depth : 0;
+                    if (!acc[depth]) acc[depth] = [];
+                    acc[depth].push({ ...entry, is_d_entry: true });
+                    return acc;
+                }, {});
+            // 构建新消息序列
+            const finalMessages: any[] = [];
+            for (let i = 0; i < chatMessages.length; i++) {
+                const msg = chatMessages[i];
+                if (i < baseMessageIndex) {
+                    const depthFromBase = baseMessageIndex - i;
+                    if (depthFromBase > 0 && position4EntriesByDepth[depthFromBase]) {
+                        finalMessages.push(...position4EntriesByDepth[depthFromBase]);
+                    }
+                }
+                finalMessages.push(msg);
+                if (i === baseMessageIndex && position4EntriesByDepth[0]) {
+                    finalMessages.push(...position4EntriesByDepth[0]);
+                }
+            }
+            return { ...chatHistory, parts: finalMessages };
+        }
+
+        // 以最后一条用户消息为基准
+        let lastUserMsg = '';
+        for (let i = chatHistoryMessages.length - 1; i >= 0; i--) {
+            if (chatHistoryMessages[i].role === 'user') {
+                lastUserMsg = chatHistoryMessages[i].content;
+                break;
+            }
+        }
+        const chatHistoryWithD = insertDEntriesToHistory(chatHistoryEntity, dEntries, lastUserMsg);
+
+        // 重新组装rframework，替换chatHistory部分为插入D类条目的parts
+        const finalMessages: any[] = [];
+        for (const orderItem of promptOrderArr) {
+            const identifier = orderItem.identifier;
+            if (identifier === chatHistoryIdentifier) {
+                // 插入chatHistoryWithD.parts
+                for (const msg of chatHistoryWithD.parts) {
+                    finalMessages.push({
+                        role: msg.role,
+                        parts: msg.parts,
+                        is_d_entry: msg.is_d_entry
+                    });
+                }
+            } else if (promptMap.has(identifier)) {
+                const prompt = promptMap.get(identifier);
+                if (prompt && prompt.content && prompt.content.trim() !== '') {
+                    finalMessages.push({
+                        role: prompt.role || 'user',
+                        parts: [{ text: prompt.content }]
+                    });
+                }
+            }
+        }
+
+        // 转换为适配器格式
+        if (adapterType === 'gemini' || adapterType === 'openrouter') {
+            return finalMessages.map(msg => ({
+                role: msg.role === 'assistant' ? 'model' : (msg.role === 'model' ? 'model' : 'user'),
+                parts: msg.parts
+            }));
+        } else if (adapterType === 'openai-compatible') {
+            return finalMessages.map(msg => ({
+                role: msg.role === 'model' ? 'assistant' : msg.role,
+                content: msg.parts?.[0]?.text || ''
+            }));
+        } else {
+            return finalMessages.map(msg => ({
+                role: msg.role === 'model' ? 'assistant' : msg.role,
+                content: msg.parts?.[0]?.text || ''
+            }));
+        }
+    }
         
     /**
      * 删除指定 userIndex 的用户消息及其对应的AI消息

@@ -107,6 +107,15 @@ const Profile: React.FC = () => {
           onPress={() => router.push('../pages/custom-settings-manager')}
         />
 
+        {/* 新增：rFramework测试入口 */}
+        <ListItem
+          title="rFramework测试"
+          leftIcon="flask-outline"
+          chevron={true}
+          onPress={() => router.push('/components/testframework')}
+          subtitle="测试buildRFrameworkWithChatHistory"
+        />
+
         {/* 全局设置按钮 */}
         <ListItem
           title="全局设置"
