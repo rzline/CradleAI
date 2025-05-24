@@ -16,7 +16,6 @@ import { Ionicons } from '@expo/vector-icons';
 import * as ImagePicker from 'expo-image-picker';
 import { useUser } from '@/constants/UserContext';
 import { useRouter } from 'expo-router';
-import { NodeSTCleanupButton } from '@/components/settings/NodeSTCleanupButton';
 import ListItem from '@/components/ListItem';
 import ConfirmDialog from '@/components/ConfirmDialog';
 import LoadingIndicator from '@/components/LoadingIndicator';
@@ -107,12 +106,30 @@ const Profile: React.FC = () => {
           onPress={() => router.push('../pages/custom-settings-manager')}
         />
 
+        {/* 新增：rFramework测试入口 */}
+        <ListItem
+          title="rFramework测试"
+          leftIcon="flask-outline"
+          chevron={true}
+          onPress={() => router.push('/components/testframework')}
+          subtitle="测试buildRFrameworkWithChatHistory"
+        />
+
         {/* 全局设置按钮 */}
         <ListItem
           title="全局设置"
           leftIcon="settings-outline"
           chevron={true}
           onPress={() => router.push('/pages/global-settings')}
+        />
+        
+        {/* Chat UI Settings button */}
+        <ListItem
+          title="聊天界面设置"
+          leftIcon="color-palette-outline"
+          chevron={true}
+          onPress={() => router.push('/pages/chat-ui-settings')}
+          subtitle="自定义聊天界面外观"
         />
         
         {/* New: Plugin manager option */}

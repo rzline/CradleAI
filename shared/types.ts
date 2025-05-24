@@ -170,6 +170,9 @@ export interface MessagePart {
 }
 
 export interface ChatMessage {
+    id?: string;
+    messageIndex?: number;
+    rating?: number;
     role: string;
     parts: MessagePart[]  ;
     content?: string; // 直接内容
@@ -349,7 +352,7 @@ export interface Character {
 export interface Message {
     id: string;
     text: string;
-    sender: 'user' | 'bot';
+    sender: string;
     isLoading?: boolean;
     timestamp?: number;
     rating?: number;
@@ -550,6 +553,7 @@ export interface CradleCharacter extends Character {
 
 // Add chat save/restore system types
 
+
 export interface ChatSave {
   id: string;
   conversationId: string;
@@ -557,13 +561,15 @@ export interface ChatSave {
   characterName: string;
   timestamp: number;
   description: string;
-  messageIds: string[]; // IDs of messages at save point
-  messages: Message[]; // Copy of messages at save point
-  previewText: string; // Short preview text
-  thumbnail?: string; // Optional thumbnail (could be character avatar)
-  nodestChatHistory?: ChatHistoryEntity; // Add NodeST chat history
-  importedAt?: number; // New field to track when a save was imported
-  exportVersion?: string; // Track export format version
+  messageIds: string[];
+  messages: Message[];
+  previewText: string;
+  thumbnail?: string;
+  // Legacy field for backward compatibility
+  nodestChatHistory?: ChatHistoryEntity;
+  // New field for timestamp-based backup system
+  backupTimestamp?: number;
+  importedAt?: number;
 }
 
 export interface RoleCardJson {

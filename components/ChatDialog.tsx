@@ -40,6 +40,111 @@ import Slider from '@react-native-community/slider';
 import type { RenderFunction, ASTNode } from 'react-native-markdown-display';
 import { useRouter } from 'expo-router';
 import { Character } from '@/shared/types';
+import * as FileSystem from 'expo-file-system';
+import { ChatUISettings } from '@/app/pages/chat-ui-settings';
+
+// Default UI settings in case the file isn't loaded
+const DEFAULT_UI_SETTINGS: ChatUISettings = {
+  // Regular mode
+  regularUserBubbleColor: 'rgb(255, 224, 195)',
+  regularUserBubbleAlpha: 0.95,
+  regularBotBubbleColor: 'rgb(68, 68, 68)',
+  regularBotBubbleAlpha: 0.85,
+  regularUserTextColor: '#333333',
+  regularBotTextColor: '#ffffff',
+  
+  // Background focus mode
+  bgUserBubbleColor: 'rgb(255, 224, 195)',
+  bgUserBubbleAlpha: 0.95,
+  bgBotBubbleColor: 'rgb(68, 68, 68)',
+  bgBotBubbleAlpha: 0.9,
+  bgUserTextColor: '#333333',
+  bgBotTextColor: '#ffffff',
+  
+  // Visual novel mode
+  vnDialogColor: 'rgb(0, 0, 0)',
+  vnDialogAlpha: 0.7,
+  vnTextColor: '#ffffff',
+  
+  // Global sizes
+  bubblePaddingMultiplier: 1.0,
+  textSizeMultiplier: 1.0,
+  
+  // Markdown styles - matching current ChatDialog defaults
+  markdownHeadingColor: '#ff79c6',
+  markdownCodeBackgroundColor: '#111',
+  markdownCodeTextColor: '#fff',
+  markdownQuoteColor: '#d0d0d0',
+  markdownQuoteBackgroundColor: '#111',
+  markdownLinkColor: '#3498db',
+  markdownBoldColor: '#ff79c6',
+  markdownTextColor: '#fff', // 新增
+  markdownTextScale: 1.0,
+  markdownCodeScale: 1.0
+};
+
+// Hook to load UI settings
+function useChatUISettings() {
+  const [settings, setSettings] = useState<ChatUISettings>(DEFAULT_UI_SETTINGS);
+  const [isLoaded, setIsLoaded] = useState(false);
+  const [fileHash, setFileHash] = useState<string | null>(null);
+
+  useEffect(() => {
+    let isMounted = true;
+    let interval: ReturnType<typeof setInterval> | null = null;
+    const settingsFile = `${FileSystem.documentDirectory}chat_ui_settings.json`;
+
+    async function loadSettingsAndHash() {
+      try {
+        const fileInfo = await FileSystem.getInfoAsync(settingsFile);
+        if (fileInfo.exists) {
+          const fileContent = await FileSystem.readAsStringAsync(settingsFile);
+          const loadedSettings = JSON.parse(fileContent);
+          // 计算简单hash
+          const hash = String(fileContent.length) + '_' + String(fileContent.split('').reduce((a, b) => a + b.charCodeAt(0), 0));
+          if (isMounted) {
+            setSettings(loadedSettings);
+            setFileHash(hash);
+          }
+        } else {
+          if (isMounted) {
+            setSettings(DEFAULT_UI_SETTINGS);
+            setFileHash(null);
+          }
+        }
+      } catch (error) {
+        if (isMounted) setSettings(DEFAULT_UI_SETTINGS);
+      } finally {
+        if (isMounted) setIsLoaded(true);
+      }
+    }
+
+    loadSettingsAndHash();
+
+    // 定时检测文件内容变化
+    interval = setInterval(async () => {
+      try {
+        const fileInfo = await FileSystem.getInfoAsync(settingsFile);
+        if (fileInfo.exists) {
+          const fileContent = await FileSystem.readAsStringAsync(settingsFile);
+          const hash = String(fileContent.length) + '_' + String(fileContent.split('').reduce((a, b) => a + b.charCodeAt(0), 0));
+          if (hash !== fileHash) {
+            setSettings(JSON.parse(fileContent));
+            setFileHash(hash);
+          }
+        }
+      } catch {}
+    }, 1000);
+
+    return () => {
+      isMounted = false;
+      if (interval) clearInterval(interval);
+    };
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  return { settings, isLoaded };
+}
 
 interface ExtendedChatDialogProps extends ChatDialogProps {
   messageMemoryState?: Record<string, string>;
@@ -48,8 +153,14 @@ interface ExtendedChatDialogProps extends ChatDialogProps {
   isHistoryModalVisible?: boolean;
   setHistoryModalVisible?: (visible: boolean) => void;
   onShowFullHistory?: () => void;
-  onEditMessage?: (messageId: string, aiIndex: number, oldContent: string) => void;
-  onDeleteMessage?: (messageId: string, aiIndex: number) => void;
+  onEditAiMessage?: (messageId: string, aiIndex: number, newContent: string) => void;
+  onDeleteAiMessage?: (messageId: string, aiIndex: number) => void;
+  onEditUserMessage?: (messageId: string, messageIndex: number, newContent: string) => void;
+  onDeleteUserMessage?: (messageId: string, messageIndex: number) => void;
+  onRegenerateMessage?: (messageId: string, messageIndex: number) => void;
+  showMemoryButton?: boolean;
+  isMemoryPanelVisible?: boolean;
+  onToggleMemoryPanel?: () => void;
 }
 
 const { width, height } = Dimensions.get('window');
@@ -97,7 +208,7 @@ const getImageDisplayStyle = (imageInfo?: any) => {
 
 // 已知标签白名单
 const KNOWN_TAGS = [
-  'img', 'thinking', 'think', 'mem', 'status', 'StatusBlock', 'statusblock', 'websearch', 'char-think', 'font',
+  'img', 'thinking', 'think', 'mem', 'status', 'StatusBlock', 'statusblock',
   'summary', 'details',
   'p', 'a', 'h1', 'h2', 'h3', 'h4', 'h5', 'h6', 'div', 'span',
   'b', 'strong', 'i', 'em', 'u', 'br', 'hr', 'ul', 'ol', 'li',
@@ -112,7 +223,8 @@ function stripUnknownTags(html: string): string {
   if (!html) return '';
   // 匹配所有成对标签（支持下划线、数字、-）
   let result = html.replace(/<([a-zA-Z0-9_\-]+)(\s[^>]*)?>([\s\S]*?)<\/\1>/g, (match, tag, attrs, content) => {
-    if (KNOWN_TAGS.includes(tag)) {
+    // 保证大小写不敏感
+    if (KNOWN_TAGS.map(t => t.toLowerCase()).includes(tag.toLowerCase())) {
       // 已知标签，保留
       return match;
     }
@@ -121,7 +233,7 @@ function stripUnknownTags(html: string): string {
   });
   // 匹配所有单个未知标签（自闭合或未闭合）
   result = result.replace(/<([a-zA-Z0-9_\-]+)(\s[^>]*)?>/g, (match, tag) => {
-    if (KNOWN_TAGS.includes(tag)) {
+    if (KNOWN_TAGS.map(t => t.toLowerCase()).includes(tag.toLowerCase())) {
       return match;
     }
     // 未知单标签，移除
@@ -129,6 +241,7 @@ function stripUnknownTags(html: string): string {
   });
   return result;
 }
+
 // 新增：检测是否包含结构性标签但不是完整HTML页面
 const STRUCTURAL_TAGS = [
   'source', 'section', 'article', 'aside', 'nav', 'header', 'footer',
@@ -195,158 +308,117 @@ const isWebViewContent = (text: string): boolean => {
   return false;
 };
 
-// 修改 extractMarkdownBlocks，支持完整 HTML 页面代码块识别
-const extractMarkdownBlocks = (html: string): { markdown: string[], processed: string, htmlPage: string | null } => {
-  const markdownBlockRegex = /```([\s\S]*?)```/g;
-  const markdownBlocks: string[] = [];
-  let htmlPage: string | null = null;
 
-  // Replace markdown blocks with placeholders and collect them
-  const processedHtml = html.replace(markdownBlockRegex, (match, content) => {
-    const trimmed = content.trim();
-    // 检查是否为完整 HTML 页面
-    if (/^\s*(<!DOCTYPE\s+html|<html)/i.test(trimmed)) {
-      htmlPage = trimmed;
-      // 用特殊占位符替换，后续直接返回
-      return `<div class="__html-page-block__"></div>`;
-    }
-    markdownBlocks.push(trimmed);
-    return `<div class="markdown-block" data-index="${markdownBlocks.length - 1}"></div>`;
-  });
+// 修改 enhanceHtmlWithMarkdown，支持混合 html、markdown、css 的完整渲染
+const enhanceHtmlWithMarkdown = (raw: string): string => {
+  // 1. 提取三重反引号包裹的代码块
+  const codeBlockRegex = /```([a-zA-Z]*)\s*([\s\S]*?)```/g;
+  let htmlBlocks: string[] = [];
+  let markdownBlocks: string[] = [];
+  let cssBlocks: string[] = [];
+  let otherBlocks: string[] = [];
+  let lastIndex = 0;
+  let match: RegExpExecArray | null;
 
-  return { markdown: markdownBlocks, processed: processedHtml, htmlPage };
-};
-
-const generateMarkdownCss = () => {
-  return `
-    .markdown-content {
-      color: #f8f8f2;
-      line-height: 1.6;
-      margin: 1em 0;
-      padding: 1em;
-      background-color: rgba(40, 42, 54, 0.8);
-      border-radius: 8px;
-      font-family: 'Helvetica', 'Arial', sans-serif;
+  // 2. 遍历所有代码块，分类
+  while ((match = codeBlockRegex.exec(raw)) !== null) {
+    const [full, lang, content] = match;
+    if (lang.trim().toLowerCase() === 'html') {
+      htmlBlocks.push(content);
+    } else if (lang.trim().toLowerCase() === 'css') {
+      cssBlocks.push(content);
+    } else if (lang.trim().toLowerCase() === 'markdown' || lang.trim() === '') {
+      markdownBlocks.push(content);
+    } else {
+      otherBlocks.push(content);
     }
-    .markdown-content p {
-      margin-bottom: 1em;
-    }
-    .markdown-content h1, .markdown-content h2, .markdown-content h3,
-    .markdown-content h4, .markdown-content h5, .markdown-content h6 {
-      margin-top: 1.5em;
-      margin-bottom: 0.5em;
-      color: #ff79c6;
-    }
-    .markdown-content code {
-      background: rgba(20, 22, 34, 0.8);
-      padding: 0.2em 0.4em;
-      border-radius: 3px;
-      font-family: monospace;
-      font-size: 0.9em;
-    }
-    .markdown-content pre {
-      background: rgba(20, 22, 34, 0.8);
-      padding: 1em;
-      border-radius: 5px;
-      overflow-x: auto;
-    }
-    .markdown-content pre code {
-      background: transparent;
-      padding: 0;
-      white-space: pre-wrap;
-      word-break: keep-all;
-      overflow-wrap: normal;
-    }
-    .markdown-content blockquote {
-      border-left: 4px solid #ff79c6;
-      padding-left: 1em;
-      margin-left: 0;
-      color: #d0d0d0;
-    }
-    .markdown-content ul, .markdown-content ol {
-      padding-left: 2em;
-    }
-    .markdown-content img {
-      max-width: 100%;
-      border-radius: 5px;
-    }
-  `;
-};
-
-// 修改 enhanceHtmlWithMarkdown，遇到结构性标签但不是完整HTML页面时自动补全
-const enhanceHtmlWithMarkdown = (html: string): string => {
-  // 先检查是否有完整HTML代码块
-  const htmlCodeBlockMatch = html.match(/```(?:html)?\s*(<!DOCTYPE\s+html[\s\S]*?|<html[\s\S]*?)```/i);
-  if (htmlCodeBlockMatch) {
-    // 提取HTML内容并直接返回
-    return autoWrapHtmlIfNeeded(htmlCodeBlockMatch[1].trim());
+    lastIndex = codeBlockRegex.lastIndex;
   }
 
-  // 检查整体内容是否需要补全
-  if (containsStructuralTags(html) && !isFullHtmlPage(html)) {
-    return autoWrapHtmlIfNeeded(html);
+  // 3. 提取三重反引号之外的内容（如纯文本/markdown/HTML）
+  let rest = raw.replace(codeBlockRegex, '').trim();
+
+  // 4. 合成最终 HTML
+  let htmlContent = '';
+  // 优先完整 html 页面
+  if (htmlBlocks.length > 0) {
+    htmlContent = htmlBlocks.join('\n');
+  } else if (/^\s*(<!DOCTYPE html|<html)/i.test(rest)) {
+    htmlContent = rest;
+    rest = '';
   }
 
-  // 继续使用现有逻辑处理其他情况
-  const { markdown, processed, htmlPage } = extractMarkdownBlocks(html);
-
-  if (htmlPage) {
-    return autoWrapHtmlIfNeeded(htmlPage);
+  // 合并 markdown 内容
+  let markdownContent = '';
+  if (markdownBlocks.length > 0) {
+    markdownContent = markdownBlocks.join('\n\n');
+  }
+  // rest 里如果还有 markdown，也合并
+  if (rest) {
+    markdownContent += '\n' + rest;
   }
 
-  if (markdown.length === 0) {
-    return html; // No markdown found, return original
+  // 合并 css 内容
+  let cssContent = '';
+  if (cssBlocks.length > 0) {
+    cssContent = cssBlocks.join('\n');
   }
 
-  // Create the enhanced HTML with markdown processing capabilities
-  const markdownLibrary = `
-    <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
-  `;
-
-  const markdownStyle = `<style>${generateMarkdownCss()}</style>`;
-
-  // Create a script to process markdown placeholders
-  const markdownProcessor = `
-    <script>
-      // Store the markdown blocks
-      const markdownBlocks = ${JSON.stringify(markdown)};
-      
-      // Process markdown when the page loads
-      document.addEventListener('DOMContentLoaded', function() {
-        // Find all markdown block placeholders
-        const elements = document.querySelectorAll('.markdown-block');
-        
-        elements.forEach(element => {
-          const index = parseInt(element.getAttribute('data-index'), 10);
-          if (!isNaN(index) && index >= 0 && index < markdownBlocks.length) {
-            // Create a div for rendered markdown
-            const markdownDiv = document.createElement('div');
-            markdownDiv.className = 'markdown-content';
-            
-            // Use marked.js to render the markdown
-            markdownDiv.innerHTML = marked.parse(markdownBlocks[index]);
-            
-            // Replace the placeholder with rendered markdown
-            element.parentNode.replaceChild(markdownDiv, element);
-          }
-        });
-      });
-    </script>
-  `;
-
-  // Inject our code at the end of the head or the beginning of the body
-  if (processed.includes('</head>')) {
-    return processed.replace('</head>', `${markdownStyle}${markdownLibrary}</head>`) + markdownProcessor;
-  } else if (processed.includes('<body')) {
-    return processed.replace('<body', `<head>${markdownStyle}${markdownLibrary}</head><body`) + markdownProcessor;
-  } else {
-    // If no head or body tags, wrap everything
-    return `<!DOCTYPE html>
-      <html>
-        <head>${markdownStyle}${markdownLibrary}</head>
-        <body>${processed}${markdownProcessor}</body>
-      </html>`;
+  // 5. 构造最终 HTML 页面
+  // 如果有完整 html 页面，插入 markdown 渲染和 css
+  if (htmlContent) {
+    // 注入 style
+    let htmlWithCss = htmlContent.replace(
+      /<\/head>/i,
+      `<style>
+        .markdown-content { color: #fff !important; } /* 强制白色字体 */
+        ${cssContent}
+      </style>
+      <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
+      </head>`
+    );
+    // 注入 markdown 渲染容器
+    if (markdownContent.trim()) {
+      htmlWithCss = htmlWithCss.replace(
+        /<\/body>/i,
+        `<div id="markdown-content" class="markdown-content"></div>
+        <script>
+          document.getElementById('markdown-content').innerHTML = marked.parse(\`${markdownContent.replace(/`/g, '\\`')}\`);
+        </script>
+        </body>`
+      );
+    }
+    return htmlWithCss;
   }
+
+  // 否则，自动包裹为完整 html 页面
+  return `<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1">
+  <title>内容预览</title>
+  <style>
+    body { background: #222; color: #f8f8f2; font-family: 'Helvetica', 'Arial', sans-serif; margin: 0; padding: 1em; }
+    img, video { max-width: 100%; border-radius: 5px; }
+    pre, code { background: #111; color: #fff; border-radius: 4px; padding: 0.2em 0.4em; }
+    .markdown-content { color: #fff !important; line-height: 1.6; margin: 1em 0; padding: 1em; background-color: rgba(40, 42, 54, 0.8); border-radius: 8px; font-family: 'Helvetica', 'Arial', sans-serif; }
+    .markdown-content h1, .markdown-content h2, .markdown-content h3 { color: #ff79c6; }
+    .markdown-content code { background: rgba(20, 22, 34, 0.8); padding: 0.2em 0.4em; border-radius: 3px; font-family: monospace; font-size: 0.9em; }
+    .markdown-content pre { background: rgba(20, 22, 34, 0.8); padding: 1em; border-radius: 5px; overflow-x: auto; }
+    .markdown-content blockquote { border-left: 4px solid #ff79c6; padding-left: 1em; color: #d0d0d0; }
+    .markdown-content img { max-width: 100%; border-radius: 5px; }
+    ${cssContent}
+  </style>
+  <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
+</head>
+<body>
+  <div id="markdown-content" class="markdown-content"></div>
+  <script>
+    document.getElementById('markdown-content').innerHTML = marked.parse(\`${markdownContent.replace(/`/g, '\\`')}\`);
+  </script>
+</body>
+</html>`;
 };
 
 const ChatHistoryModal = memo(function ChatHistoryModal({
@@ -462,10 +534,13 @@ const ChatDialog: React.FC<ExtendedChatDialogProps> = ({
   user = null,
   isHistoryModalVisible = false,
   setHistoryModalVisible,
-  onEditMessage,
-  onDeleteMessage,
+  // === 新增：解构 props，避免 TS 报错 ===
+  onEditAiMessage,
+  onDeleteAiMessage,
+  onEditUserMessage,
+  onDeleteUserMessage,
 }) => {
-    const router = useRouter();
+  const router = useRouter();
   const flatListRef = useRef<FlatList<Message>>(null);
   const fadeAnim = useSharedValue(0);
   const translateAnim = useSharedValue(0);
@@ -481,6 +556,9 @@ const ChatDialog: React.FC<ExtendedChatDialogProps> = ({
   const [audioStates, setAudioStates] = useState<Record<string, AudioState>>({});
   const [ttsEnhancerEnabled, setTtsEnhancerEnabled] = useState(false);
   const { mode, visualNovelSettings, updateVisualNovelSettings, isHistoryModalVisible: contextHistoryModalVisible, setHistoryModalVisible: contextSetHistoryModalVisible } = useDialogMode();
+
+  // Load UI settings
+  const { settings: uiSettings, isLoaded: uiSettingsLoaded } = useChatUISettings();
 
   // 这里假设通过window.__topBarVisible传递（如需更优雅方案可通过props传递）
   const [isTopBarVisible, setIsTopBarVisible] = useState(true);
@@ -500,10 +578,7 @@ const ChatDialog: React.FC<ExtendedChatDialogProps> = ({
   // 新增：视觉小说展开/收起状态和背景透明度
   const [vnExpanded, setVnExpanded] = useState(false);
   const [vnBgAlpha, setVnBgAlpha] = useState(() => {
-    // 从 visualNovelSettings.backgroundColor 解析 alpha
-    const match = visualNovelSettings.backgroundColor.match(/rgba?\((\d+),\s*(\d+),\s*(\d+),?\s*([0-9\.]+)?\)/);
-    if (match && match[4]) return parseFloat(match[4]);
-    return 0.7;
+    return uiSettings.vnDialogAlpha;
   });
   const [showAlphaSlider, setShowAlphaSlider] = useState(false);
 
@@ -534,29 +609,59 @@ const ChatDialog: React.FC<ExtendedChatDialogProps> = ({
 
   // 调整背景色
   const getVnBgColor = () => {
-    // 取原色的rgb部分，替换alpha
-    const match = visualNovelSettings.backgroundColor.match(/rgba?\((\d+),\s*(\d+),\s*(\d+),?/);
-    if (match) {
-      const [_, r, g, b] = match;
-      return `rgba(${r},${g},${b},${vnBgAlpha})`;
-    }
-    return `rgba(0,0,0,${vnBgAlpha})`;
+    const color = uiSettings.vnDialogColor;
+    const rgbValues = color.match(/\d+/g)?.slice(0, 3);
+    return rgbValues ? `rgba(${rgbValues.join(',')},${vnBgAlpha})` : `rgba(0,0,0,${vnBgAlpha})`;
   };
 
   const handleAlphaChange = (alpha: number) => {
     setVnBgAlpha(alpha);
     // 更新 visualNovelSettings
-    const match = visualNovelSettings.backgroundColor.match(/rgba?\((\d+),\s*(\d+),\s*(\d+),?/);
-    let newColor = `rgba(0,0,0,${alpha})`;
-    if (match) {
-      const [_, r, g, b] = match;
-      newColor = `rgba(${r},${g},${b},${alpha})`;
-    }
+    const color = uiSettings.vnDialogColor;
+    const rgbValues = color.match(/\d+/g)?.slice(0, 3);
+    const newColor = rgbValues ? `rgba(${rgbValues.join(',')},${alpha})` : `rgba(0,0,0,${alpha})`;
     updateVisualNovelSettings({ backgroundColor: newColor });
   };
 
+  function getTextStyle(isUser: boolean) {
+  // 兼容三种模式
+  if (mode === 'normal') {
+    return {
+      color: isUser ? uiSettings.regularUserTextColor : uiSettings.regularBotTextColor,
+      fontSize: Math.min(Math.max(14, width * 0.04), 16) * uiSettings.textSizeMultiplier,
+    };
+  } else if (mode === 'background-focus') {
+    return {
+      color: isUser ? uiSettings.bgUserTextColor : uiSettings.bgBotTextColor,
+      fontSize: Math.min(Math.max(14, width * 0.04), 16) * uiSettings.textSizeMultiplier,
+    };
+  } else if (mode === 'visual-novel') {
+    return {
+      color: uiSettings.vnTextColor,
+      fontSize: 16 * uiSettings.textSizeMultiplier,
+    };
+  }
+  return {};
+}
 
+function getBubbleStyle(isUser: boolean) {
+  if (mode === 'normal') {
+    const color = isUser ? uiSettings.regularUserBubbleColor : uiSettings.regularBotBubbleColor;
+    const alpha = isUser ? uiSettings.regularUserBubbleAlpha : uiSettings.regularBotBubbleAlpha;
+    const rgb = color.match(/\d+/g)?.slice(0, 3);
+    return { backgroundColor: rgb ? `rgba(${rgb.join(',')},${alpha})` : undefined };
+  } else if (mode === 'background-focus') {
+    const color = isUser ? uiSettings.bgUserBubbleColor : uiSettings.bgBotBubbleColor;
+    const alpha = isUser ? uiSettings.bgUserBubbleAlpha : uiSettings.bgBotBubbleAlpha;
+    const rgb = color.match(/\d+/g)?.slice(0, 3);
+    return { backgroundColor: rgb ? `rgba(${rgb.join(',')},${alpha})` : undefined };
+  }
+  return {};
+}
 
+function getBubblePadding() {
+  return (RESPONSIVE_PADDING + 4) * uiSettings.bubblePaddingMultiplier;
+}
   useEffect(() => {
     const checkTtsEnhancerStatus = () => {
       const settings = ttsService.getEnhancerSettings();
@@ -764,333 +869,389 @@ const ChatDialog: React.FC<ExtendedChatDialogProps> = ({
     return /(<\s*(thinking|think|status|mem|websearch|char-think|StatusBlock|statusblock|font)[^>]*>[\s\S]*?<\/\s*(thinking|think|status|mem|websearch|char-think|StatusBlock|statusblock|font)\s*>)/i.test(text);
   };
 
-const processMessageContent = (text: string, isUser: boolean, opts?: { isHtmlPagePlaceholder?: boolean }) => {
-  // 新增：如果是HTML页面占位，直接显示占位文本
-  if (opts?.isHtmlPagePlaceholder) {
-    return (
-      <Text style={isUser ? styles.userMessageText : styles.botMessageText}>
-        [页面消息]
-      </Text>
-    );
-  }
-
-  if (!text || text.trim() === '') {
-    return (
-      <Text style={isUser ? styles.userMessageText : styles.botMessageText}>
-        (Empty message)
-      </Text>
-    );
-  }
-
-  if (containsCustomTags(text) || /<\/?[a-z][^>]*>/i.test(text)) {
-    // 渲染前先移除未知标签
-    const cleanedText = stripUnknownTags(text);
-    return (
-      <RichTextRenderer
-        html={optimizeHtmlForRendering(cleanedText)}
-        baseStyle={isUser ? styles.userMessageText : styles.botMessageText}
-        onImagePress={(url) => setFullscreenImage(url)}
-        maxImageHeight={MAX_IMAGE_HEIGHT}
-      />
-    );
-  }
-
-  // Enhanced check for Markdown code blocks with triple backticks
-  const codeBlockPattern = /```([a-zA-Z0-9]*)\n([\s\S]*?)```/g;
-  const hasCodeBlock = codeBlockPattern.test(text);
-  
-  const markdownPattern = /(^|\n)(\s{0,3}#|```|>\s|[*+-]\s|\d+\.\s|\|.*\|)/;
-  if (hasCodeBlock || markdownPattern.test(text)) {
-    return (
-      <View style={{ width: '100%' }}>
-        <Markdown
-          style={{
-            body: isUser ? styles.userMessageText : styles.botMessageText,
-            text: isUser ? styles.userMessageText : styles.botMessageText,
-            // Enhanced code block styling
-            code_block: { 
-              backgroundColor: '#111',
-              color: '#fff',
-              borderRadius: 6,
-              padding: 12,
-              fontSize: 14,
-              fontFamily: Platform.OS === 'ios' ? 'Menlo' : 'monospace',
-              marginVertical: 10,
-            },
-            code_block_text: {
-              backgroundColor: '#111', // 显式设置背景
-              color: '#fff',           // 显式设置字体颜色
-              fontSize: 14,
-              fontFamily: Platform.OS === 'ios' ? 'Menlo' : 'monospace',
-              padding: 0,
-            },
-            fence: {
-              backgroundColor: '#111',
-              borderRadius: 6,
-              marginVertical: 10,
-              width: '100%',
-            },
-            fence_code: {
-              backgroundColor: '#111',
-              color: '#fff',
-              borderRadius: 6,
-              padding: 12,
-              fontSize: 14,
-              fontFamily: Platform.OS === 'ios' ? 'Menlo' : 'monospace',
-              width: '100%',
-            },
-            fence_code_text: {
-              backgroundColor: '#111',
-              color: '#fff',
-              fontSize: 14,
-              fontFamily: Platform.OS === 'ios' ? 'Menlo' : 'monospace',
-              padding: 0,
-            },
-            heading1: { fontSize: 24, fontWeight: 'bold', marginVertical: 10 },
-            heading2: { fontSize: 22, fontWeight: 'bold', marginVertical: 8 },
-            heading3: { fontSize: 20, fontWeight: 'bold', marginVertical: 6 },
-            heading4: { fontSize: 18, fontWeight: 'bold', marginVertical: 5 },
-            heading5: { fontSize: 16, fontWeight: 'bold', marginVertical: 4 },
-            heading6: { fontSize: 14, fontWeight: 'bold', marginVertical: 3 },
-            bullet_list: { marginVertical: 6 },
-            ordered_list: { marginVertical: 6 },
-            list_item: { flexDirection: 'row', alignItems: 'flex-start', marginVertical: 2 },
-            blockquote: { backgroundColor: '#111', borderLeftWidth: 4, borderLeftColor: '#aaa', padding: 8, marginVertical: 6 },
-            table: { borderWidth: 1, borderColor: '#666', marginVertical: 8 },
-            th: { backgroundColor: '#444', color: '#fff', fontWeight: 'bold', padding: 6 },
-            tr: { borderBottomWidth: 1, borderColor: '#666' },
-            td: { padding: 6, color: '#fff' },
-            hr: { borderBottomWidth: 1, borderColor: '#aaa', marginVertical: 8 },
-            link: { color: '#3498db', textDecorationLine: 'underline' },
-            image: { width: 220, height: 160, borderRadius: 8, marginVertical: 8, alignSelf: 'center' },
-          }}
-          onLinkPress={(url: string) => {
-            if (url.startsWith('http://') || url.startsWith('https://') || url.startsWith('mailto:')) {
-              if (typeof window !== 'undefined') {
-                window.open(url, '_blank');
-              } else {
-                setFullscreenImage(url);
-              }
-              return true;
-            }
-            return false;
-          }}
-          rules={{
-            fence: (
-              node: ASTNode,
-              children: React.ReactNode[],
-              parent: ASTNode[],
-              styles: any
-            ) => {
-              return (
-                <View key={node.key} style={styles.code_block}>
-                  <Text style={styles.code_block_text}>
-                    {node.content || ''}
-                  </Text>
-                </View>
-              );
-            }
-          }}
-        >
-          {text}
-        </Markdown>
-      </View>
-    );
-  }
-
-  const rawImageMarkdownRegex = /^!\[(.*?)\]\(image:([a-f0-9]+)\)$/;
-  const rawImageMatch = text.trim().match(rawImageMarkdownRegex);
-
-  if (rawImageMatch) {
-    const alt = rawImageMatch[1] || "图片";
-    const imageId = rawImageMatch[2];
-
-    const imageInfo = ImageManager.getImageInfo(imageId);
-    const imageStyle = getImageDisplayStyle(imageInfo);
-
-    if (imageInfo) {
+  // 修改处理消息内容的函数，应用文本样式
+  const processMessageContent = (text: string, isUser: boolean, opts?: { isHtmlPagePlaceholder?: boolean }) => {
+    // 新增：如果是HTML页面占位，直接显示占位文本
+    if (opts?.isHtmlPagePlaceholder) {
       return (
-        <View style={styles.imageWrapper}>
-          <TouchableOpacity
-            style={styles.imageContainer}
-            onPress={() => handleOpenFullscreenImage(imageId)}
-          >
-            <Image
-              source={{ uri: imageInfo.originalPath }}
-              style={imageStyle}
-              resizeMode="contain"
-              onError={(e) => console.error(`Error loading image: ${e.nativeEvent.error}`, imageInfo.originalPath)}
-            />
-          </TouchableOpacity>
-          <Text style={styles.imageCaption}>{alt}</Text>
-        </View>
+        <Text style={[
+          isUser ? styles.userMessageText : styles.botMessageText,
+          getTextStyle(isUser)
+        ]}>
+          [页面消息]
+        </Text>
       );
-    } else {
-      console.error(`No image info found for ID: ${imageId}`);
+    }
+
+    if (!text || text.trim() === '') {
       return (
-        <View style={styles.imageError}>
-          <Ionicons name="alert-circle" size={36} color="#e74c3c" />
-          <Text style={styles.imageErrorText}>图片无法加载 (ID: {imageId.substring(0, 8)}...)</Text>
+        <Text style={[
+          isUser ? styles.userMessageText : styles.botMessageText,
+          getTextStyle(isUser)
+        ]}>
+          (Empty message)
+        </Text>
+      );
+    }
+
+    if (containsCustomTags(text) || /<\/?[a-z][^>]*>/i.test(text)) {
+      // 渲染前先移除未知标签
+      const cleanedText = stripUnknownTags(text);
+      return (
+        <RichTextRenderer
+          html={optimizeHtmlForRendering(cleanedText)}
+          baseStyle={[isUser ? styles.userMessageText : styles.botMessageText, getTextStyle(isUser)]}
+          onImagePress={(url) => setFullscreenImage(url)}
+          maxImageHeight={MAX_IMAGE_HEIGHT}
+        />
+      );
+    }
+
+    // Enhanced check for Markdown code blocks with triple backticks
+    const codeBlockPattern = /```([a-zA-Z0-9]*)\n([\s\S]*?)```/g;
+    const hasCodeBlock = codeBlockPattern.test(text);
+    
+    const markdownPattern = /(^|\n)(\s{0,3}#|```|>\s|[*+-]\s|\d+\.\s|\|.*\|)/;
+    if (hasCodeBlock || markdownPattern.test(text)) {
+      return (
+        <View style={{ width: '100%' }}>
+          <Markdown
+            style={{
+              body: {
+                ...(isUser ? styles.userMessageText : styles.botMessageText),
+                color: uiSettings.markdownTextColor, // 应用自定义颜色
+              },
+              text: {
+                ...(isUser ? styles.userMessageText : styles.botMessageText),
+                color: uiSettings.markdownTextColor, // 应用自定义颜色
+              },
+              // Enhanced code block styling with UI settings
+              code_block: { 
+                backgroundColor: uiSettings.markdownCodeBackgroundColor,
+                color: uiSettings.markdownCodeTextColor,
+                borderRadius: 6,
+                padding: 12,
+                fontSize: 14 * uiSettings.markdownCodeScale,
+                fontFamily: Platform.OS === 'ios' ? 'Menlo' : 'monospace',
+                marginVertical: 10,
+              },
+              code_block_text: {
+                backgroundColor: uiSettings.markdownCodeBackgroundColor,
+                color: uiSettings.markdownCodeTextColor,
+                fontSize: 14 * uiSettings.markdownCodeScale,
+                fontFamily: Platform.OS === 'ios' ? 'Menlo' : 'monospace',
+                padding: 0,
+              },
+              fence: {
+                backgroundColor: uiSettings.markdownCodeBackgroundColor,
+                borderRadius: 6,
+                marginVertical: 10,
+                width: '100%',
+              },
+              fence_code: {
+                backgroundColor: uiSettings.markdownCodeBackgroundColor,
+                color: uiSettings.markdownCodeTextColor,
+                borderRadius: 6,
+                padding: 12,
+                fontSize: 14 * uiSettings.markdownCodeScale,
+                fontFamily: Platform.OS === 'ios' ? 'Menlo' : 'monospace',
+                width: '100%',
+              },
+              fence_code_text: {
+                backgroundColor: uiSettings.markdownCodeBackgroundColor,
+                color: uiSettings.markdownCodeTextColor,
+                fontSize: 14 * uiSettings.markdownCodeScale,
+                fontFamily: Platform.OS === 'ios' ? 'Menlo' : 'monospace',
+                padding: 0,
+              },
+              heading1: { 
+                fontSize: 24 * uiSettings.markdownTextScale, 
+                fontWeight: 'bold', 
+                marginVertical: 10,
+                color: uiSettings.markdownHeadingColor 
+              },
+              heading2: { 
+                fontSize: 22 * uiSettings.markdownTextScale, 
+                fontWeight: 'bold', 
+                marginVertical: 8,
+                color: uiSettings.markdownHeadingColor
+              },
+              heading3: { 
+                fontSize: 20 * uiSettings.markdownTextScale, 
+                fontWeight: 'bold', 
+                marginVertical: 6,
+                color: uiSettings.markdownHeadingColor
+              },
+              heading4: { 
+                fontSize: 18 * uiSettings.markdownTextScale, 
+                fontWeight: 'bold', 
+                marginVertical: 5,
+                color: uiSettings.markdownHeadingColor
+              },
+              heading5: { 
+                fontSize: 16 * uiSettings.markdownTextScale, 
+                fontWeight: 'bold', 
+                marginVertical: 4,
+                color: uiSettings.markdownHeadingColor
+              },
+              heading6: { 
+                fontSize: 14 * uiSettings.markdownTextScale, 
+                fontWeight: 'bold', 
+                marginVertical: 3,
+                color: uiSettings.markdownHeadingColor
+              },
+              bullet_list: { marginVertical: 6 },
+              ordered_list: { marginVertical: 6 },
+              list_item: { flexDirection: 'row', alignItems: 'flex-start', marginVertical: 2 },
+              blockquote: { 
+                backgroundColor: uiSettings.markdownQuoteBackgroundColor, 
+                borderLeftWidth: 4, 
+                borderLeftColor: '#aaa', 
+                padding: 8, 
+                marginVertical: 6 
+              },
+              blockquote_text: {
+                color: uiSettings.markdownQuoteColor,
+              },
+              table: { borderWidth: 1, borderColor: '#666', marginVertical: 8 },
+              th: { backgroundColor: '#444', color: '#fff', fontWeight: 'bold', padding: 6 },
+              tr: { borderBottomWidth: 1, borderColor: '#666' },
+              td: { padding: 6, color: '#fff' },
+              hr: { borderBottomWidth: 1, borderColor: '#aaa', marginVertical: 8 },
+              link: { color: uiSettings.markdownLinkColor, textDecorationLine: 'underline' },
+              strong: { color: uiSettings.markdownBoldColor, fontWeight: 'bold' },
+              image: { width: 220, height: 160, borderRadius: 8, marginVertical: 8, alignSelf: 'center' },
+            }}
+            onLinkPress={(url: string) => {
+              if (url.startsWith('http://') || url.startsWith('https://') || url.startsWith('mailto:')) {
+                if (typeof window !== 'undefined') {
+                  window.open(url, '_blank');
+                } else {
+                  setFullscreenImage(url);
+                }
+                return true;
+              }
+              return false;
+            }}
+            rules={{
+              fence: (
+                node: ASTNode,
+                children: React.ReactNode[],
+                parent: ASTNode[],
+                styles: any
+              ) => {
+                return (
+                  <View key={node.key} style={styles.code_block}>
+                    <Text style={styles.code_block_text}>
+                      {node.content || ''}
+                    </Text>
+                  </View>
+                );
+              }
+            }}
+          >
+            {text}
+          </Markdown>
         </View>
       );
     }
-  }
 
-  const hasCustomTags = (
-    /<\s*(thinking|think|status|mem|websearch)[^>]*>([\s\S]*?)<\/\s*(thinking|think|status|mem|websearch)\s*>/i.test(text) ||
-    /<\s*char\s+think\s*>([\s\S]*?)<\/\s*char\s+think\s*>/i.test(text)
-  );
+    const rawImageMarkdownRegex = /^!\[(.*?)\]\(image:([a-f0-9]+)\)$/;
+    const rawImageMatch = text.trim().match(rawImageMarkdownRegex);
 
-  const hasMarkdown = /```[\w]*\s*([\s\S]*?)```/.test(text) ||
+    if (rawImageMatch) {
+      const alt = rawImageMatch[1] || "图片";
+      const imageId = rawImageMatch[2];
+
+      const imageInfo = ImageManager.getImageInfo(imageId);
+      const imageStyle = getImageDisplayStyle(imageInfo);
+
+      if (imageInfo) {
+        return (
+          <View style={styles.imageWrapper}>
+            <TouchableOpacity
+              style={styles.imageContainer}
+              onPress={() => handleOpenFullscreenImage(imageId)}
+            >
+              <Image
+                source={{ uri: imageInfo.originalPath }}
+                style={imageStyle}
+                resizeMode="contain"
+                onError={(e) => console.error(`Error loading image: ${e.nativeEvent.error}`, imageInfo.originalPath)}
+              />
+            </TouchableOpacity>
+            <Text style={styles.imageCaption}>{alt}</Text>
+          </View>
+        );
+      } else {
+        console.error(`No image info found for ID: ${imageId}`);
+        return (
+          <View style={styles.imageError}>
+            <Ionicons name="alert-circle" size={36} color="#e74c3c" />
+            <Text style={styles.imageErrorText}>图片无法加载 (ID: {imageId.substring(0, 8)}...)</Text>
+          </View>
+        );
+      }
+    }
+
+    const hasCustomTags = (
+      /<\s*(thinking|think|status|mem|websearch)[^>]*>([\s\S]*?)<\/\s*(thinking|think|status|mem|websearch)\s*>/i.test(text) ||
+      /<\s*char\s+think\s*>([\s\S]*?)<\/\s*char\s+think\s*>/i.test(text)
+    );
+
+    const hasMarkdown = /```[\w]*\s*([\s\S]*?)```/.test(text) ||
                      /!\[[\s\S]*?\]\([\s\S]*?\)/.test(text) ||
                      /\*\*([\s\S]*?)\*\*/.test(text) ||
                      /\*([\s\S]*?)\*/.test(text);
 
-  const hasHtml = /<\/?[a-z][^>]*>/i.test(text);
+    const hasHtml = /<\/?[a-z][^>]*>/i.test(text);
 
-  const imageIdRegex = /!\[(.*?)\]\(image:([^\s)]+)\)/g;
-  let match: RegExpExecArray | null;
-  const matches: { alt: string, id: string }[] = [];
+    const imageIdRegex = /!\[(.*?)\]\(image:([^\s)]+)\)/g;
+    let match: RegExpExecArray | null;
+    const matches: { alt: string, id: string }[] = [];
 
-  while ((match = imageIdRegex.exec(text)) !== null) {
-    matches.push({
-      alt: match[1] || "图片",
-      id: match[2]
-    });
-  }
+    while ((match = imageIdRegex.exec(text)) !== null) {
+      matches.push({
+        alt: match[1] || "图片",
+        id: match[2]
+      });
+    }
 
-  if (matches.length > 0) {
-    return (
-      <View>
-        {matches.map((img, idx) => {
-          const imageInfo = ImageManager.getImageInfo(img.id);
-          const imageStyle = getImageDisplayStyle(imageInfo);
-          if (imageInfo) {
+    if (matches.length > 0) {
+      return (
+        <View>
+          {matches.map((img, idx) => {
+            const imageInfo = ImageManager.getImageInfo(img.id);
+            const imageStyle = getImageDisplayStyle(imageInfo);
+            if (imageInfo) {
+              return (
+                <TouchableOpacity 
+                  key={img.id + '-' + idx}
+                  style={styles.imageWrapper}
+                  onPress={() => handleOpenFullscreenImage(img.id)}
+                >
+                  <Image
+                    source={{ uri: imageInfo.originalPath }}
+                    style={imageStyle}
+                    resizeMode="contain"
+                    onError={(e) => console.error(`Error loading image: ${e.nativeEvent.error}`, imageInfo.originalPath)}
+                  />
+                  <Text style={styles.imageCaption}>{img.alt}</Text>
+                </TouchableOpacity>
+              );
+            } else {
+              return (
+                <View key={idx} style={styles.imageError}>
+                  <Ionicons name="alert-circle" size={36} color="#e74c3c" />
+                  <Text style={styles.imageErrorText}>图片无法加载 (ID: {img.id.substring(0, 8)}...)</Text>
+                </View>
+              );
+            }
+          })}
+        </View>
+      );
+    }
+
+    const imageMarkdownRegex = /!\[(.*?)\]\((https?:\/\/[^\s)]+|data:image\/[^\s)]+)\)/g;
+    let urlMatches: { alt: string, url: string }[] = [];
+
+    imageMarkdownRegex.lastIndex = 0;
+
+    while ((match = imageMarkdownRegex.exec(text)) !== null) {
+      urlMatches.push({
+        alt: match[1] || "图片",
+        url: match[2]
+      });
+    }
+
+    if (urlMatches.length > 0) {
+      return (
+        <View>
+          {urlMatches.map((img, idx) => {
+            const isDataUrl = img.url.startsWith('data:');
+            const isLargeDataUrl = isDataUrl && img.url.length > 100000;
+
+            if (isLargeDataUrl) {
+              return (
+                <View key={idx} style={styles.imageWrapper}>
+                  <TouchableOpacity
+                    style={styles.imageDataUrlWarning}
+                    onPress={() => setFullscreenImage(img.url)}
+                  >
+                    <Ionicons name="image" size={36} color="#999" />
+                    <Text style={styles.imageDataUrlWarningText}>
+                      {img.alt} (点击查看)
+                    </Text>
+                  </TouchableOpacity>
+                </View>
+              );
+            }
+
             return (
               <TouchableOpacity 
-                key={img.id + '-' + idx}
+                key={idx}
                 style={styles.imageWrapper}
-                onPress={() => handleOpenFullscreenImage(img.id)}
+                onPress={() => setFullscreenImage(img.url)}
               >
                 <Image
-                  source={{ uri: imageInfo.originalPath }}
-                  style={imageStyle}
+                  source={{ uri: img.url }}
+                  style={styles.messageImage}
                   resizeMode="contain"
-                  onError={(e) => console.error(`Error loading image: ${e.nativeEvent.error}`, imageInfo.originalPath)}
+                  onError={(e) => console.error(`Error loading image URL: ${e.nativeEvent.error}`)}
                 />
                 <Text style={styles.imageCaption}>{img.alt}</Text>
               </TouchableOpacity>
             );
-          } else {
-            return (
-              <View key={idx} style={styles.imageError}>
-                <Ionicons name="alert-circle" size={36} color="#e74c3c" />
-                <Text style={styles.imageErrorText}>图片无法加载 (ID: {img.id.substring(0, 8)}...)</Text>
-              </View>
-            );
-          }
-        })}
-      </View>
-    );
-  }
+          })}
+        </View>
+      );
+    }
 
-  const imageMarkdownRegex = /!\[(.*?)\]\((https?:\/\/[^\s)]+|data:image\/[^\s)]+)\)/g;
-  let urlMatches: { alt: string, url: string }[] = [];
+    const linkRegex = /\[(.*?)\]\((https?:\/\/[^\s)]+|data:image\/[^\s)]+)\)/g;
+    let linkMatches: { text: string, url: string }[] = [];
 
-  imageMarkdownRegex.lastIndex = 0;
+    while ((match = linkRegex.exec(text)) !== null) {
+      linkMatches.push({
+        text: match[1],
+        url: match[2]
+      });
+    }
 
-  while ((match = imageMarkdownRegex.exec(text)) !== null) {
-    urlMatches.push({
-      alt: match[1] || "图片",
-      url: match[2]
-    });
-  }
-
-  if (urlMatches.length > 0) {
-    return (
-      <View>
-        {urlMatches.map((img, idx) => {
-          const isDataUrl = img.url.startsWith('data:');
-          const isLargeDataUrl = isDataUrl && img.url.length > 100000;
-
-          if (isLargeDataUrl) {
-            return (
-              <View key={idx} style={styles.imageWrapper}>
-                <TouchableOpacity
-                  style={styles.imageDataUrlWarning}
-                  onPress={() => setFullscreenImage(img.url)}
-                >
-                  <Ionicons name="image" size={36} color="#999" />
-                  <Text style={styles.imageDataUrlWarningText}>
-                    {img.alt} (点击查看)
-                  </Text>
-                </TouchableOpacity>
-              </View>
-            );
-          }
-
-          return (
-            <TouchableOpacity 
+    if (linkMatches.length > 0) {
+      return (
+        <View>
+          {linkMatches.map((link, idx) => (
+            <TouchableOpacity
               key={idx}
-              style={styles.imageWrapper}
-              onPress={() => setFullscreenImage(img.url)}
+              style={styles.linkButton}
+              onPress={() => {
+                if (typeof window !== 'undefined') {
+                  window.open(link.url, '_blank');
+                } else {
+                  setFullscreenImage(link.url);
+                }
+              }}
             >
-              <Image
-                source={{ uri: img.url }}
-                style={styles.messageImage}
-                resizeMode="contain"
-                onError={(e) => console.error(`Error loading image URL: ${e.nativeEvent.error}`)}
-              />
-              <Text style={styles.imageCaption}>{img.alt}</Text>
+              <Ionicons name="link" size={16} color="#3498db" style={styles.linkIcon} />
+              <Text style={styles.linkText}>{link.text}</Text>
             </TouchableOpacity>
-          );
-        })}
-      </View>
-    );
-  }
+          ))}
+        </View>
+      );
+    }
 
-  const linkRegex = /\[(.*?)\]\((https?:\/\/[^\s)]+|data:image\/[^\s)]+)\)/g;
-  let linkMatches: { text: string, url: string }[] = [];
-
-  while ((match = linkRegex.exec(text)) !== null) {
-    linkMatches.push({
-      text: match[1],
-      url: match[2]
-    });
-  }
-
-  if (linkMatches.length > 0) {
-    return (
-      <View>
-        {linkMatches.map((link, idx) => (
-          <TouchableOpacity
-            key={idx}
-            style={styles.linkButton}
-            onPress={() => {
-              if (typeof window !== 'undefined') {
-                window.open(link.url, '_blank');
-              } else {
-                setFullscreenImage(link.url);
-              }
-            }}
-          >
-            <Ionicons name="link" size={16} color="#3498db" style={styles.linkIcon} />
-            <Text style={styles.linkText}>{link.text}</Text>
-          </TouchableOpacity>
-        ))}
-      </View>
-    );
-  }
-
-  return renderMessageText(text, isUser);
-};
+    return renderMessageText(text, isUser);
+  };
 
   const renderMessageText = (text: string, isUser: boolean) => {
     const segments = parseHtmlText(text);
     return (
-      <Text style={isUser ? styles.userMessageText : styles.botMessageText}>
+      <Text style={[
+        isUser ? styles.userMessageText : styles.botMessageText,
+        getTextStyle(isUser)
+      ]}>
         {segments.map((segment, index) => (
-          <Text key={index} style={segment.style}>
+          <Text key={index} style={[segment.style, getTextStyle(isUser)]}>
             {segment.text}
           </Text>
         ))}
@@ -1170,49 +1331,74 @@ const getAiMessageIndex = (realIndex: number): number => {
   const [editTargetMsgId, setEditTargetMsgId] = useState<string | null>(null);
   const [editTargetAiIndex, setEditTargetAiIndex] = useState<number>(-1);
 
-  const handleEditButton = (message: Message, aiIndex: number) => {
+  const handleEditButton = (message: Message, messageIndex: number, isUser: boolean) => {
     setEditModalText(message.text);
     setEditTargetMsgId(message.id);
-    // 用完整 messages 找到真实 index
-    const realIndex = getRealMessageIndexById(messages, message.id);
-    setEditTargetAiIndex(getAiMessageIndex(realIndex));
+    setEditTargetAiIndex(messageIndex);
     setEditModalVisible(true);
+    // isUser 用于区分编辑哪个类型的消息
   };
 
-  const handleDeleteButton = (message: Message, aiIndex: number) => {
+  const handleDeleteButton = (message: Message, messageIndex: number, isUser: boolean) => {
     Alert.alert(
-      '删除AI消息',
-      '确定要删除该AI消息及其对应的用户消息吗？',
+      isUser ? '删除用户消息' : '删除AI消息',
+      isUser
+        ? '确定要删除该用户消息吗？'
+        : '确定要删除该AI消息吗？',
       [
         { text: '取消', style: 'cancel' },
         {
           text: '删除',
           style: 'destructive',
           onPress: () => {
-            // 用完整 messages 找到真实 index
-            const realIndex = getRealMessageIndexById(messages, message.id);
-            const aiIndex = getAiMessageIndex(realIndex);
-            if (onDeleteMessage) onDeleteMessage(message.id, aiIndex);
+            if (isUser) {
+              if (typeof onDeleteUserMessage === 'function') onDeleteUserMessage(message.id, messageIndex);
+            } else {
+              if (typeof onDeleteAiMessage === 'function') onDeleteAiMessage(message.id, messageIndex);
+            }
           }
         }
       ]
     );
   };
 
-// 1. 用 useMemo 缓存 visibleMessages，避免每次渲染都新建数组
-const visibleMessages = React.useMemo(() => {
-  const filtered = messages.filter(
-    m => !(m.sender === 'user' && m.metadata && m.metadata.isContinue === true)
-  );
-  if (mode === 'visual-novel') return messages;
-  if (isHistoryModalVisible) return messages;
-  return messages.slice(-30);
-}, [messages, mode, isHistoryModalVisible]);
+  // 1. 用 useMemo 缓存 visibleMessages，避免每次渲染都新建数组
+  const visibleMessages = React.useMemo(() => {
+    const filtered = messages.filter(
+      m => !(m.sender === 'user' && m.metadata && m.metadata.isContinue === true)
+    );
+    if (mode === 'visual-novel') return messages;
+    if (isHistoryModalVisible) return messages;
+    return messages.slice(-30);
+  }, [messages, mode, isHistoryModalVisible]);
 
-const renderMessageContent = (message: Message, isUser: boolean, index: number) => {
-  // 新增：常规/背景强调模式下，遇到完整HTML页面只显示占位
-  const isHtmlPage = isWebViewContent(message.text);
-  if ((mode !== 'visual-novel') && isHtmlPage) {
+  const renderMessageContent = (message: Message, isUser: boolean, index: number) => {
+    // 新增：常规/背景强调模式下，遇到完整HTML页面只显示占位
+    const isHtmlPage = isWebViewContent(message.text);
+    if ((mode !== 'visual-novel') && isHtmlPage) {
+      return (
+        <View style={[
+          styles.messageContent,
+          isUser ? styles.userMessageContent : styles.botMessageContent,
+          message.isLoading && styles.loadingMessage
+        ]}>
+          {!isUser && (
+            <Image
+              source={
+                selectedCharacter?.avatar
+                  ? { uri: String(selectedCharacter.avatar) }
+                  : require('@/assets/images/default-avatar.png')
+              }
+              style={[styles.messageAvatar, { width: AVATAR_SIZE, height: AVATAR_SIZE, borderRadius: AVATAR_SIZE / 2 }]}
+            />
+          )}
+          <View style={isUser ? styles.userMessageWrapper : styles.botMessageTextContainer}>
+            {processMessageContent(message.text, isUser, { isHtmlPagePlaceholder: true })}
+          </View>
+        </View>
+      );
+    }
+
     return (
       <View style={[
         styles.messageContent,
@@ -1229,71 +1415,77 @@ const renderMessageContent = (message: Message, isUser: boolean, index: number) 
             style={[styles.messageAvatar, { width: AVATAR_SIZE, height: AVATAR_SIZE, borderRadius: AVATAR_SIZE / 2 }]}
           />
         )}
-        <View style={isUser ? styles.userMessageWrapper : styles.botMessageTextContainer}>
-          {processMessageContent(message.text, isUser, { isHtmlPagePlaceholder: true })}
-        </View>
+        {isUser ? (
+          <View style={[styles.userMessageWrapper, {maxWidth: MAX_WIDTH}]}>
+            {user?.avatar && (
+              <Image
+                source={{ uri: String(user.avatar) }}
+                style={[styles.userMessageAvatar, { width: AVATAR_SIZE, height: AVATAR_SIZE, borderRadius: AVATAR_SIZE / 2 }]}
+              />
+            )}
+            {mode === 'normal' || mode === 'background-focus' ? (
+              <LinearGradient
+                colors={[
+                  uiSettings.regularUserBubbleColor.replace('rgb', 'rgba').replace(')', `,${uiSettings.regularUserBubbleAlpha})`),
+                  uiSettings.regularUserBubbleColor.replace('rgb', 'rgba').replace(')', `,${uiSettings.regularUserBubbleAlpha - 0.05})`)
+                ]}
+                style={[
+                  styles.userGradient, 
+                  { borderRadius: 18, borderTopRightRadius: 4 },
+                  { padding: getBubblePadding(), paddingHorizontal: getBubblePadding() + 4 }
+                ]}
+              >
+                {processMessageContent(message.text, true)}
+              </LinearGradient>
+            ) : (
+              <View style={[
+                styles.userGradient,
+                getBubbleStyle(true),
+                { borderRadius: 18, borderTopRightRadius: 4 },
+                { padding: getBubblePadding(), paddingHorizontal: getBubblePadding() + 4 }
+              ]}>
+                {processMessageContent(message.text, true)}
+              </View>
+            )}
+          </View>
+        ) : (
+          <View style={[
+            styles.botMessageTextContainer, 
+            getBubbleStyle(false),
+            {maxWidth: MAX_WIDTH},
+            { 
+              padding: getBubblePadding(), 
+              paddingHorizontal: getBubblePadding() + 4,
+              paddingTop: getBubblePadding() + 8
+            }
+          ]}>
+            {message.isLoading ? (
+              <View style={styles.loadingContainer}>
+                <Animated.View style={[styles.loadingDot, dot1Style]} />
+                <Animated.View style={[styles.loadingDot, dot2Style]} />
+                <Animated.View style={[styles.loadingDot, dot3Style]} />
+              </View>
+            ) : (
+              processMessageContent(message.text, false)
+            )
+            }
+            {!message.isLoading && !isUser && renderMessageActions(message, index)}
+          </View>
+        )}
       </View>
     );
-  }
-
-  return (
-    <View style={[
-      styles.messageContent,
-      isUser ? styles.userMessageContent : styles.botMessageContent,
-      message.isLoading && styles.loadingMessage
-    ]}>
-      {!isUser && (
-        <Image
-          source={
-            selectedCharacter?.avatar
-              ? { uri: String(selectedCharacter.avatar) }
-              : require('@/assets/images/default-avatar.png')
-          }
-          style={[styles.messageAvatar, { width: AVATAR_SIZE, height: AVATAR_SIZE, borderRadius: AVATAR_SIZE / 2 }]}
-        />
-      )}
-      {isUser ? (
-        <View style={[styles.userMessageWrapper, {maxWidth: MAX_WIDTH}]}>
-          {user?.avatar && (
-            <Image
-              source={{ uri: String(user.avatar) }}
-              style={[styles.userMessageAvatar, { width: AVATAR_SIZE, height: AVATAR_SIZE, borderRadius: AVATAR_SIZE / 2 }]}
-            />
-          )}
-          <LinearGradient
-            colors={['rgba(255, 224, 195, 0.95)', 'rgba(255, 200, 170, 0.95)']}
-            style={[styles.userGradient, {borderRadius: 18, borderTopRightRadius: 4}]}
-          >
-            {processMessageContent(message.text, true)}
-          </LinearGradient>
-        </View>
-      ) : (
-        <View style={[styles.botMessageTextContainer, {maxWidth: MAX_WIDTH}]}>
-          {message.isLoading ? (
-            <View style={styles.loadingContainer}>
-              <Animated.View style={[styles.loadingDot, dot1Style]} />
-              <Animated.View style={[styles.loadingDot, dot2Style]} />
-              <Animated.View style={[styles.loadingDot, dot3Style]} />
-            </View>
-          ) : (
-            processMessageContent(message.text, false)
-          )
-          }
-          {!message.isLoading && !isUser && renderMessageActions(message, index)}
-        </View>
-      )}
-    </View>
-  );
-};
+  };
 
   const renderMessageActions = (message: Message, visibleIndex: number) => {
     if (message.isLoading) return null;
     const isBot = message.sender === 'bot' && !message.isLoading;
+    const isUser = message.sender === 'user' && !message.isLoading;
     const isAutoMessage = !!message.metadata?.isAutoMessageResponse;
     const isRegenerating = regeneratingMessageId === message.id;
     // 用完整 messages 找到真实 index
     const realIndex = getRealMessageIndexById(messages, message.id);
     const aiIndex = getAiMessageIndex(realIndex);
+    const userIndex = realIndex;
 
     // --- 新增: 判断是否为first_mes ---
     let isFirstMes = false;
@@ -1322,7 +1514,7 @@ const renderMessageContent = (message: Message, isUser: boolean, index: number) 
           {isBot && !isAutoMessage && renderTTSButtons(message)}
         </View>
         <View style={styles.messageActionsRight}>
-          {/* 只允许非first_mes的AI消息显示编辑/删除/再生按钮 */}
+          {/* AI 消息操作按钮 */}
           {isBot && !isAutoMessage && !isFirstMes && (
             <>
               <TouchableOpacity
@@ -1330,7 +1522,7 @@ const renderMessageContent = (message: Message, isUser: boolean, index: number) 
                   styles.actionCircleButton,
                   { width: BUTTON_SIZE, height: BUTTON_SIZE, marginLeft: BUTTON_MARGIN }
                 ]}
-                onPress={() => handleEditButton(message, aiIndex)}
+                onPress={() => handleEditButton(message, aiIndex, false)}
                 disabled={!!regeneratingMessageId}
               >
                 <Ionicons name="create-outline" size={BUTTON_ICON_SIZE} color={regeneratingMessageId ? "#999999" : "#f1c40f"} />
@@ -1340,7 +1532,7 @@ const renderMessageContent = (message: Message, isUser: boolean, index: number) 
                   styles.actionCircleButton,
                   { width: BUTTON_SIZE, height: BUTTON_SIZE, marginLeft: BUTTON_MARGIN }
                 ]}
-                onPress={() => handleDeleteButton(message, aiIndex)}
+                onPress={() => handleDeleteButton(message, aiIndex, false)}
                 disabled={!!regeneratingMessageId}
               >
                 <Ionicons name="trash-outline" size={BUTTON_ICON_SIZE} color={regeneratingMessageId ? "#999999" : "#e74c3c"} />
@@ -1363,6 +1555,31 @@ const renderMessageContent = (message: Message, isUser: boolean, index: number) 
                     color={regeneratingMessageId ? "#999999" : "#3498db"}
                   />
                 )}
+              </TouchableOpacity>
+            </>
+          )}
+          {/* 用户消息操作按钮 */}
+          {isUser && (
+            <>
+              <TouchableOpacity
+                style={[
+                  styles.actionCircleButton,
+                  { width: BUTTON_SIZE, height: BUTTON_SIZE, marginLeft: BUTTON_MARGIN }
+                ]}
+                onPress={() => handleEditButton(message, userIndex, true)}
+                disabled={!!regeneratingMessageId}
+              >
+                <Ionicons name="create-outline" size={BUTTON_ICON_SIZE} color={regeneratingMessageId ? "#999999" : "#f1c40f"} />
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={[
+                  styles.actionCircleButton,
+                  { width: BUTTON_SIZE, height: BUTTON_SIZE, marginLeft: BUTTON_MARGIN }
+                ]}
+                onPress={() => handleDeleteButton(message, userIndex, true)}
+                disabled={!!regeneratingMessageId}
+              >
+                <Ionicons name="trash-outline" size={BUTTON_ICON_SIZE} color={regeneratingMessageId ? "#999999" : "#e74c3c"} />
               </TouchableOpacity>
             </>
           )}
@@ -1717,7 +1934,7 @@ const renderMessageContent = (message: Message, isUser: boolean, index: number) 
                           text: '删除',
                           style: 'destructive',
                           onPress: () => {
-                            if (onDeleteMessage) onDeleteMessage(lastMessage.id, aiIndex);
+                            if (onDeleteAiMessage) onDeleteAiMessage(lastMessage.id, aiIndex);
                           }
                         }
                       ]
@@ -1736,6 +1953,7 @@ const renderMessageContent = (message: Message, isUser: boolean, index: number) 
                   disabled={isRegenerating || !!regeneratingMessageId}
                   onPress={() => onRegenerateMessage && onRegenerateMessage(lastMessage.id, aiIndex)}
                 >
+
                   {isRegenerating ? (
                     <ActivityIndicator size="small" color="#fff" />
                   ) : (
@@ -1778,48 +1996,7 @@ const renderMessageContent = (message: Message, isUser: boolean, index: number) 
     );
   };
 
-  const renderHistoryModal = () => {
-    if (!isHistoryModalVisible) return null;
-    return (
-      <Modal
-        visible={isHistoryModalVisible}
-        transparent={true}
-        animationType="fade"
-        onRequestClose={() => setHistoryModalVisible && setHistoryModalVisible(false)}
-      >
-        <View style={styles.historyModalContainer}>
-          <ScrollView style={styles.historyModalContent}>
-            {messages.map((message, index) => {
-              const isUser = message.sender === 'user';
-              const showTime = index === 0 ||
-                (index > 0 && new Date(message.timestamp || 0).getMinutes() !==
-                  new Date(messages[index - 1].timestamp || 0).getMinutes());
-              return (
-                <View key={message.id} style={styles.historyMessageContainer}>
-                  {showTime && message.timestamp && (
-                    <Text style={styles.historyTimeText}>
-                      {new Date(message.timestamp).toLocaleTimeString()}
-                    </Text>
-                  )}
-                  <View style={[
-                    styles.historyMessage,
-                    isUser ? styles.historyUserMessage : styles.historyBotMessage
-                  ]}>
-                    <Text style={[
-                      styles.historyMessageText,
-                      isUser ? styles.historyUserMessageText : styles.historyBotMessageText
-                    ]}>
-                      {message.text}
-                    </Text>
-                  </View>
-                </View>
-              );
-            })}
-          </ScrollView>
-        </View>
-      </Modal>
-    );
-  };
+
 
   // 2. renderItem 只依赖必要的 props，避免依赖整个 messages
   const renderItem = useCallback(
@@ -1920,6 +2097,7 @@ const renderMessageContent = (message: Message, isUser: boolean, index: number) 
             visible={!!isHistoryModalVisible}
             messages={messages}
             onClose={() => setHistoryModalVisible && setHistoryModalVisible(false)}
+
             selectedCharacter={selectedCharacter}
             user={user}
           />
@@ -1984,16 +2162,22 @@ const renderMessageContent = (message: Message, isUser: boolean, index: number) 
       <TextEditorModal
         isVisible={editModalVisible}
         initialText={editModalText}
-        title="编辑AI消息内容"
-        placeholder="请输入新的AI消息内容"
+        title="编辑消息内容"
+        placeholder="请输入新的消息内容"
         onClose={() => setEditModalVisible(false)}
         onSave={(newText) => {
           if (!newText.trim()) {
             Alert.alert('内容不能为空');
             return;
           }
-          if (onEditMessage && editTargetMsgId && editTargetAiIndex >= 0) {
-            onEditMessage(editTargetMsgId, editTargetAiIndex, newText);
+          if (editTargetMsgId && editTargetAiIndex >= 0) {
+            // 判断当前编辑的是AI消息还是用户消息
+            const editingMsg = messages.find(m => m.id === editTargetMsgId);
+            if (editingMsg?.sender === 'bot') {
+              if (onEditAiMessage) onEditAiMessage(editTargetMsgId, editTargetAiIndex, newText);
+            } else if (editingMsg?.sender === 'user') {
+              if (onEditUserMessage) onEditUserMessage(editTargetMsgId, editTargetAiIndex, newText);
+            }
             setEditModalVisible(false);
           }
         }}
@@ -2113,48 +2297,13 @@ const styles = StyleSheet.create({
     marginHorizontal: 2,
     opacity: 0.7,
   },
-  messageActionsRow: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    marginTop: BUTTON_MARGIN,
-    width: '100%',
-    minHeight: BUTTON_SIZE,
-  },
-  messageActionsLeft: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    flex: 1,
-  },
-  messageActionsRight: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'flex-end',
-    flex: 1,
-  },
-  actionCircleButton: {
-    backgroundColor: 'rgba(0,0,0,0.5)',
-    borderRadius: BUTTON_SIZE / 2,
-    justifyContent: 'center',
-    alignItems: 'center',
-    marginHorizontal: 0,
-    marginVertical: 0,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 1 },
-    shadowOpacity: 0.12,
-    shadowRadius: 2,
-    elevation: 2,
-  },
-  actionCircleButtonActive: {
-    backgroundColor: 'rgba(255,224,195,0.85)',
-  },
   timeGroup: {
     alignItems: 'center',
     marginVertical: RESPONSIVE_PADDING,
   },
   timeText: {
     color: '#ddd',
-    fontSize: Math.min(Math.max(10, width * 0.03), 12),
+    fontSize: 12,
     backgroundColor: 'rgba(0, 0, 0, 0.4)',
     paddingHorizontal: 10,
     paddingVertical: 2,
@@ -2652,6 +2801,41 @@ const styles = StyleSheet.create({
     top: 10,
     right: 60,
     zIndex: 30,
+  },
+    messageActionsRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginTop: BUTTON_MARGIN,
+    width: '100%',
+    minHeight: BUTTON_SIZE,
+  },
+  messageActionsLeft: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    flex: 1,
+  },
+  messageActionsRight: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'flex-end',
+    flex: 1,
+  },
+  actionCircleButton: {
+    backgroundColor: 'rgba(0,0,0,0.5)',
+    borderRadius: BUTTON_SIZE / 2,
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginHorizontal: 0,
+    marginVertical: 0,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.12,
+    shadowRadius: 2,
+    elevation: 2,
+  },
+  actionCircleButtonActive: {
+    backgroundColor: 'rgba(255,224,195,0.85)',
   },
 });
 

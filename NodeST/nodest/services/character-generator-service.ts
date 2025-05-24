@@ -1,6 +1,8 @@
 import { RoleCardJson, WorldBookJson } from '@/shared/types';
 import { GeminiAdapter } from '../utils/gemini-adapter';
 import { OpenRouterAdapter } from '../utils/openrouter-adapter';
+import { OpenAIAdapter } from '../utils/openai-adapter';
+import { getApiSettings } from '@/utils/settings-helper';
 
 /**
  * 投喂数据类型
@@ -272,12 +274,41 @@ export class CharacterGeneratorService {
    */
   async generateInitialCharacter(initialData: CharacterInitialData): Promise<CharacterGenerationResult> {
     try {
-      console.log("[角色生成服务] 开始生成初始角色...");
+      // === 新增：动态获取API设置 ===
+      const apiSettings = getApiSettings();
+      const provider = apiSettings.apiProvider;
+      let llmAdapter: any = null;
+      let useOpenAICompatible = false;
+
+      // 记录当前provider
+      console.log(`[角色生成服务] 当前API Provider: ${provider}`);
+
+      // 动态选择adapter
+      if (provider === 'gemini') {
+        llmAdapter = new GeminiAdapter(apiSettings.apiKey || '');
+      } else if (provider === 'openrouter') {
+        llmAdapter = new OpenRouterAdapter(
+          apiSettings.openrouter?.apiKey || '',
+          apiSettings.openrouter?.model || 'anthropic/claude-3-haiku'
+        );
+      } else if (provider === 'openai-compatible') {
+        // OpenAI-compatible 需要特殊处理
+        useOpenAICompatible = true;
+        llmAdapter = new OpenAIAdapter({
+          endpoint: apiSettings.OpenAIcompatible?.endpoint || '',
+          apiKey: apiSettings.OpenAIcompatible?.apiKey || '',
+          model: apiSettings.OpenAIcompatible?.model || 'gpt-3.5-turbo'
+        });
+      } else {
+        throw new Error(`不支持的API Provider: ${provider}`);
+      }
 
       // 确定使用的API类型
-      const isGemini = this.llmAdapter instanceof GeminiAdapter;
-      const assistantRole = isGemini ? "model" : "assistant";
-      
+      const isGemini = provider === 'gemini';
+      const isOpenRouter = provider === 'openrouter';
+      const isOpenAICompatible = provider === 'openai-compatible';
+      const assistantRole = isGemini ? "model" : isOpenRouter ? "assistant" : "assistant";
+
       console.log(`[角色生成服务] 使用API提供商: ${isGemini ? 'Gemini' : 'OpenRouter'}, 助手角色名: ${assistantRole}`);
       
       // 创建完整的提示词
@@ -413,21 +444,34 @@ export class CharacterGeneratorService {
         { role: "user", parts: [{ text: userInstructions }] },
         { role: "user", parts: [{ text: outputFormatPrompt }] }
       ];
-      
-      // 完整记录生成请求，确保可追溯
-      console.log("[角色生成服务] 完整请求详情:");
-      console.log(`系统提示词: ${systemPrompt.substring(0, 100)}...`);
-      console.log(`用户指令: ${userInstructions.substring(0, 100)}...`);
-      console.log(`输出格式: ${outputFormatPrompt.substring(0, 100)}...`);
-      
-      // 发送到LLM，获取响应
-      console.log("[角色生成服务] 发送请求到LLM API...");
-      const response = await this.llmAdapter.generateContent(messages);
-      console.log("[角色生成服务] 收到LLM响应，长度:", response.length);
+
+      // === 新增：OpenAI-compatible 走chatCompletion ===
+      let response: string;
+      if (useOpenAICompatible) {
+        // 转换为OpenAI格式的消息
+        const openaiMessages = messages.map(msg => {
+          // 只取第一个parts.text
+          let content = msg.parts?.[0]?.text || '';
+          let role = msg.role;
+          if (role === 'model') role = 'assistant';
+          if (role === 'user') role = 'user';
+          if (role === 'system') role = 'system';
+          return { role, content };
+        });
+        // 调用chatCompletion
+        const completion = await llmAdapter.chatCompletion(openaiMessages, {
+          temperature: 0.7,
+          max_tokens: 4096
+        });
+        response = completion.choices?.[0]?.message?.content || '';
+      } else {
+        // 其它渠道用generateContent
+        response = await llmAdapter.generateContent(messages);
+      }
 
       // 解析响应
       const result = this.parseGeminiResponse(response);
-      
+
       if (result.success) {
         this.roleCard = result.roleCard ?? null;
         this.worldBook = result.worldBook ?? null;

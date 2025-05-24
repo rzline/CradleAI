@@ -272,7 +272,7 @@ const MemoOverlay: React.FC<MemoOverlayProps> = ({ isVisible, onClose, character
       }
 
       // 加载选中模板
-      let selectedIds: string[] = [];
+      let selectedIds: string[];
       try {
         // 使用file system friendly API
         selectedIds = await TableMemory.getSelectedTemplateIds();
@@ -1956,6 +1956,50 @@ const MemoOverlay: React.FC<MemoOverlayProps> = ({ isVisible, onClose, character
   );
 };
 
+// 在 MemoOverlay 定义后，添加类型断言，声明 getSettings 静态方法
+type MemoOverlayType = React.FC<MemoOverlayProps> & {
+  getSettings: () => Promise<{ tableMemoryEnabled: boolean; vectorMemoryEnabled: boolean }>;
+};
+
+const MemoOverlayComponent = MemoOverlay as MemoOverlayType;
+
+// ===== 新增: 静态方法用于外部获取设置信息 =====
+MemoOverlayComponent.getSettings = async () => {
+  // 表格记忆插件开关
+  let tableMemoryEnabled = false;
+  try {
+    const enabledStr = await AsyncStorage.getItem(TABLE_MEMORY_ENABLED_KEY);
+    if (enabledStr !== null) {
+      tableMemoryEnabled = enabledStr === 'true';
+    } else {
+      tableMemoryEnabled = isTableMemoryEnabled();
+    }
+  } catch {
+    tableMemoryEnabled = isTableMemoryEnabled();
+  }
+
+  // 向量记忆系统开关
+  let vectorMemoryEnabled = true;
+  try {
+    const saved = await AsyncStorage.getItem(SETTINGS_STORAGE_KEY);
+    if (saved) {
+      const parsed = JSON.parse(saved);
+      if (typeof parsed.memoryEnabled === 'boolean') {
+        vectorMemoryEnabled = parsed.memoryEnabled;
+      }
+    }
+  } catch {
+    // 保持默认
+  }
+
+  return {
+    tableMemoryEnabled,
+    vectorMemoryEnabled,
+  };
+};
+
+export default MemoOverlayComponent;
+
 const { height, width } = Dimensions.get('window');
 
 const styles = StyleSheet.create({
@@ -2068,7 +2112,7 @@ const styles = StyleSheet.create({
     borderRadius: 8,
     marginLeft: 8,
   },
-  editAction: {
+ editAction: {
     backgroundColor: 'rgba(255, 159, 28, 0.2)',
   },
   deleteAction: {
@@ -2769,5 +2813,3 @@ const styles = StyleSheet.create({
     marginLeft: 8,
   },
 });
-
-export default MemoOverlay;

@@ -70,7 +70,13 @@ export default function PagesLayout() {
           headerShown: false,
         }}
       />
-      
+                              <Stack.Screen
+        name="chat-ui-settings"
+        options={{
+          presentation: 'modal',
+          headerShown: false,
+        }}
+      />
     </Stack> 
     
   );

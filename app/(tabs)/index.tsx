@@ -45,25 +45,17 @@ import Mem0Service from '@/src/memory/services/Mem0Service';
 import { ttsService } from '@/services/ttsService';
 import { useDialogMode } from '@/constants/DialogModeContext';
 import { CharacterLoader } from '@/src/utils/character-loader';
-import { StorageAdapter } from '@/NodeST/nodest/utils/storage-adapter';
-import { GeminiAdapter } from '@/NodeST/nodest/utils/gemini-adapter';
-import { DEFAULT_NEGATIVE_PROMPTS, DEFAULT_POSITIVE_PROMPTS } from '@/constants/defaultPrompts';
-import NovelAIService from '@/components/NovelAIService';
-import { CloudServiceProvider } from '@/services/cloud-service-provider';
-import type CloudServiceProviderClass from '@/services/cloud-service-provider';
 import * as FileSystem from 'expo-file-system';
 import { importDefaultCharactersIfNeeded, resetDefaultCharacterImported } from '@/components/DefaultCharacterImporter';
 import { loadGlobalSettingsState } from '@/app/pages/global-settings';
-import { getApiSettings } from '@/utils/settings-helper';
-import { OpenRouterAdapter } from '@/NodeST/nodest/utils/openrouter-adapter';
 import { isTableMemoryEnabled, setTableMemoryEnabled } from '@/src/memory/integration/table-memory-integration';
 import { getWebViewExampleHtml } from '@/utils/webViewExample';
 import { Ionicons } from '@expo/vector-icons';
 import { DeviceEventEmitter } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import PostChatService from '@/services/PostChat-service';
-// Lazy load non-critical components to improve initial load time
-const NovelAITestModal = lazy(() => import('@/components/NovelAITestModal'));
+import MessageService from '@/services/message-service';
+import AutoMessageService from '@/services/automessage-service';
 
 // Global cache objects
 declare global {
@@ -157,6 +149,12 @@ const createStableMemoryConfig: CreateConfigFunction = (user: any): MemoryConfig
 // Helper functions for performance optimization
 
 const App = () => {
+    
+  // Initialize the message service for use throughout the component
+  const messageService = useMemo(() => MessageService, []);
+
+  // AutoMessageService 实例 ===
+  const autoMessageService = useMemo(() => AutoMessageService.getInstance(), []);
   const insets = useSafeAreaInsets();
   // References to avoid re-creating functions on each render
   const asyncStorageOperations = useRef<Set<Promise<any>>>(new Set());
@@ -239,12 +237,7 @@ const [hasRestoredLastConversation, setHasRestoredLastConversation] = useState(f
   const firstMessageSentRef = useRef<Record<string, boolean>>({});
   const firstMesSentRef = useRef<Record<string, boolean>>({});
   
-  // Auto-message feature state
-  const [autoMessageEnabled, setAutoMessageEnabled] = useState(true);
-  const autoMessageTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const autoMessageIntervalRef = useRef<number>(5);
-  const lastMessageTimeRef = useRef<number>(Date.now());
-  const waitingForUserReplyRef = useRef<boolean>(false);
+
 
   // Chat scroll positions with improved handling
   const [chatScrollPositions, setChatScrollPositions] = useState<Record<string, number>>({});
@@ -548,31 +541,8 @@ const [hasRestoredLastConversation, setHasRestoredLastConversation] = useState(f
     }
 
     const messageId = `${Date.now()}-${Math.random().toString(36).substring(2, 15)}`;
-    
     let metadata = undefined;
-    if (sender === 'bot' && !isLoading) {
-      const isErrorMessage = newMessage.includes("抱歉，处理消息时出现了错误") || 
-                             newMessage.includes("抱歉，无法重新生成回复") ||
-                             newMessage.includes("发生错误，无法重新生成") ||
-                             newMessage.includes("处理图片时出现了错误") ||
-                             newMessage.includes("生成图片时出现了错误") ||
-                             newMessage.includes("编辑图片时出现了错误") ||
-                             newMessage.includes("发送消息时出现了错误");
-
-      if (!isErrorMessage) {
-        const existingBotMessages = messages.filter(m => 
-          m.sender === 'bot' && 
-          !m.isLoading && 
-          !m.metadata?.isErrorMessage && 
-          !m.metadata?.error
-        );
-        const aiIndex = existingBotMessages.length;
-        
-        metadata = { aiIndex };
-      } else {
-        metadata = { isErrorMessage: true };
-      }
-    }
+    // ...existing metadata logic
 
     const newMessageObj: Message = {
       id: messageId,
@@ -584,6 +554,26 @@ const [hasRestoredLastConversation, setHasRestoredLastConversation] = useState(f
     };
 
     try {
+      // === 关键修正：如果是bot且isLoading=false，替换掉最后一个isLoading的bot消息 ===
+      if (sender === 'bot' && !isLoading) {
+        setMessages(prev => {
+          // 找到最后一个isLoading的bot消息
+          const lastLoadingIdx = [...prev].reverse().findIndex(m => m.sender === 'bot' && m.isLoading);
+          if (lastLoadingIdx !== -1) {
+            const idx = prev.length - 1 - lastLoadingIdx;
+            // 替换该消息
+            const newArr = [...prev];
+            newArr[idx] = { ...newMessageObj, isLoading: false };
+            return newArr;
+          } else {
+            // 没有找到，直接追加
+            return [...prev, { ...newMessageObj, isLoading: false }];
+          }
+        });
+      } else {
+        // user消息或isLoading的bot消息，直接追加
+        setMessages(prev => [...prev, newMessageObj]);
+      }
       await addMessage(selectedConversationId, newMessageObj);
     } catch (err) {
       setTransientError("处理消息时出现了错误");
@@ -697,18 +687,20 @@ const [hasRestoredLastConversation, setHasRestoredLastConversation] = useState(f
       return;
     }
 
-    // Update local state
-    setMessages(prev => [
-      ...prev,
-      {
-        id: messageId || `temp-${Date.now()}`,
-        text: newMessage,
-        sender,
-        isLoading,
-        timestamp: Date.now(),
-        metadata
-      }
-    ]);
+    // === 修正：不再在这里 setMessages（bot），只让 sendMessageInternal 负责 ===
+    // if (sender !== 'user') {
+    //   setMessages(prev => [
+    //     ...prev,
+    //     {
+    //       id: messageId || `temp-${Date.now()}`,
+    //       text: newMessage,
+    //       sender,
+    //       isLoading,
+    //       timestamp: Date.now(),
+    //       metadata
+    //     }
+    //   ]);
+    // }
     
     // Process memory for user messages
     if (sender === 'user' && !isLoading && messageId) {
@@ -723,17 +715,19 @@ const [hasRestoredLastConversation, setHasRestoredLastConversation] = useState(f
     }
 
     // Update user reply state
-    if (sender === 'user' && !isLoading) {
-      waitingForUserReplyRef.current = false;
+    if (sender === 'user' && !isLoading && selectedConversationId) {
+      // waitingForUserReplyRef.current = false;
+      // updateUnreadMessagesCount(0);
+      autoMessageService.onUserMessage(selectedConversationId);
       updateUnreadMessagesCount(0);
     }
 
     // Reset auto message timer
-    if (!isLoading) {
-      lastMessageTimeRef.current = Date.now();
-      setupAutoMessageTimer();
+    if (!isLoading && selectedConversationId) {
+      // lastMessageTimeRef.current = Date.now();
+      // setupAutoMessageTimer();
+      autoMessageService.onAnyMessage(selectedConversationId);
     }
-
     // Update search preference
     if (sender === 'user' && !isLoading) {
       try {
@@ -744,7 +738,7 @@ const [hasRestoredLastConversation, setHasRestoredLastConversation] = useState(f
     }
   }, [
     isPreviewMode, exitPreviewMode, selectedConversationId,
-    sendMessageInternal, braveSearchEnabled, removeMessage
+    sendMessageInternal, braveSearchEnabled, removeMessage, autoMessageService
   ]);
 
   // Handle group messages
@@ -762,8 +756,8 @@ const [hasRestoredLastConversation, setHasRestoredLastConversation] = useState(f
     }
   }, [selectedGroupId, user]);
 
-  // Message regeneration with optimized saving
-  const handleRegenerateMessage = useCallback(async (messageId: string, _messageIndex: number) => {
+  // Message regeneration with message service
+  const handleRegenerateMessage = useCallback(async (messageId: string, messageIndex: number) => {
     if (!selectedConversationId) {
       console.warn('No conversation selected for regeneration');
       return;
@@ -771,66 +765,20 @@ const [hasRestoredLastConversation, setHasRestoredLastConversation] = useState(f
   
     try {
       setRegeneratingMessageId(messageId);
-  
-      // Get first_mes content
-      let firstMesText = '';
-      try {
-        const char = fallbackCharacter || selectedCharacter;
-        if (char?.jsonData) {
-          const characterData = JSON.parse(char.jsonData);
-          firstMesText = characterData.roleCard?.first_mes || '';
-        }
-      } catch (e) {
-        firstMesText = '';
-      }
-  
-      // Find message position
+      
+      // Find message position for display purposes
       const targetMsgIndex = messages.findIndex(msg => msg.id === messageId);
       if (targetMsgIndex === -1) {
         console.warn('Target message not found:', messageId);
         setRegeneratingMessageId(null);
         return;
       }
-  
-      // Filter bot messages
-      const botMessages = messages.filter(msg =>
-        msg.sender === 'bot' &&
-        !msg.isLoading &&
-        !msg.metadata?.isErrorMessage &&
-        !msg.metadata?.error &&
-        (firstMesText ? msg.text !== firstMesText : true) &&
-        !msg.metadata?.isFirstMes
-      );
-
-      // Find target AI index
+      
+      // Get the message for display purposes
       const targetMsg = messages[targetMsgIndex];
-      let aiIndex = -1;
-      if (targetMsg) {
-        aiIndex = botMessages.findIndex(m => m.id === targetMsg.id);
-      }
-
-      if (aiIndex === -1) {
-        if (firstMesText && targetMsg?.text === firstMesText) {
-          aiIndex = 0;
-        } else {
-          console.warn('Target message not found in filtered botMessages:', messageId);
-          setRegeneratingMessageId(null);
-          return;
-        }
-      }
-  
-      // Create messages to keep
+      
+      // Create messages to keep and loading state for display
       let messagesToKeep = messages.slice(0, targetMsgIndex);
-  
-      // Ensure we keep user messages
-      if (targetMsg.sender === 'bot' && targetMsgIndex > 0) {
-        const prevMsg = messages[targetMsgIndex - 1];
-        if (prevMsg && prevMsg.sender === 'user') {
-          messagesToKeep = messages.slice(0, targetMsgIndex);
-        }
-      }
-  
-      // Display loading state
       const displayMessages = [
         ...messagesToKeep,
         {
@@ -840,60 +788,33 @@ const [hasRestoredLastConversation, setHasRestoredLastConversation] = useState(f
           metadata: { ...targetMsg.metadata, isRegenerating: true }
         }
       ];
-  
+      
+      // Update UI to show loading
       setMessages(displayMessages);
-
-      // Get API settings
-      const apiSettings = getApiSettings();
-      let apiKey = '';
-      if (apiSettings.apiProvider === 'openai-compatible' && apiSettings.OpenAIcompatible?.enabled) {
-        apiKey = apiSettings.OpenAIcompatible.apiKey || '';
-      } else if (apiSettings.apiProvider === 'openrouter' && apiSettings.openrouter?.enabled) {
-        apiKey = apiSettings.openrouter.apiKey || '';
-      } else {
-        apiKey = user?.settings?.chat?.characterApiKey || '';
-      }
-
-      // Regenerate message
-      const result = await NodeSTManager.regenerateFromMessage({
-        messageIndex: aiIndex + 1,
-        conversationId: selectedConversationId,
-        apiKey,
-        apiSettings,
-        character: fallbackCharacter || selectedCharacter || undefined
-      });
-  
-      // Process result
-      let finalMessages = [...messagesToKeep];
-  
-      if (result.success && result.text) {
-        finalMessages.push({
-          id: `${messageId}-regenerated-${Date.now()}`,
-          text: result.text,
-          sender: 'bot',
-          isLoading: false,
-          timestamp: Date.now(),
-          metadata: {
-            ...(targetMsg.metadata || {}),
-            aiIndex,
-            regenerated: true,
-            regenerationTime: Date.now()
-          }
-        });
+      
+      // Call the message service
+      const result = await messageService.handleRegenerateMessage(
+        messageId, 
+        messageIndex, 
+        selectedConversationId, 
+        messages,
+        fallbackCharacter || selectedCharacter,
+        user
+      );
+      
+      if (result.success && result.messages) {
+        // Save messages
+        await clearMessages(selectedConversationId);
+        const savePromises = result.messages.map(msg => addMessage(selectedConversationId, msg));
+        await Promise.all(savePromises);
+      
+        // Update UI
+        setMessages(result.messages);
       } else {
         setTransientError("处理消息时出现了错误");
         setTimeout(() => setTransientError(null), 5000);
-        setRegeneratingMessageId(null);
-        return;
       }
-  
-      // Save messages
-      await clearMessages(selectedConversationId);
-      const savePromises = finalMessages.map(msg => addMessage(selectedConversationId, msg));
-      await Promise.all(savePromises);
-  
-      // Update UI
-      setMessages(finalMessages);
+      
       setRegeneratingMessageId(null);
     } catch (error) {
       console.error('Error regenerating message:', error);
@@ -901,255 +822,32 @@ const [hasRestoredLastConversation, setHasRestoredLastConversation] = useState(f
       setRegeneratingMessageId(null);
       setTransientError("处理消息时出现了错误");
       setTimeout(() => setTransientError(null), 5000);
-      return;
     }
   }, [
     selectedConversationId, messages, fallbackCharacter, 
-    selectedCharacter, clearMessages, addMessage, user
+    selectedCharacter, clearMessages, addMessage, user, messageService
   ]);
-
-  // Edit AI message
-  const handleEditAiMessage = useCallback(async (messageId: string, _aiIndex: number, newContent: string) => {
+  const handleEditAiMessage = useCallback(async (messageId: string, aiIndex: number, newContent: string) => {
     if (!selectedConversationId) return;
     try {
-      // === 修正：重新计算aiIndex，确保与NodeST一致 ===
-      // 获取first_mes内容
-      let firstMesText = '';
-      try {
-        const char = fallbackCharacter || selectedCharacter;
-        if (char?.jsonData) {
-          const characterData = JSON.parse(char.jsonData);
-          firstMesText = characterData.roleCard?.first_mes || '';
-        }
-      } catch (e) {
-        firstMesText = '';
-      }
-      // 过滤掉first_mes和错误消息，仅保留有效AI消息
-      const botMessages = messages.filter(msg =>
-        msg.sender === 'bot' &&
-        !msg.isLoading &&
-        !msg.metadata?.isErrorMessage &&
-        !msg.metadata?.error &&
-        (firstMesText ? msg.text !== firstMesText : true) &&
-        !msg.metadata?.isFirstMes
+      const result = await messageService.handleEditAIMessage(
+        messageId,
+        aiIndex,
+        newContent,
+        selectedConversationId,
+        messages
       );
-      // 找到目标消息在botMessages中的index
-      const targetMsg = messages.find(msg => msg.id === messageId);
-      let aiIndex = -1;
-      if (targetMsg) {
-        aiIndex = botMessages.findIndex(m => m.id === targetMsg.id);
-      }
-      if (aiIndex === -1) {
-        // 如果是first_mes
-        if (firstMesText && targetMsg?.text === firstMesText) {
-          aiIndex = 0;
-        } else {
-          setTransientError("处理消息时出现了错误");
-          setTimeout(() => setTransientError(null), 5000);
-          return;
-        }
-      }
-      // === 传递修正后的aiIndex ===
-      const result = await NodeSTManager.editAiMessageByIndex({
-        conversationId: selectedConversationId,
-        messageIndex: aiIndex + 1,
-        newContent
-      });
-      if (result.success) {
-        // Clear local messages
-        await clearMessages(selectedConversationId);
-
-        // Read NodeST history
-        let latestHistory: any = null;
-        try {
-          const historyKey = `nodest_${selectedConversationId}_history`;
-          let historyStr = null;
-          
-          if (typeof FileSystem !== 'undefined' && FileSystem.documentDirectory) {
-            const filePath = FileSystem.documentDirectory + 'nodest_characters/' + historyKey + '.json';
-            const fileInfo = await FileSystem.getInfoAsync(filePath);
-            if (fileInfo.exists) {
-              historyStr = await FileSystem.readAsStringAsync(filePath);
-            }
-          }
-          
-          if (!historyStr && typeof AsyncStorage !== 'undefined') {
-            historyStr = await AsyncStorage.getItem(historyKey);
-          }
-          
-          if (historyStr) {
-            latestHistory = JSON.parse(historyStr);
-          }
-        } catch (e) {
-          latestHistory = null;
-        }
-
-        // Convert NodeST history to messages
-        if (latestHistory && Array.isArray(latestHistory.parts)) {
-          const realMessages = latestHistory.parts.filter((msg: any) => !msg.is_d_entry);
-          const newMessages: Message[] = [];
-          let aiIndexCounter = 0;
-          
-          for (let i = 0; i < realMessages.length; i++) {
-            const msg = realMessages[i];
-            if (msg.role === 'user') {
-              newMessages.push({
-                id: `${selectedConversationId}-user-${i}-${Date.now()}`,
-                text: msg.parts?.[0]?.text ?? '',
-                sender: 'user',
-                isLoading: false,
-                timestamp: Date.now(),
-                metadata: {}
-              });
-            } else if ((msg.role === 'model' || msg.role === 'assistant')) {
-              const isFirstMes = !!msg.is_first_mes;
-              newMessages.push({
-                id: `${selectedConversationId}-bot-${i}-${Date.now()}`,
-                text: msg.parts?.[0]?.text ?? '',
-                sender: 'bot',
-                isLoading: false,
-                timestamp: Date.now(),
-                metadata: {
-                  aiIndex: isFirstMes ? 0 : aiIndexCounter
-                }
-              });
-              if (!isFirstMes) aiIndexCounter++;
-            }
-          }
-          
-          // Save messages in batch
-          const messagePromises = newMessages.map(m => addMessage(selectedConversationId, m));
-          await Promise.all(messagePromises);
-          
-          // Update UI
-          setMessages(newMessages);
-        } else {
-          setMessages([]);
-        }
-      } else {
-        setTransientError("处理消息时出现了错误");
-        setTimeout(() => setTransientError(null), 5000);
-      }
-    } catch (e) {
-      setTransientError("处理消息时出现了错误");
-      setTimeout(() => setTransientError(null), 5000);
-    }
-  }, [selectedConversationId, clearMessages, addMessage, messages, fallbackCharacter, selectedCharacter]);
-
-  // Delete AI message
-  const handleDeleteAiMessage = useCallback(async (messageId: string, _aiIndex: number) => {
-    if (!selectedConversationId) return;
-    try {
-      // === 修正：重新计算aiIndex，确保与NodeST一致 ===
-      let firstMesText = '';
-      try {
-        const char = fallbackCharacter || selectedCharacter;
-        if (char?.jsonData) {
-          const characterData = JSON.parse(char.jsonData);
-          firstMesText = characterData.roleCard?.first_mes || '';
-        }
-      } catch (e) {
-        firstMesText = '';
-      }
-      const botMessages = messages.filter(msg =>
-        msg.sender === 'bot' &&
-        !msg.isLoading &&
-        !msg.metadata?.isErrorMessage &&
-        !msg.metadata?.error &&
-        (firstMesText ? msg.text !== firstMesText : true) &&
-        !msg.metadata?.isFirstMes
-      );
-      const targetMsg = messages.find(msg => msg.id === messageId);
-      let aiIndex = -1;
-      if (targetMsg) {
-        aiIndex = botMessages.findIndex(m => m.id === targetMsg.id);
-      }
-      if (aiIndex === -1) {
-        if (firstMesText && targetMsg?.text === firstMesText) {
-          aiIndex = 0;
-        } else {
-          setTransientError("处理消息时出现了错误");
-          setTimeout(() => setTransientError(null), 5000);
-          return;
-        }
-      }
-      // === 传递修正后的aiIndex ===
-      const result = await NodeSTManager.deleteAiMessageByIndex({
-        conversationId: selectedConversationId,
-        messageIndex: aiIndex + 1
-      });
       
-      if (result.success) {
+      if (result.success && result.messages) {
         // Clear local messages
         await clearMessages(selectedConversationId);
-
-        // Read NodeST history
-        let latestHistory: any = null;
-        try {
-          const historyKey = `nodest_${selectedConversationId}_history`;
-          let historyStr = null;
-          
-          if (typeof FileSystem !== 'undefined' && FileSystem.documentDirectory) {
-            const filePath = FileSystem.documentDirectory + 'nodest_characters/' + historyKey + '.json';
-            const fileInfo = await FileSystem.getInfoAsync(filePath);
-            if (fileInfo.exists) {
-              historyStr = await FileSystem.readAsStringAsync(filePath);
-            }
-          }
-          
-          if (!historyStr && typeof AsyncStorage !== 'undefined') {
-            historyStr = await AsyncStorage.getItem(historyKey);
-          }
-          
-          if (historyStr) {
-            latestHistory = JSON.parse(historyStr);
-          }
-        } catch (e) {
-          latestHistory = null;
-        }
-
-        // Convert NodeST history to messages
-        if (latestHistory && Array.isArray(latestHistory.parts)) {
-          const realMessages = latestHistory.parts.filter((msg: any) => !msg.is_d_entry);
-          const newMessages: Message[] = [];
-          let aiIndexCounter = 0;
-          
-          for (let i = 0; i < realMessages.length; i++) {
-            const msg = realMessages[i];
-            if (msg.role === 'user') {
-              newMessages.push({
-                id: `${selectedConversationId}-user-${i}-${Date.now()}`,
-                text: msg.parts?.[0]?.text ?? '',
-                sender: 'user',
-                isLoading: false,
-                timestamp: Date.now(),
-                metadata: {}
-              });
-            } else if ((msg.role === 'model' || msg.role === 'assistant')) {
-              const isFirstMes = !!msg.is_first_mes;
-              newMessages.push({
-                id: `${selectedConversationId}-bot-${i}-${Date.now()}`,
-                text: msg.parts?.[0]?.text ?? '',
-                sender: 'bot',
-                isLoading: false,
-                timestamp: Date.now(),
-                metadata: {
-                  aiIndex: isFirstMes ? 0 : aiIndexCounter
-                }
-              });
-              if (!isFirstMes) aiIndexCounter++;
-            }
-          }
-          
-          // Save messages in batch
-          const messagePromises = newMessages.map(m => addMessage(selectedConversationId, m));
-          await Promise.all(messagePromises);
-          
-          // Update UI
-          setMessages(newMessages);
-        } else {
-          setMessages([]);
-        }
+        
+        // Save new messages in batch
+        const messagePromises = result.messages.map(m => addMessage(selectedConversationId, m));
+        await Promise.all(messagePromises);
+        
+        // Update UI
+        setMessages(result.messages);
       } else {
         setTransientError("处理消息时出现了错误");
         setTimeout(() => setTransientError(null), 5000);
@@ -1158,7 +856,134 @@ const [hasRestoredLastConversation, setHasRestoredLastConversation] = useState(f
       setTransientError("处理消息时出现了错误");
       setTimeout(() => setTransientError(null), 5000);
     }
-  }, [selectedConversationId, clearMessages, addMessage, messages, fallbackCharacter, selectedCharacter]);
+  }, [selectedConversationId, clearMessages, addMessage, messages, messageService]);
+
+  // Replace the existing handleDeleteAiMessage with the new version using the service
+  const handleDeleteAIMessage = useCallback(async (messageId: string, aiIndex: number) => {
+    if (!selectedConversationId) return;
+    try {
+      const result = await messageService.handleDeleteAIMessage(
+        messageId,
+        aiIndex,
+        selectedConversationId,
+        messages
+      );
+      
+      if (result.success && result.messages) {
+        // Clear local messages
+        await clearMessages(selectedConversationId);
+        
+        // Save new messages in batch
+        const messagePromises = result.messages.map(m => addMessage(selectedConversationId, m));
+        await Promise.all(messagePromises);
+        
+        // Update UI
+        setMessages(result.messages);
+      } else {
+        setTransientError("处理消息时出现了错误");
+        setTimeout(() => setTransientError(null), 5000);
+      }
+    } catch (e) {
+      setTransientError("处理消息时出现了错误");
+      setTimeout(() => setTransientError(null), 5000);
+    }
+  }, [selectedConversationId, clearMessages, addMessage, messages, messageService]);
+
+  // Add a new handler for deleting user messages
+  const handleDeleteUserMessage = useCallback(async (messageId: string, messageIndex: number) => {
+    if (!selectedConversationId) return;
+    try {
+      const result = await messageService.handleDeleteUserMessage(
+        messageId,
+        messageIndex,
+        selectedConversationId,
+        messages
+      );
+      
+      if (result.success && result.messages) {
+        // Clear local messages
+        await clearMessages(selectedConversationId);
+        
+        // Save new messages in batch
+        const messagePromises = result.messages.map(m => addMessage(selectedConversationId, m));
+        await Promise.all(messagePromises);
+        
+        // Update UI
+        setMessages(result.messages);
+      } else {
+        setTransientError("处理消息时出现了错误");
+        setTimeout(() => setTransientError(null), 5000);
+      }
+    } catch (e) {
+      setTransientError("处理消息时出现了错误");
+      setTimeout(() => setTransientError(null), 5000);
+    }
+  }, [selectedConversationId, clearMessages, addMessage, messages, messageService]);
+
+  // Add a new handler for editing user messages
+  const handleEditUserMessage = useCallback(async (messageId: string, messageIndex: number, newContent: string) => {
+    if (!selectedConversationId) return;
+    try {
+      const result = await messageService.handleEditUserMessage(
+        messageId,
+        messageIndex,
+        newContent,
+        selectedConversationId,
+        messages
+      );
+      
+      if (result.success && result.messages) {
+        // Clear local messages
+        await clearMessages(selectedConversationId);
+        
+        // Save new messages in batch
+        const messagePromises = result.messages.map(m => addMessage(selectedConversationId, m));
+        await Promise.all(messagePromises);
+        
+        // Update UI
+        setMessages(result.messages);
+      } else {
+        setTransientError("处理消息时出现了错误");
+        setTimeout(() => setTransientError(null), 5000);
+      }
+    } catch (e) {
+      setTransientError("处理消息时出现了错误");
+      setTimeout(() => setTransientError(null), 5000);
+    }
+  }, [selectedConversationId, clearMessages, addMessage, messages, messageService]);
+
+  // Replace the existing handleDeleteAiMessage with the new version using the service
+  const handleDeleteAiMessage = useCallback(async (messageId: string, aiIndex: number) => {
+    if (!selectedConversationId) return;
+    try {
+      const result = await messageService.handleDeleteAIMessage(
+        messageId,
+        aiIndex,
+        selectedConversationId,
+        messages
+      );
+      
+      if (result.success && result.messages) {
+        // Clear local messages
+        await clearMessages(selectedConversationId);
+        
+        // Save new messages in batch
+        const messagePromises = result.messages.map(m => addMessage(selectedConversationId, m));
+        await Promise.all(messagePromises);
+        
+        // Update UI
+        setMessages(result.messages);
+      } else {
+        setTransientError("处理消息时出现了错误");
+        setTimeout(() => setTransientError(null), 5000);
+      }
+    } catch (e) {
+      setTransientError("处理消息时出现了错误");
+      setTimeout(() => setTransientError(null), 5000);
+    }
+  }, [selectedConversationId, clearMessages, addMessage, messages, messageService]);
+
+
 
   // Handle WebView test
   const handleWebViewTest = useCallback(async () => {
@@ -1245,16 +1070,22 @@ const [hasRestoredLastConversation, setHasRestoredLastConversation] = useState(f
   const handleResetConversation = useCallback(async () => {
     if (selectedConversationId) {
       await clearMessages(selectedConversationId);
-      
+
       if (firstMessageSentRef.current[selectedConversationId]) {
         delete firstMessageSentRef.current[selectedConversationId];
       }
-      
+
       firstMesSentRef.current[selectedConversationId] = true;
-      
+
+      // === 修正：先清空界面消息，再强制刷新消息列表 ===
+      setMessages([]); // 立即清空UI
       setTimeout(async () => {
+        // 强制刷新消息列表
+        const refreshedMessages = await getMessages(selectedConversationId);
+        setMessages(refreshedMessages);
+
         if (characterToUse?.jsonData) {
-          if (messages.length > 0) {
+          if (refreshedMessages.length > 0) {
             console.log(`[first_mes] [reset] 当前界面已有消息，不发送first_mes到${selectedConversationId}`);
           } else {
             try {
@@ -1316,8 +1147,6 @@ const [hasRestoredLastConversation, setHasRestoredLastConversation] = useState(f
                   timestamp: Date.now()
                 });
                 
-                lastMessageTimeRef.current = Date.now();
-                setupAutoMessageTimer();
               }
             } catch (e) {
               console.error('Error adding first message after reset:', e);
@@ -1326,7 +1155,7 @@ const [hasRestoredLastConversation, setHasRestoredLastConversation] = useState(f
         }
       }, 300);
     }
-  }, [selectedConversationId, characterToUse, messages.length, addMessage]);
+  }, [selectedConversationId, characterToUse, messages.length, addMessage, clearMessages, getMessages]);
 
   // Handle select conversation
   const handleSelectConversation = useCallback((id: string) => {
@@ -1339,9 +1168,8 @@ const [hasRestoredLastConversation, setHasRestoredLastConversation] = useState(f
       setSelectedConversationId(id);
       setSelectedGroupId(null);
       setIsGroupMode(false);
-      // 动态加载该会话的消息
-      const msgs = getMessages(id);
-      setMessages([...msgs]);
+      // 只在切换会话时强制加载历史消息
+      getMessages(id).then(msgs => setMessages(msgs));
     }
     setIsSidebarVisible(false);
     Animated.timing(contentSlideAnim, {
@@ -1532,78 +1360,31 @@ const [hasRestoredLastConversation, setHasRestoredLastConversation] = useState(f
     });
   }, []);
 
-  // Set up auto message timer
-  const setupAutoMessageTimer = useCallback(() => {
-    if (autoMessageTimerRef.current) {
-      clearTimeout(autoMessageTimerRef.current);
-      autoMessageTimerRef.current = null;
-    }
-    
-    if (!autoMessageEnabled || !characterToUse?.id || waitingForUserReplyRef.current) {
-      return;
+  // Setup auto message when character or conversation changes
+  useEffect(() => {
+    if (characterToUse && selectedConversationId && user) {
+      autoMessageService.setupAutoMessage({
+        enabled: characterToUse.autoMessage === true,
+        intervalMinutes: characterToUse.autoMessageInterval || 5,
+        characterId: characterToUse.id,
+        conversationId: selectedConversationId,
+        character: characterToUse,
+        user: user,
+        messages: messages,
+        onMessageAdded: addMessage,
+        onUnreadCountUpdate: updateUnreadMessagesCount
+      });
+    } else if (selectedConversationId) {
+      // Clear auto message if character not available
+      autoMessageService.clearAutoMessage(selectedConversationId);
     }
 
-    if (characterToUse.autoMessage !== true) {
-      return;
-    }
-
-    autoMessageIntervalRef.current = characterToUse.autoMessageInterval || 5;
-    
-    const intervalMs = autoMessageIntervalRef.current * 60 * 1000;
-    
-    autoMessageTimerRef.current = setTimeout(async () => {
-      if (characterToUse && selectedConversationId) {
-        autoMessageTimerRef.current = null;
-        
-        try {
-          const uniqueAutoMsgId = `auto-${Date.now()}-${Math.random().toString(36).substring(2, 9)}`;
-          
-          const result = await NodeSTManager.processChatMessage({
-            userMessage: "[AUTO_MESSAGE] 用户已经一段时间没有回复了。请基于上下文和你的角色设定，主动发起一条合适的消息。这条消息应该自然，不要直接提及用户长时间未回复的事实。",
-            status: "同一角色继续对话",
-            conversationId: selectedConversationId,
-            apiKey: user?.settings?.chat?.characterApiKey || '',
-            apiSettings: {
-              apiProvider: user?.settings?.chat?.apiProvider || 'gemini',
-              openrouter: user?.settings?.chat?.openrouter,
-              useGeminiModelLoadBalancing: user?.settings?.chat.useGeminiModelLoadBalancing,
-              useGeminiKeyRotation: user?.settings?.chat.useGeminiKeyRotation,
-              additionalGeminiKeys: user?.settings?.chat.additionalGeminiKeys
-            },
-            character: characterToUse
-          });
-          
-          if (result.success && result.text) {
-            const aiMessageCount = messages.filter(m => m.sender === 'bot' && !m.isLoading).length;
-            
-            await addMessage(selectedConversationId, {
-              id: uniqueAutoMsgId,
-              text: result.text,
-              sender: 'bot',
-              timestamp: Date.now(),
-              metadata: {
-                isAutoMessageResponse: true,
-                aiIndex: aiMessageCount,
-                autoMessageCreatedAt: Date.now()
-              }
-            });
-            
-            lastMessageTimeRef.current = Date.now();
-            waitingForUserReplyRef.current = true;
-            
-            if (characterToUse.notificationEnabled === true) {
-              updateUnreadMessagesCount(1);
-            }
-          }
-        } catch (error) {
-          console.error('[App] Error generating auto message:', error);
-        }
+    return () => {
+      if (selectedConversationId) {
+        autoMessageService.clearAutoMessage(selectedConversationId);
       }
-    }, intervalMs);
-  }, [
-    autoMessageEnabled, characterToUse, selectedConversationId,
-    messages, user, addMessage, updateUnreadMessagesCount
-  ]);
+    };
+  }, [characterToUse, selectedConversationId, user, messages, addMessage, updateUnreadMessagesCount, autoMessageService]);
 
   // Initialize default characters and load preferences
   useEffect(() => {
@@ -1631,7 +1412,7 @@ const [hasRestoredLastConversation, setHasRestoredLastConversation] = useState(f
           setSelectedConversationId(result.characterId);
           
           if (result.imported) {
-            const characterMessages = getMessages(result.characterId);
+            const characterMessages = await getMessages(result.characterId);
             setMessages(characterMessages);
             console.log(`[index] 选择了新导入的默认角色：${result.characterId}`);
           }
@@ -1752,7 +1533,7 @@ useEffect(() => {
         const lastId = await AsyncStorage.getItem('lastConversationId');
         if (lastId && characters.some(char => char.id === lastId)) {
           setSelectedConversationId(lastId);
-          const characterMessages = getMessages(lastId);
+          const characterMessages = await getMessages(lastId);
           setMessages(characterMessages);
         }
       } catch (e) {
@@ -1878,81 +1659,81 @@ useEffect(() => {
       messages.length === 0 &&
       !firstMesSentRef.current[selectedConversationId]
     ) {
-      const actualMessages = getMessages(selectedConversationId);
-      if (actualMessages && actualMessages.length > 0) {
-        console.log(`[first_mes] [messages effect] getMessages(${selectedConversationId})已有${actualMessages.length}条消息，不发送first_mes`);
-      } else {
-        (async () => {
-          let firstMes = '';
-          try {
-            if (characterToUse.jsonData) {
-              const characterData = JSON.parse(characterToUse.jsonData);
-              firstMes = characterData.roleCard?.first_mes || '';
-              
-              // Apply regex scripts
-              try {
-                const globalSettings = typeof window !== 'undefined' && window.__globalSettingsCache
-                  ? window.__globalSettingsCache
-                  : await loadGlobalSettingsState();
+      getMessages(selectedConversationId).then(actualMessages => {
+        if (actualMessages && actualMessages.length > 0) {
+          console.log(`[first_mes] [messages effect] getMessages(${selectedConversationId})已有${actualMessages.length}条消息，不发送first_mes`);
+        } else {
+          (async () => {
+            let firstMes = '';
+            try {
+              if (characterToUse.jsonData) {
+                const characterData = JSON.parse(characterToUse.jsonData);
+                firstMes = characterData.roleCard?.first_mes || '';
+                
+                // Apply regex scripts
+                try {
+                  const globalSettings = typeof window !== 'undefined' && window.__globalSettingsCache
+                    ? window.__globalSettingsCache
+                    : await loadGlobalSettingsState();
                   
-                if (
-                  globalSettings &&
-                  globalSettings.regexEnabled &&
-                  Array.isArray(globalSettings.regexScriptGroups) &&
-                  globalSettings.regexScriptGroups.length > 0
-                ) {
-                  const matchedGroups = globalSettings.regexScriptGroups.filter(
-                    (g: any) =>
-                      (g.bindType === 'all') ||
-                      (g.bindType === 'character' && g.bindCharacterId === selectedConversationId)
-                  );
-                  
-                  const enabledScripts: any[] = [];
-                  matchedGroups.forEach((group: any) => {
-                    if (Array.isArray(group.scripts)) {
-                      group.scripts.forEach((s: any) => {
-                        if (!s.disabled) enabledScripts.push(s);
-                      });
-                    }
-                  });
-                  
-                  if (enabledScripts.length > 0) {
-                    let NodeSTCoreClass = null;
-                    try {
-                      NodeSTCoreClass = (await import('@/NodeST/nodest/core/node-st-core')).NodeSTCore;
-                    } catch (e) {}
+                  if (
+                    globalSettings &&
+                    globalSettings.regexEnabled &&
+                    Array.isArray(globalSettings.regexScriptGroups) &&
+                    globalSettings.regexScriptGroups.length > 0
+                  ) {
+                    const matchedGroups = globalSettings.regexScriptGroups.filter(
+                      (g: any) =>
+                        (g.bindType === 'all') ||
+                        (g.bindType === 'character' && g.bindCharacterId === selectedConversationId)
+                    );
                     
-                    if (NodeSTCoreClass && typeof NodeSTCoreClass.applyGlobalRegexScripts === 'function') {
-                      firstMes = NodeSTCoreClass.applyGlobalRegexScripts(
-                        firstMes,
-                        enabledScripts,
-                        2
-                      );
+                    const enabledScripts: any[] = [];
+                    matchedGroups.forEach((group: any) => {
+                      if (Array.isArray(group.scripts)) {
+                        group.scripts.forEach((s: any) => {
+                          if (!s.disabled) enabledScripts.push(s);
+                        });
+                      }
+                    });
+                    
+                    if (enabledScripts.length > 0) {
+                      let NodeSTCoreClass = null;
+                      try {
+                        NodeSTCoreClass = (await import('@/NodeST/nodest/core/node-st-core')).NodeSTCore;
+                      } catch (e) {}
+                      
+                      if (NodeSTCoreClass && typeof NodeSTCoreClass.applyGlobalRegexScripts === 'function') {
+                        firstMes = NodeSTCoreClass.applyGlobalRegexScripts(
+                          firstMes,
+                          enabledScripts,
+                          2
+                        );
+                      }
                     }
                   }
+                } catch (e) {
+                  // Ignore errors
                 }
-              } catch (e) {
-                // Ignore errors
               }
+            } catch (e) {
+              firstMes = '';
             }
-          } catch (e) {
-            firstMes = '';
-          }
-          
-          if (firstMes) {
-            console.log(`[first_mes] [messages effect] 发送first_mes到${selectedConversationId}:`, firstMes);
-            const result = await addMessage(selectedConversationId, {
-              id: `first-auto-${Date.now()}`,
-              text: firstMes,
-              sender: 'bot',
-              timestamp: Date.now()
-            });
-            firstMesSentRef.current[selectedConversationId] = true;
-          }
-        })();
-      }
+            
+            if (firstMes) {
+              console.log(`[first_mes] [messages effect] 发送first_mes到${selectedConversationId}:`, firstMes);
+              await addMessage(selectedConversationId, {
+                id: `first-auto-${Date.now()}`,
+                text: firstMes,
+                sender: 'bot',
+                timestamp: Date.now()
+              });
+              firstMesSentRef.current[selectedConversationId] = true;
+            }
+          })();
+        }
+      });
     }
-    
     // If messages not empty, mark first message as sent
     if (selectedConversationId && messages.length > 0) {
       firstMesSentRef.current[selectedConversationId] = true;
@@ -1977,9 +1758,14 @@ useEffect(() => {
   // Update messages when conversation changes
   useEffect(() => {
     if (selectedConversationId) {
-      const currentMessages = getMessages(selectedConversationId);
-      console.log(`[Index] Updating messages for conversation ${selectedConversationId}: ${currentMessages.length} messages`);
-      setMessages([...currentMessages]);
+      // 只有在 messages 为空时才自动加载历史消息，避免覆盖用户刚刚发送的消息
+      if (messages.length === 0) {
+        getMessages(selectedConversationId).then(currentMessages => {
+          console.log(`[Index] Updating messages for conversation ${selectedConversationId}: ${currentMessages.length} messages`);
+          setMessages(currentMessages);
+        });
+      }
+      // 否则，说明用户刚刚发送了消息，等待本地消息和AI回复，不做覆盖
     }
   }, [selectedConversationId, getMessages]);
 
@@ -1994,43 +1780,44 @@ useEffect(() => {
         setSelectedConversationId(characterId);
         console.log('[Index] Selected conversation set to:', characterId);
 
-        const characterMessages = getMessages(characterId);
-        console.log('[Index] Loaded messages count:', characterMessages.length);
-        setMessages(characterMessages);
+        getMessages(characterId).then(characterMessages => {
+          console.log('[Index] Loaded messages count:', characterMessages.length);
+          setMessages(characterMessages);
 
-        if (
-          characterMessages.length === 0 &&
-          !firstMessageSentRef.current[characterId]
-        ) {
-          if (messages.length > 0) {
-            console.log(`[first_mes] [param effect] 当前界面已有消息，不发送first_mes到${characterId}`);
-          } else {
-            (async () => {
-              const char = characters.find(c => c.id === characterId);
-              let firstMes = '';
-              try {
-                if (char?.jsonData) {
-                  const characterData = JSON.parse(char.jsonData);
-                  firstMes = characterData.roleCard?.first_mes || '';
+          if (
+            characterMessages.length === 0 &&
+            !firstMessageSentRef.current[characterId]
+          ) {
+            if (messages.length > 0) {
+              console.log(`[first_mes] [param effect] 当前界面已有消息，不发送first_mes到${characterId}`);
+            } else {
+              (async () => {
+                const char = characters.find(c => c.id === characterId);
+                let firstMes = '';
+                try {
+                  if (char?.jsonData) {
+                    const characterData = JSON.parse(char.jsonData);
+                    firstMes = characterData.roleCard?.first_mes || '';
+                  }
+                } catch (e) {
+                  firstMes = '';
                 }
-              } catch (e) {
-                firstMes = '';
-              }
-              if (firstMes) {
-                console.log(`[first_mes] [param effect] 发送first_mes到${characterId}:`, firstMes);
-                addMessage(characterId, {
-                  id: `first-create-${Date.now()}`,
-                  text: firstMes,
-                  sender: 'bot',
-                  timestamp: Date.now()
-                });
-                firstMessageSentRef.current[characterId] = true;
-              }
-            })();
+                if (firstMes) {
+                  console.log(`[first_mes] [param effect] 发送first_mes到${characterId}:`, firstMes);
+                  await addMessage(characterId, {
+                    id: `first-create-${Date.now()}`,
+                    text: firstMes,
+                    sender: 'bot',
+                    timestamp: Date.now()
+                  });
+                  firstMessageSentRef.current[characterId] = true;
+                }
+              })();
+            }
+          } else if (characterMessages.length > 0) {
+            firstMessageSentRef.current[characterId] = true;
           }
-        } else if (characterMessages.length > 0) {
-          firstMessageSentRef.current[characterId] = true;
-        }
+        });
       } else {
         console.warn('[Index] Character not found in characters array:', characterId);
       }
@@ -2039,36 +1826,14 @@ useEffect(() => {
     }
   }, [characterId, characters, getMessages, messages, addMessage]);
 
-  // Auto message timer setup
-  useEffect(() => {
-    if (characterToUse) {
-      const newAutoMessageEnabled = characterToUse.autoMessage === true;
-      
-      if (autoMessageEnabled !== newAutoMessageEnabled) {
-        console.log(`[App] Auto message setting changed to: ${newAutoMessageEnabled}`);
-        setAutoMessageEnabled(newAutoMessageEnabled);
-      }
-      
-      autoMessageIntervalRef.current = characterToUse.autoMessageInterval || 5;
-      
-      if (newAutoMessageEnabled) {
-        setTimeout(() => {
-          setupAutoMessageTimer();
-        }, 100);
-      } else if (autoMessageTimerRef.current) {
-        clearTimeout(autoMessageTimerRef.current);
-        autoMessageTimerRef.current = null;
-        console.log('[App] Auto message timer cleared due to setting change');
-      }
-    }
 
+  // Cleanup auto message service on unmount
+  useEffect(() => {
     return () => {
-      if (autoMessageTimerRef.current) {
-        clearTimeout(autoMessageTimerRef.current);
-        autoMessageTimerRef.current = null;
-      }
+      autoMessageService.clearAll();
     };
-  }, [characterToUse, setupAutoMessageTimer]);
+  }, [autoMessageService]);
+
 
   // TTS enhancer settings listener
   useEffect(() => {
@@ -2089,14 +1854,6 @@ useEffect(() => {
       }
     };
   }, []);
-
-  // Reset auto message timer when messages change
-  useEffect(() => {
-    if (messages.length > 0) {
-      lastMessageTimeRef.current = Date.now();
-      setupAutoMessageTimer();
-    }
-  }, [messages, setupAutoMessageTimer]);
 
   // Handle keyboard events
   useEffect(() => {
@@ -2557,7 +2314,6 @@ useEffect(() => {
                       style={StyleSheet.flatten([styles.chatDialog])}
                       selectedCharacter={characterToUse}
                       onRateMessage={() => {}} // Rating functionality removed
-                      onRegenerateMessage={handleRegenerateMessage}
                       savedScrollPosition={characterToUse?.id ? chatScrollPositions[characterToUse.id] : undefined}
                       onScrollPositionChange={handleScrollPositionChange}
                       messageMemoryState={messageMemoryState}
@@ -2566,8 +2322,11 @@ useEffect(() => {
                       isHistoryModalVisible={isHistoryModalVisible}
                       setHistoryModalVisible={setHistoryModalVisible}
                       onShowFullHistory={handleShowFullHistory}
-                      onEditMessage={handleEditAiMessage}
-                      onDeleteMessage={handleDeleteAiMessage}
+                      onDeleteAiMessage={handleDeleteAIMessage}
+                      onEditAiMessage={handleEditAiMessage}
+                      onDeleteUserMessage={handleDeleteUserMessage}
+                      onEditUserMessage={handleEditUserMessage}
+                      onRegenerateMessage={handleRegenerateMessage}
                     />
                   )}
                 </View>
@@ -2647,6 +2406,13 @@ useEffect(() => {
                   onSaveCreated={handleSaveCreated}
                   onLoadSave={handleLoadSave}
                   onPreviewSave={handlePreviewSave}
+                  // 新增：onChatRestored 回调，强制刷新消息列表
+                  onChatRestored={async () => {
+                    if (selectedConversationId) {
+                      const refreshed = await getMessages(selectedConversationId);
+                      setMessages(refreshed);
+                    }
+                  }}
                 />
               )}
               
@@ -2675,6 +2441,7 @@ useEffect(() => {
               >
                 <Text style={styles.floatingLogButtonText}>Web</Text>
               </TouchableOpacity> */}
+              
             </View>
           </KeyboardAvoidingView>
         </Animated.View>
@@ -2893,11 +2660,6 @@ const styles = StyleSheet.create({
     shadowOffset: { width: 0, height: 2 },
     shadowOpacity: 0.25,
     shadowRadius: 4,
-  },
-  floatingLogButtonText: {
-    color: '#fff',
-    fontWeight: 'bold',
-    fontSize: 28,
   },
   transientErrorContainer: {
     position: 'absolute',

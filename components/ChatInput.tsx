@@ -32,6 +32,9 @@ import { updateAuthorNoteDataForCharacter } from '@/app/pages/character-detail';
 import { InputImagen } from '@/services/InputImagen'; 
 import { CloudServiceProvider } from '@/services/cloud-service-provider'; 
 import { getApiSettings } from '@/utils/settings-helper'; 
+import { TableMemoryService } from '@/services/table-memory-service'; // 新增
+import { TableMemory } from '@/src/memory';
+import MemoOverlay from './MemoOverlay'; // 新增：引入MemoOverlay
 interface ChatInputProps {
   onSendMessage: (text: string, sender: 'user' | 'bot', isLoading?: boolean, metadata?: Record<string, any>) => void;
   selectedConversationId: string | null;
@@ -195,12 +198,37 @@ const ChatInput: React.FC<ChatInputProps> = ({
     const messageToSend = text.trim();
     setText('');
     setIsLoading(true);
-    
+
+    // 新增：获取记忆系统开关状态
+    let tableMemoryEnabled = false;
+    let vectorMemoryEnabled = false;
+    try {
+      const settings = await (MemoOverlay as any).getSettings?.();
+      if (settings) {
+        tableMemoryEnabled = !!settings.tableMemoryEnabled;
+        vectorMemoryEnabled = !!settings.vectorMemoryEnabled;
+      }
+    } catch (e) {
+      // 默认不开启
+    }
+
+    // 新增：判断 useZhipuEmbedding
+    const apiSettings = getApiSettings();
+    const useZhipuEmbedding = !!apiSettings.useZhipuEmbedding;
+
     try {
       const processedMessage = applyRegexTools(messageToSend, 'user');
       const isImageRelated = processedMessage.includes('![') && processedMessage.includes(')');
       
-      if (selectedCharacter?.id && !isImageRelated) {
+      // === 记忆系统分支 ===
+      let userMemoryAdded = false;
+      if (
+        selectedCharacter?.id &&
+        !isImageRelated &&
+        vectorMemoryEnabled &&
+        useZhipuEmbedding
+      ) {
+        // 仅在向量记忆开关和zhipu api都开启时调用Mem0Service
         try {
           console.log('[ChatInput] 尝试检索与用户消息相关的记忆');
           const mem0Service = Mem0Service.getInstance();
@@ -214,20 +242,7 @@ const ChatInput: React.FC<ChatInputProps> = ({
           const resultCount = memoryResults?.results?.length || 0;
           if (resultCount > 0) {
             console.log(`[ChatInput] 为用户消息找到 ${resultCount} 条相关记忆:`);
-            
-            interface MemoryResult {
-              memory: string;
-              score: number;
-              metadata?: {
-                aiResponse?: string;
-              };
-            }
-
-            interface MemorySearchResults {
-              results: MemoryResult[];
-            }
-
-            (memoryResults as MemorySearchResults).results.forEach((item: MemoryResult, index: number) => {
+            (memoryResults as any).results.forEach((item: any, index: number) => {
               console.log(`[ChatInput] 记忆 #${index + 1}:`);
               console.log(`  内容: ${item.memory}`);
               console.log(`  相似度: ${item.score}`);
@@ -242,11 +257,16 @@ const ChatInput: React.FC<ChatInputProps> = ({
           console.warn('[ChatInput] 搜索相关记忆失败:', searchError);
         }
       }
-      
+
       onSendMessage(processedMessage, 'user');
       
-      let userMemoryAdded = false;
-      if (selectedCharacter?.id && !isImageRelated) {
+      // === 用户消息添加到向量记忆 ===
+      if (
+        selectedCharacter?.id &&
+        !isImageRelated &&
+        vectorMemoryEnabled &&
+        useZhipuEmbedding
+      ) {
         try {
           const mem0Service = Mem0Service.getInstance();
           await mem0Service.addChatMemory(
@@ -262,7 +282,7 @@ const ChatInput: React.FC<ChatInputProps> = ({
         }
       }
       
-      onSendMessage('', 'bot', true);
+      onSendMessage('', 'bot', true); // 只插入一次 loading
       
       // console.log('[ChatInput] 开始同一角色继续对话处理...');
       // console.log(`[ChatInput] 用户消息: "${messageToSend}"`);
@@ -276,8 +296,7 @@ const ChatInput: React.FC<ChatInputProps> = ({
         status: '同一角色继续对话',
         conversationId: conversationId,
         apiKey: user?.settings?.chat.characterApiKey || '',
-        apiSettings: getApiSettings(), 
-        // 新增：传递gemini模型和retryDelay参数
+        apiSettings: apiSettings,
         geminiOptions: {
           geminiPrimaryModel: user?.settings?.chat.geminiPrimaryModel,
           geminiBackupModel: user?.settings?.chat.geminiBackupModel,
@@ -287,19 +306,67 @@ const ChatInput: React.FC<ChatInputProps> = ({
         characterId: selectedCharacter?.id,
       });
 
-      console.log('[ChatInput] 处理结果:', {
-        success: result.success,
-        responseLength: result.text?.length || 0,
-        error: result.error || null
-      });
-            // === AI回复流程结束，立即允许输入 ===
-            setIsLoading(false);
+      setIsLoading(false);
 
       if (result.success) {
         const processedResponse = applyRegexTools(result.text || '抱歉，未收到有效回复。', 'ai');
-        onSendMessage(processedResponse, 'bot');
+        onSendMessage(processedResponse, 'bot'); // 只调用一次
         
-        if (userMemoryAdded && selectedCharacter?.id && !isImageRelated) {
+        // === 表格记忆服务，仅在表格记忆开关开启时调用 ===
+        if (
+          selectedCharacter?.id &&
+          !isImageRelated &&
+          tableMemoryEnabled
+        ) {
+          (async () => {
+            try {
+              // 获取最近10条消息
+              const recentMessages = await StorageAdapter.getRecentMessages(selectedConversationId, 10);
+              // 转换为 TableMemoryService 需要的格式
+              const messages = recentMessages
+                .map(msg => {
+                  let role: 'user' | 'assistant' | undefined;
+                  if (msg.role === 'user') role = 'user';
+                  else if (msg.role === 'model' || msg.role === 'assistant') role = 'assistant';
+                  else return undefined;
+                  return {
+                    role,
+                    content: msg.parts?.[0]?.text || ''
+                  };
+                })
+                .filter(Boolean) as { role: 'user' | 'assistant'; content: string }[];
+
+            // 获取所有表格，构建名称到sheetId映射
+            const tableDataResult = await TableMemory.getCharacterTablesData(selectedCharacter.id, selectedConversationId);
+            const tableNameToId: Record<string, string> = {};
+            if (tableDataResult?.tables?.length) {
+              tableDataResult.tables.forEach(tbl => {
+                tableNameToId[tbl.name] = tbl.id;
+              });
+            }
+
+            // 调用表格记忆服务，传递表名到ID映射
+            await TableMemoryService.process({
+              characterId: selectedCharacter.id,
+              conversationId: selectedConversationId,
+              messages,
+              tableNameToId
+            });
+            console.log('[ChatInput] 表格记忆服务已异步处理完成');
+          } catch (e) {
+            console.warn('[ChatInput] 表格记忆服务处理失败:', e);
+          }
+        })();
+        }
+
+        // === AI回复添加到向量记忆 ===
+        if (
+          userMemoryAdded &&
+          selectedCharacter?.id &&
+          !isImageRelated &&
+          vectorMemoryEnabled &&
+          useZhipuEmbedding
+        ) {
           try {
             const mem0Service = Mem0Service.getInstance();
             
@@ -317,7 +384,7 @@ const ChatInput: React.FC<ChatInputProps> = ({
           } catch (memoryError) {
             console.error('[ChatInput] 添加AI回复到记忆系统失败:', memoryError);
           }
-        } else if (!userMemoryAdded) {
+        } else if (!userMemoryAdded && vectorMemoryEnabled && useZhipuEmbedding) {
           console.log('[ChatInput] 由于用户消息未成功添加到记忆，跳过添加AI回复');
         }
       } else {

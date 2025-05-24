@@ -2,7 +2,6 @@ import { ImageSourcePropType, ViewStyle, StyleProp } from 'react-native';
 import { User, Character, Message, CirclePost } from '../shared/types';
 import { CradleCharacter } from '../shared/types';
 
-
 // 只保留 Context 相关类型
 export interface CradleSettingsProps {
   isVisible: boolean;
@@ -32,10 +31,11 @@ export interface CharactersContextType {
   getApiKey: () => string;
   getCharacterConversationId: (characterId: string) => string | undefined;
   updateCharacter: (character: Character) => Promise<void>;
-  getMessages: (conversationId: string) => Message[];
+  getMessages: (conversationId: string) => Promise<Message[]>;
   addMessage: (conversationId: string, message: Message) => Promise<void>;
   clearMessages: (conversationId: string) => Promise<void>;
   removeMessage: (conversationId: string, messageId: string) => Promise<void>;
+  
   addMemo: (content: string) => Promise<void>;
   updateMemo: (id: string, content: string) => Promise<void>;
   deleteMemo: (id: string) => Promise<void>;

@@ -3,6 +3,7 @@ import * as FileSystem from 'expo-file-system';
 import { ChatHistoryEntity, ChatMessage, } from '../../../shared/types';
 import { CircleMemory } from '../../../shared/types/circle-types';
 import { GlobalPresetConfig, GlobalWorldbookConfig, WorldBookJson, PresetJson } from '../../../shared/types';
+import { NodeSTCore } from '../core/node-st-core';
 
 /**
  * StorageAdapter provides a clean interface for managing chat-related storage operations,
@@ -89,12 +90,20 @@ export class StorageAdapter {
       }
 
       // Filter to include only real user/AI messages (no D-entries, no framework)
-      const cleanedMessages = chatHistory.parts.filter(message => {
-        // Only include actual conversation messages (exclude D entries and system messages)
-        return (!message.is_d_entry &&
-          (message.role === "user" || message.role === "model" || message.role === "assistant") &&
-          message.parts?.[0]?.text);
-      });
+      const cleanedMessages = chatHistory.parts
+        .filter(message => {
+          // Only include actual conversation messages (exclude D entries and system messages)
+          return (!message.is_d_entry &&
+            (message.role === "user" || message.role === "model" || message.role === "assistant") &&
+            message.parts?.[0]?.text);
+        })
+        .map((message, index) => {
+          // Add messageIndex to each message
+          return {
+            ...message,
+            messageIndex: index
+          };
+        });
 
       console.log(`[StorageAdapter] Retrieved ${cleanedMessages.length} clean messages`);
 
@@ -785,5 +794,100 @@ export class StorageAdapter {
    */
   static async loadSelectedGlobalRegexScriptId(): Promise<string | null> {
     return await AsyncStorage.getItem('nodest_selected_global_regex_script_id');
+  }
+
+  /**
+   * 删除指定 AI 消息及其对应的用户消息
+   */
+  static async deleteAiMessageByIndex(conversationId: string, messageIndex: number, apiKey: string): Promise<boolean> {
+    const core = new NodeSTCore(apiKey);
+    return await core.deleteAiMessageByIndex(conversationId, messageIndex);
+  }
+
+  /**
+   * 编辑指定 AI 消消息内容
+   */
+  static async editAiMessageByIndex(conversationId: string, messageIndex: number, newContent: string, apiKey: string): Promise<boolean> {
+    const core = new NodeSTCore(apiKey);
+    return await core.editAiMessageByIndex(conversationId, messageIndex, newContent);
+  }
+
+  /**
+   * 重生成指定 AI 消息
+   */
+  static async regenerateAiMessageByIndex(
+    conversationId: string,
+    messageIndex: number,
+    apiKey: string,
+    characterId?: string,
+    customUserName?: string,
+    apiSettings?: any,
+    onStream?: (delta: string) => void
+  ): Promise<string | null> {
+    const core = new NodeSTCore(apiKey, apiSettings);
+    return await core.regenerateFromMessage(conversationId, messageIndex, apiKey, characterId, customUserName, apiSettings, onStream);
+  }
+
+  /**
+   * 删除指定用户消息及其对应的AI消息
+   */
+  static async deleteUserMessageByIndex(conversationId: string, messageIndex: number, apiKey: string): Promise<boolean> {
+    const core = new NodeSTCore(apiKey);
+    return await core.deleteUserMessageByIndex(conversationId, messageIndex);
+  }
+
+  /**
+   * 编辑指定用户消息内容
+   */
+  static async editUserMessageByIndex(conversationId: string, messageIndex: number, newContent: string, apiKey: string): Promise<boolean> {
+    const core = new NodeSTCore(apiKey);
+    return await core.editUserMessageByIndex(conversationId, messageIndex, newContent);
+  }
+
+  /**
+   * 备份指定会话的聊天历史到带时间戳的备份文件
+   * @param conversationId 会话ID
+   * @param timestamp 备份时间戳（建议为Date.now()）
+   * @returns true/false
+   */
+  static async backupChatHistory(conversationId: string, timestamp: number): Promise<boolean> {
+    // 这里无需API key，仅做本地文件操作
+    const core = new NodeSTCore('');
+    return await core.backupChatHistory(conversationId, timestamp);
+  }
+
+  /**
+   * 通过conversationId和时间戳，从备份文件恢复聊天历史
+   * @param conversationId 会话ID
+   * @param timestamp 备份时间戳
+   * @returns true/false
+   */
+  static async restoreChatHistoryFromBackup(conversationId: string, timestamp: number): Promise<boolean> {
+    try {
+      const backupKey = `nodest_${conversationId}_history_backup_${timestamp}`;
+      const filePath = StorageAdapter.characterDataDir + backupKey + '.json';
+      const fileInfo = await FileSystem.getInfoAsync(filePath);
+      if (!fileInfo.exists) {
+        console.error(`[StorageAdapter] restoreChatHistoryFromBackup: 备份文件不存在: ${filePath}`);
+        return false;
+      }
+      const content = await FileSystem.readAsStringAsync(filePath);
+      const chatHistory = JSON.parse(content);
+
+      // === 新增：打印备份文件内容的消息数量和摘要 ===
+      if (chatHistory && Array.isArray(chatHistory.parts)) {
+        console.log(`[StorageAdapter] 备份文件消息数: ${chatHistory.parts.length}`);
+        chatHistory.parts.slice(0, 3).forEach((msg: any, idx: number) => {
+          console.log(`[StorageAdapter] 备份消息#${idx + 1}: ${msg.role} - ${msg.parts?.[0]?.text?.substring(0, 50)}`);
+        });
+      }
+      // ===
+
+      const core = new NodeSTCore('');
+      return await core.restoreChatHistory(conversationId, chatHistory);
+    } catch (error) {
+      console.error('[StorageAdapter] restoreChatHistoryFromBackup error:', error);
+      return false;
+    }
   }
 }

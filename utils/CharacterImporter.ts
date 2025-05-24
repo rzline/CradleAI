@@ -190,7 +190,7 @@ export class CharacterImporter {
   }
 
   /**
-   * 支持导入Json格式的角色卡（格式需包含roleCard/worldBook/preset）
+   * 支持导入Json格式的角色卡（格式需包含roleCard/worldBook/preset，或为扁平结构）
    * @param filePath 本地json文件路径
    */
   static async importFromJson(filePath: string): Promise<{
@@ -200,36 +200,121 @@ export class CharacterImporter {
     extractedName: string;
     backgroundImage?: string;
     alternateGreetings?: string[]; // 新增
+    regexScripts?: any[]; // 新增
     originalJson?: string; // 新增
   }> {
     try {
       let content = await FileSystem.readAsStringAsync(filePath);
       content = content.replace(/^\uFEFF/, '').trim();
       const data = JSON.parse(content);
-      if (!data.roleCard || !data.worldBook) {
-        throw new Error('JSON文件缺少roleCard或worldBook字段');
-      }
-      const roleCard: RoleCardJson = data.roleCard;
-      const worldBook: WorldBookJson = data.worldBook;
-      const preset: PresetJson | undefined = data.preset;
-      const extractedName = roleCard.name || '';
-      let backgroundImage: string | undefined = data.backgroundImage;
-      // 如果backgroundImage为本地文件路径，尝试转为base64
-      if (backgroundImage && backgroundImage.startsWith('file://')) {
-        try {
-          const base64Image = await FileSystem.readAsStringAsync(backgroundImage, {
-            encoding: FileSystem.EncodingType.Base64,
-          });
-          backgroundImage = `data:image/png;base64,${base64Image}`;
-        } catch {}
+
+      // 1. 兼容原有格式（含roleCard/worldBook字段）
+      if (data.roleCard && data.worldBook) {
+        const roleCard: RoleCardJson = data.roleCard;
+        const worldBook: WorldBookJson = data.worldBook;
+        const preset: PresetJson | undefined = data.preset;
+        const extractedName = roleCard.name || '';
+        let backgroundImage: string | undefined = data.backgroundImage;
+        // 如果backgroundImage为本地文件路径，尝试转为base64
+        if (backgroundImage && backgroundImage.startsWith('file://')) {
+          try {
+            const base64Image = await FileSystem.readAsStringAsync(backgroundImage, {
+              encoding: FileSystem.EncodingType.Base64,
+            });
+            backgroundImage = `data:image/png;base64,${base64Image}`;
+          } catch {}
+        }
+        let alternateGreetings: string[] | undefined;
+        if (Array.isArray(data.data?.alternate_greetings)) {
+          alternateGreetings = data.data.alternate_greetings;
+        }
+        return { roleCard, worldBook, preset, extractedName, backgroundImage, alternateGreetings, originalJson: content };
       }
 
+      // 2. 新增：兼容扁平结构（无chara/roleCard/worldBook字段）
+      // 复用importFromPNG的逻辑
+      // 构造chara对象
+      const chara = {
+        name: data.name || '',
+        description: data.description || '',
+        personality: data.personality || '',
+        scenario: data.scenario || '',
+        first_mes: data.first_mes || '',
+        mes_example: data.mes_example || '',
+        data: data.data || {},
+      };
+
+      // 构造PNGParser.readPNGChunks的返回结构
+      const fakePngData = {
+        chara,
+        charaRaw: content,
+        data,
+      };
+
+      // 复用importFromPNG的核心逻辑
+      // 只调用部分逻辑，不读图片
+      // 提取名字
+      const extractedName = chara.name || '';
+      if (!extractedName) {
+        throw new Error('JSON文件缺少name字段');
+      }
+
+      const roleCard: RoleCardJson = {
+        name: extractedName,
+        first_mes: chara.first_mes || '',
+        description: chara.description || '',
+        personality: chara.personality || '',
+        scenario: chara.scenario || '',
+        mes_example: chara.mes_example || '',
+        data: {
+          extensions: {
+            regex_scripts: []
+          }
+        }
+      };
+
+      // 兼容世界书结构
+      let worldBook: WorldBookJson = { entries: {} };
+      if (chara.data?.character_book?.entries) {
+        chara.data.character_book.entries.forEach((entry: any, index: number) => {
+          const normalizedEntry = this.normalizeWorldBookEntry(entry, index);
+          worldBook.entries[`entry_${index}`] = normalizedEntry;
+        });
+      }
+
+      // alternateGreetings
       let alternateGreetings: string[] | undefined;
-      if (Array.isArray(data.data?.alternate_greetings)) {
-        alternateGreetings = data.data.alternate_greetings;
+      if (Array.isArray(chara.data?.alternate_greetings)) {
+        alternateGreetings = chara.data.alternate_greetings;
+      } else if (Array.isArray(data.alternate_greetings)) {
+        alternateGreetings = data.alternate_greetings;
+      }
+      if (alternateGreetings && alternateGreetings.length > 0 && roleCard.first_mes) {
+        if (!alternateGreetings.includes(roleCard.first_mes)) {
+          alternateGreetings = [roleCard.first_mes, ...alternateGreetings];
+        }
+      } else if (roleCard.first_mes) {
+        alternateGreetings = [roleCard.first_mes];
       }
 
-      return { roleCard, worldBook, preset, extractedName, backgroundImage, alternateGreetings, originalJson: content };
+      // regexScripts
+      let regexScripts: any[] | undefined = undefined;
+      if (Array.isArray(chara.data?.extensions?.regex_scripts)) {
+        regexScripts = chara.data.extensions.regex_scripts;
+      }
+
+      // backgroundImage: 不处理
+      let backgroundImage: string | undefined = undefined;
+
+      return {
+        roleCard,
+        worldBook,
+        extractedName,
+        backgroundImage,
+        alternateGreetings,
+        regexScripts,
+        originalJson: content
+      };
     } catch (e) {
       throw new Error('导入JSON角色卡失败: ' + (e instanceof Error ? e.message : '未知错误'));
     }

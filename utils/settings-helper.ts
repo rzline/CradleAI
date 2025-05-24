@@ -72,6 +72,20 @@ export function storeUserSettingsGlobally(settings: GlobalSettings): void {
       }
     }
     
+    // 新增：同步zhipuApiKey到AsyncStorage和localStorage
+    if (settings.chat?.zhipuApiKey) {
+      try {
+        // @ts-ignore
+        const AsyncStorage = require('@react-native-async-storage/async-storage').default;
+        AsyncStorage.setItem('zhipu_api_key', settings.chat.zhipuApiKey);
+      } catch (e) {
+        // 忽略web端或require失败
+      }
+      if (typeof localStorage !== 'undefined') {
+        localStorage.setItem('zhipu_api_key', settings.chat.zhipuApiKey);
+      }
+    }
+
     console.log('[SettingsHelper] User settings stored globally');
     
     // Update cloud service status when settings are updated

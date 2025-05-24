@@ -9,7 +9,9 @@ import {
   TextInput,
   Image,
   Alert,
-  ActivityIndicator
+  ActivityIndicator,
+  Platform,
+  Dimensions
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { chatSaveService } from '@/services/ChatSaveService';
@@ -19,6 +21,7 @@ import { BlurView } from 'expo-blur';
 import { theme } from '@/constants/theme';
 import { formatDate } from '@/utils/dateUtils';
 import { NodeSTManager } from '@/utils/NodeSTManager';
+import { StorageAdapter } from '@/NodeST/nodest/utils/storage-adapter';
 
 interface SaveManagerProps {
   visible: boolean;
@@ -31,6 +34,7 @@ interface SaveManagerProps {
   onSaveCreated?: (save: ChatSave) => void;
   onLoadSave?: (save: ChatSave) => void;
   onPreviewSave?: (save: ChatSave) => void;
+  onChatRestored?: () => void; // New callback for when chat is restored
 }
 
 const SaveManager: React.FC<SaveManagerProps> = ({
@@ -43,7 +47,8 @@ const SaveManager: React.FC<SaveManagerProps> = ({
   messages,
   onSaveCreated,
   onLoadSave,
-  onPreviewSave
+  onPreviewSave,
+  onChatRestored
 }) => {
   const [tab, setTab] = useState<'load' | 'save' | 'import'>('load');
   const [saveDescription, setSaveDescription] = useState('');
@@ -86,6 +91,8 @@ const SaveManager: React.FC<SaveManagerProps> = ({
     
     setLoading(true);
     try {
+      console.log('[SaveManager] Creating backup save...');
+      
       const newSave = await chatSaveService.saveChat(
         conversationId,
         characterId,
@@ -102,10 +109,48 @@ const SaveManager: React.FC<SaveManagerProps> = ({
         onSaveCreated(newSave);
       }
       
-      Alert.alert('进度已保存');
+      Alert.alert(
+        '备份成功', 
+        `对话已备份为: "${saveDescription}"\n\n备份时间戳: ${newSave.backupTimestamp || newSave.timestamp}`
+      );
     } catch (error) {
       console.error('Error creating save:', error);
       Alert.alert('Error', 'Failed to save chat state.');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  // 新增：创建空白存档
+  const handleCreateBlankSave = async () => {
+    if (!conversationId) {
+      Alert.alert('Error', '无法创建空白存档 - 缺少会话ID。');
+      return;
+    }
+    if (!saveDescription.trim()) {
+      Alert.alert('Error', '请输入存档描述。');
+      return;
+    }
+    setLoading(true);
+    try {
+      const newSave = await chatSaveService.saveChat(
+        conversationId,
+        characterId,
+        characterName,
+        [], // 空白消息
+        saveDescription,
+        characterAvatar
+      );
+      setSaveDescription('');
+      setSaves(prev => [newSave, ...prev]);
+      if (onSaveCreated) onSaveCreated(newSave);
+      Alert.alert(
+        '空白存档已创建',
+        `已创建空白存档: "${saveDescription}"\n\n备份时间戳: ${newSave.backupTimestamp || newSave.timestamp}`
+      );
+    } catch (error) {
+      console.error('Error creating blank save:', error);
+      Alert.alert('Error', '创建空白存档失败。');
     } finally {
       setLoading(false);
     }
@@ -144,7 +189,7 @@ const SaveManager: React.FC<SaveManagerProps> = ({
     if (onLoadSave) {
       Alert.alert(
         'Load Save',
-        `Are you sure you want to restore chat to: "${save.description}"?\n\nThis will replace your current chat state.`,
+        `Are you sure you want to restore chat to: "${save.description}"?\n\nThis will replace your current chat state with the backup from ${formatDate(save.timestamp)}.`,
         [
           {
             text: 'Cancel',
@@ -155,37 +200,52 @@ const SaveManager: React.FC<SaveManagerProps> = ({
             onPress: async () => {
               setLoading(true);
               try {
-                // First restore the NodeST chat history directly with AsyncStorage
-                if (save.nodestChatHistory) {
-                  console.log('[SaveManager] Restoring NodeST chat history before UI update');
-                  
-                  // First use NodeSTManager to restore
-                  const restored = await NodeSTManager.restoreChatHistory({
-                    conversationId: conversationId,
-                    chatHistory: save.nodestChatHistory
-                  });
-                  
-                  // Fall back to ChatSaveService if needed
-                  if (!restored) {
-                    console.log('[SaveManager] Falling back to ChatSaveService for history restoration');
-                    await chatSaveService.restoreNodeSTChatHistory(
-                      conversationId,
-                      save
-                    );
-                  }
-                  
-                  console.log('[SaveManager] NodeST chat history restoration complete');
-                } else {
-                  console.warn('[SaveManager] Save does not contain NodeST chat history');
+                console.log('[SaveManager] Starting chat restoration...');
+                
+                // Use the new backup-based restoration
+                const restored = await chatSaveService.restoreChatFromBackup(conversationId, save);
+                
+                if (!restored) {
+                  throw new Error('Failed to restore chat from backup');
                 }
                 
-                // Now call the onLoadSave callback to update UI
+                console.log('[SaveManager] Chat history restoration complete');
+
+                // === 新增：恢复后主动读取最新聊天历史并打印日志 ===
+                try {
+                  const latestHistory = await StorageAdapter.getCleanChatHistory(conversationId);
+                  console.log(`[SaveManager] 恢复后聊天历史消息数: ${latestHistory.length}`);
+                  latestHistory.slice(0, 3).forEach((msg, idx) => {
+                    console.log(`[SaveManager] 恢复后消息#${idx + 1}: ${msg.role} - ${msg.parts?.[0]?.text?.substring(0, 50)}`);
+                  });
+                } catch (logErr) {
+                  console.warn('[SaveManager] 恢复后读取聊天历史失败:', logErr);
+                }
+                // ===
+
+                // 新增：如果是空白存档，立即通知父组件刷新消息列表
+                if (save.messages.length === 0 && onChatRestored) {
+                  onChatRestored();
+                }
+
+                // Update UI with restored messages
                 onLoadSave(save);
-                
+
+                // Notify parent component that chat was restored (非空白存档时)
+                if (save.messages.length > 0 && onChatRestored) {
+                  onChatRestored();
+                }
+
+                Alert.alert(
+                  '恢复成功', 
+                  `对话已恢复到: "${save.description}"\n恢复的消息数量: ${save.messages.length}`
+                );
+
                 setLoading(false);
+                onClose(); // Close the modal after successful restoration
               } catch (error) {
                 console.error('[SaveManager] Error restoring chat state:', error);
-                Alert.alert('Error', 'Failed to restore chat state.');
+                Alert.alert('Error', 'Failed to restore chat state from backup.');
                 setLoading(false);
               }
             }
@@ -304,6 +364,11 @@ const SaveManager: React.FC<SaveManagerProps> = ({
             </Text>
             <Text style={styles.saveTimestamp}>{formatDate(item.timestamp)}</Text>
             <Text style={styles.savePreviewText}>{item.previewText}</Text>
+            {item.backupTimestamp && (
+              <Text style={styles.backupInfo}>
+                备份ID: {item.backupTimestamp}
+              </Text>
+            )}
           </View>
         </View>
       </TouchableOpacity>
@@ -333,16 +398,26 @@ const SaveManager: React.FC<SaveManagerProps> = ({
     </View>
   );
 
+  // 响应式全屏尺寸
+  const { width, height } = Dimensions.get('window');
+
   return (
     <Modal
       visible={visible}
-      transparent={true}
+      transparent={false}
       animationType="fade"
       onRequestClose={onClose}
     >
-      <BlurView intensity={30} style={styles.container} tint="dark">
-        <View style={styles.modal}>
-          <View style={styles.header}>
+      <BlurView
+        intensity={30}
+        style={[
+          styles.container,
+          { width, height, minHeight: height, minWidth: width }
+        ]}
+        tint="dark"
+      >
+        <View style={[styles.modal, { width, height, borderRadius: 0, maxWidth: undefined, maxHeight: undefined, padding: 0 }]}>
+          <View style={[styles.header, { paddingTop: Platform.OS === 'ios' ? 48 : 24, paddingHorizontal: 20 }]}>
             <Text style={styles.title}>存档管理</Text>
             <TouchableOpacity onPress={onClose} style={styles.closeButton}>
               <Ionicons name="close" size={24} color="#fff" />
@@ -356,14 +431,12 @@ const SaveManager: React.FC<SaveManagerProps> = ({
             >
               <Text style={[styles.tabText, tab === 'load' && styles.activeTabText]}>读取存档</Text>
             </TouchableOpacity>
-            
             <TouchableOpacity 
               style={[styles.tab, tab === 'save' && styles.activeTab]} 
               onPress={() => setTab('save')}
             >
               <Text style={[styles.tabText, tab === 'save' && styles.activeTabText]}>新建存档</Text>
             </TouchableOpacity>
-            
             <TouchableOpacity 
               style={[styles.tab, tab === 'import' && styles.activeTab]} 
               onPress={() => setTab('import')}
@@ -374,11 +447,12 @@ const SaveManager: React.FC<SaveManagerProps> = ({
 
           {tab === 'load' ? (
             <>
-              <Text style={styles.sectionTitle}>当前存档</Text>
               {loading ? (
                 <View style={styles.loadingContainer}>
                   <ActivityIndicator size="large" color={theme.colors.primary} />
-                  <Text style={styles.loadingText}>正在加载存档...</Text>
+                  <Text style={styles.loadingText}>
+                    {tab === 'load' ? '正在加载存档...' : '正在处理备份...'}
+                  </Text>
                 </View>
               ) : saves.length > 0 ? (
                 <FlatList
@@ -396,30 +470,48 @@ const SaveManager: React.FC<SaveManagerProps> = ({
               )}
             </>
           ) : tab === 'save' ? (
-            <View style={styles.saveForm}>
-              <Text style={styles.sectionTitle}>新存档</Text>
-              <Text style={styles.label}>描述</Text>
+            <View style={[styles.saveForm, { flex: 1, justifyContent: 'flex-start', padding: 20 }]}>
+              <Text style={styles.sectionTitle}>创建存档</Text>
+              <Text style={styles.label}>备份描述</Text>
               <TextInput
                 style={styles.input}
-                placeholder="输入描述..."
+                placeholder="输入备份描述..."
                 placeholderTextColor="#999"
                 value={saveDescription}
                 onChangeText={setSaveDescription}
                 maxLength={50}
               />
-              <TouchableOpacity 
-                style={[styles.saveButton, !saveDescription.trim() && styles.disabledButton]}
-                onPress={handleCreateSave}
-                disabled={!saveDescription.trim() || loading}
-              >
-                <Text style={styles.saveButtonText}>
-                  {loading ? '存档中...' : '保存当前对话进度'}
-                </Text>
-              </TouchableOpacity>
-              
+              <View style={{ flexDirection: 'row', gap: 12 }}>
+                <TouchableOpacity 
+                  style={[
+                    styles.saveButton,
+                    !saveDescription.trim() && styles.disabledButton,
+                    { flex: 1 }
+                  ]}
+                  onPress={handleCreateSave}
+                  disabled={!saveDescription.trim() || loading}
+                >
+                  <Text style={styles.saveButtonText}>
+                    {loading ? '创建备份中...' : '备份当前对话状态'}
+                  </Text>
+                </TouchableOpacity>
+                <TouchableOpacity 
+                  style={[
+                    styles.blankSaveButton,
+                    !saveDescription.trim() && styles.disabledButton,
+                    { flex: 1 }
+                  ]}
+                  onPress={handleCreateBlankSave}
+                  disabled={!saveDescription.trim() || loading}
+                >
+                  <Text style={styles.blankSaveButtonText}>
+                    {loading ? '创建中...' : '创建空白存档'}
+                  </Text>
+                </TouchableOpacity>
+              </View>
               <View style={styles.saveInfo}>
                 <Text style={styles.saveInfoText}>
-                  将保存当前对话进度，当前消息数量： {messages.length}
+                  当前消息数量： {messages.length}
                 </Text>
               </View>
             </View>
@@ -479,17 +571,19 @@ const SaveManager: React.FC<SaveManagerProps> = ({
 const styles = StyleSheet.create({
   container: {
     flex: 1,
+    // width/height will be set inline for full screen
     justifyContent: 'center',
     alignItems: 'center',
-    backgroundColor: 'rgba(0, 0, 0, 0.6)'
+    backgroundColor: 'rgba(0, 0, 0, 0.7)'
   },
   modal: {
-    width: '90%',
-    maxWidth: 500,
+    flex: 1,
+    width: '100%',
+    height: '100%',
     backgroundColor: '#222',
-    borderRadius: 12,
-    padding: 20,
-    maxHeight: '80%'
+    borderRadius: 0,
+    padding: 0,
+    justifyContent: 'flex-start'
   },
   header: {
     flexDirection: 'row',
@@ -535,10 +629,13 @@ const styles = StyleSheet.create({
     marginBottom: 12
   },
   savesList: {
-    maxHeight: 400
+    flexGrow: 1,
+    minHeight: 0,
+    maxHeight: undefined
   },
   savesListContent: {
-    paddingBottom: 16
+    paddingBottom: 16,
+    paddingHorizontal: 20
   },
   saveItem: {
     backgroundColor: '#333',
@@ -642,9 +739,23 @@ const styles = StyleSheet.create({
     paddingVertical: 12,
     borderRadius: 8,
     alignItems: 'center',
-    justifyContent: 'center'
+    justifyContent: 'center',
+    marginRight: 6
   },
   saveButtonText: {
+    color: 'black',
+    fontWeight: 'bold',
+    fontSize: 16
+  },
+  blankSaveButton : {
+    backgroundColor: theme.colors.primary,
+    paddingVertical: 12,
+    borderRadius: 8,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginRight: 6
+  },
+  blankSaveButtonText: {
     color: 'black',
     fontWeight: 'bold',
     fontSize: 16
@@ -718,6 +829,12 @@ const styles = StyleSheet.create({
     color: '#aaa',
     marginTop: 12,
     fontSize: 16
+  },
+  backupInfo: {
+    fontSize: 11,
+    color: '#888',
+    marginTop: 2,
+    fontFamily: 'monospace'
   }
 });
 
