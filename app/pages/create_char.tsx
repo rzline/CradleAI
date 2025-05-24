@@ -14,7 +14,7 @@ import {
 } from 'react-native';
 import * as ImagePicker from 'expo-image-picker';
 import * as ImageManipulator from 'expo-image-manipulator';
-import * as FileSystem from 'expo-file-system'; // Fix: Correct FileSystem import
+import * as FileSystem from 'expo-file-system';
 import * as DocumentPicker from 'expo-document-picker'; // Fix: Correct DocumentPicker import
 import { useRouter } from 'expo-router';
 import { Character, CradleCharacter } from '@/shared/types';
@@ -626,9 +626,16 @@ const CreateChar: React.FC<CreateCharProps> = ({
           }
         );
 
+        // 持久化存储到 FileSystem.documentDirectory/avatars/
+        const avatarDir = FileSystem.documentDirectory + 'avatars/';
+        await FileSystem.makeDirectoryAsync(avatarDir, { intermediates: true }).catch(() => {});
+        const avatarFilename = `avatar_${Date.now()}.png`;
+        const avatarDest = avatarDir + avatarFilename;
+        await FileSystem.copyAsync({ from: manipResult.uri, to: avatarDest });
+
         setCharacter(prev => ({
           ...prev,
-          avatar: manipResult.uri
+          avatar: avatarDest
         }));
         setHasUnsavedChanges(true);
       }
@@ -648,9 +655,17 @@ const CreateChar: React.FC<CreateCharProps> = ({
       });
 
       if (!result.canceled && result.assets[0]) {
+        // 可选：可做尺寸处理
+        // 持久化存储到 FileSystem.documentDirectory/backgrounds/
+        const bgDir = FileSystem.documentDirectory + 'backgrounds/';
+        await FileSystem.makeDirectoryAsync(bgDir, { intermediates: true }).catch(() => {});
+        const bgFilename = `background_${Date.now()}.jpg`;
+        const bgDest = bgDir + bgFilename;
+        await FileSystem.copyAsync({ from: result.assets[0].uri, to: bgDest });
+
         setCharacter(prev => ({
           ...prev,
-          backgroundImage: result.assets[0].uri
+          backgroundImage: bgDest
         }));
         setHasUnsavedChanges(true);
       }
@@ -786,8 +801,8 @@ const CreateChar: React.FC<CreateCharProps> = ({
       const newCharacter: Character & Partial<CradleCharacter> = {
         id: characterId,
         name: roleCard.name.trim(),
-        avatar: character.avatar,
-        backgroundImage: character.backgroundImage,
+        avatar: character.avatar, // 已持久化的uri
+        backgroundImage: character.backgroundImage, // 已持久化的uri
         conversationId: characterId,
         description: roleCard.description || '',
         personality: roleCard.personality || '',

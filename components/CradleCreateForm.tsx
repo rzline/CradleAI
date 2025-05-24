@@ -22,6 +22,7 @@ import { useCharacters } from '@/constants/CharactersContext';
 import { useUser } from '@/constants/UserContext'; // Add import for useUser
 import * as ImagePicker from 'expo-image-picker';
 import * as ImageManipulator from 'expo-image-manipulator';
+import * as FileSystem from 'expo-file-system';
 import TagSelector from './TagSelector';
 // Import vndb data for traits
 import vndbData from '@/app/data/vndb.json';
@@ -334,8 +335,13 @@ const CradleCreateForm: React.FC<CradleCreateFormProps> = ({
           [{ resize: { width: 400, height: 400 } }],
           { format: ImageManipulator.SaveFormat.JPEG, compress: 0.8 }
         );
-        
-        setAvatarUri(manipResult.uri);
+        // 持久化存储到 FileSystem.documentDirectory/avatars/
+        const avatarDir = FileSystem.documentDirectory + 'avatars/';
+        await FileSystem.makeDirectoryAsync(avatarDir, { intermediates: true }).catch(() => {});
+        const avatarFilename = `avatar_${Date.now()}.jpg`;
+        const avatarDest = avatarDir + avatarFilename;
+        await FileSystem.copyAsync({ from: manipResult.uri, to: avatarDest });
+        setAvatarUri(avatarDest);
       }
     } catch (error) {
       console.error('选择头像失败:', error);
@@ -359,10 +365,14 @@ const CradleCreateForm: React.FC<CradleCreateFormProps> = ({
           [{ resize: { width: 900, height: 1600 } }],
           { format: ImageManipulator.SaveFormat.JPEG, compress: 0.8 }
         );
-        
-        setCardImageUri(manipResult.uri);
-        // Also set as background image for compatibility
-        setBackgroundUri(manipResult.uri);
+        // 持久化存储到 FileSystem.documentDirectory/backgrounds/
+        const bgDir = FileSystem.documentDirectory + 'backgrounds/';
+        await FileSystem.makeDirectoryAsync(bgDir, { intermediates: true }).catch(() => {});
+        const bgFilename = `background_${Date.now()}.jpg`;
+        const bgDest = bgDir + bgFilename;
+        await FileSystem.copyAsync({ from: manipResult.uri, to: bgDest });
+        setCardImageUri(bgDest);
+        setBackgroundUri(bgDest);
       }
     } catch (error) {
       console.error('选择角色卡图片失败:', error);
@@ -417,8 +427,8 @@ const handleCreateCharacter = async () => {
       // Character base properties
       id: characterId,
       name: characterName,
-      avatar: avatarUri,
-      backgroundImage: cardImageUri || backgroundUri, // Use card image as priority
+      avatar: avatarUri, // 已持久化的uri
+      backgroundImage: cardImageUri || backgroundUri, // 已持久化的uri
       description: description || '',
       personality: '', // Will be developed through cradle system
       interests: [],

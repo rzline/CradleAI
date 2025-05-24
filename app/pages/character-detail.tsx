@@ -577,8 +577,14 @@ const CharacterDetail: React.FC = () => {
           { format: ImageManipulator.SaveFormat.PNG, compress: 1 }
         );
 
+        // 持久化存储到 avatars/{character.id}.png
         if (character) {
-          const updatedCharacter = { ...character, avatar: manipResult.uri };
+          const avatarDir = FileSystem.documentDirectory + 'avatars/';
+          await FileSystem.makeDirectoryAsync(avatarDir, { intermediates: true }).catch(() => {});
+          const avatarFilename = `${character.id || Date.now()}.png`;
+          const avatarDest = avatarDir + avatarFilename;
+          await FileSystem.copyAsync({ from: manipResult.uri, to: avatarDest });
+          const updatedCharacter = { ...character, avatar: avatarDest };
           setCharacter(updatedCharacter);
           setHasUnsavedChanges(true);
         }
@@ -598,11 +604,15 @@ const CharacterDetail: React.FC = () => {
       });
 
       if (!result.canceled && result.assets[0]) {
+        // 可选：可做尺寸处理
+        // 持久化存储到 backgrounds/{character.id}.jpg
         if (character) {
-          const updatedCharacter = { 
-            ...character, 
-            backgroundImage: result.assets[0].uri 
-          };
+          const bgDir = FileSystem.documentDirectory + 'backgrounds/';
+          await FileSystem.makeDirectoryAsync(bgDir, { intermediates: true }).catch(() => {});
+          const bgFilename = `${character.id || Date.now()}.jpg`;
+          const bgDest = bgDir + bgFilename;
+          await FileSystem.copyAsync({ from: result.assets[0].uri, to: bgDest });
+          const updatedCharacter = { ...character, backgroundImage: bgDest };
           setCharacter(updatedCharacter);
           setHasUnsavedChanges(true);
         }
