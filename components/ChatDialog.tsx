@@ -40,6 +40,99 @@ import Slider from '@react-native-community/slider';
 import type { RenderFunction, ASTNode } from 'react-native-markdown-display';
 import { useRouter } from 'expo-router';
 import { Character } from '@/shared/types';
+import * as FileSystem from 'expo-file-system';
+import { ChatUISettings } from '@/app/pages/chat-ui-settings';
+
+// Default UI settings in case the file isn't loaded
+const DEFAULT_UI_SETTINGS: ChatUISettings = {
+  // Regular mode
+  regularUserBubbleColor: 'rgb(255, 224, 195)',
+  regularUserBubbleAlpha: 0.95,
+  regularBotBubbleColor: 'rgb(68, 68, 68)',
+  regularBotBubbleAlpha: 0.85,
+  regularUserTextColor: '#333333',
+  regularBotTextColor: '#ffffff',
+  
+  // Background focus mode
+  bgUserBubbleColor: 'rgb(255, 224, 195)',
+  bgUserBubbleAlpha: 0.95,
+  bgBotBubbleColor: 'rgb(68, 68, 68)',
+  bgBotBubbleAlpha: 0.9,
+  bgUserTextColor: '#333333',
+  bgBotTextColor: '#ffffff',
+  
+  // Visual novel mode
+  vnDialogColor: 'rgb(0, 0, 0)',
+  vnDialogAlpha: 0.7,
+  vnTextColor: '#ffffff',
+  
+  // Global sizes
+  bubblePaddingMultiplier: 1.0,
+  textSizeMultiplier: 1.0
+};
+
+// Hook to load UI settings
+function useChatUISettings() {
+  const [settings, setSettings] = useState<ChatUISettings>(DEFAULT_UI_SETTINGS);
+  const [isLoaded, setIsLoaded] = useState(false);
+  const [fileHash, setFileHash] = useState<string | null>(null);
+
+  useEffect(() => {
+    let isMounted = true;
+    let interval: ReturnType<typeof setInterval> | null = null;
+    const settingsFile = `${FileSystem.documentDirectory}chat_ui_settings.json`;
+
+    async function loadSettingsAndHash() {
+      try {
+        const fileInfo = await FileSystem.getInfoAsync(settingsFile);
+        if (fileInfo.exists) {
+          const fileContent = await FileSystem.readAsStringAsync(settingsFile);
+          const loadedSettings = JSON.parse(fileContent);
+          // 计算简单hash
+          const hash = String(fileContent.length) + '_' + String(fileContent.split('').reduce((a, b) => a + b.charCodeAt(0), 0));
+          if (isMounted) {
+            setSettings(loadedSettings);
+            setFileHash(hash);
+          }
+        } else {
+          if (isMounted) {
+            setSettings(DEFAULT_UI_SETTINGS);
+            setFileHash(null);
+          }
+        }
+      } catch (error) {
+        if (isMounted) setSettings(DEFAULT_UI_SETTINGS);
+      } finally {
+        if (isMounted) setIsLoaded(true);
+      }
+    }
+
+    loadSettingsAndHash();
+
+    // 定时检测文件内容变化
+    interval = setInterval(async () => {
+      try {
+        const fileInfo = await FileSystem.getInfoAsync(settingsFile);
+        if (fileInfo.exists) {
+          const fileContent = await FileSystem.readAsStringAsync(settingsFile);
+          const hash = String(fileContent.length) + '_' + String(fileContent.split('').reduce((a, b) => a + b.charCodeAt(0), 0));
+          if (hash !== fileHash) {
+            setSettings(JSON.parse(fileContent));
+            setFileHash(hash);
+          }
+        }
+      } catch {}
+    }, 1000);
+
+    return () => {
+      isMounted = false;
+      if (interval) clearInterval(interval);
+    };
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  return { settings, isLoaded };
+}
 
 interface ExtendedChatDialogProps extends ChatDialogProps {
   messageMemoryState?: Record<string, string>;
@@ -435,7 +528,7 @@ const ChatDialog: React.FC<ExtendedChatDialogProps> = ({
   onEditUserMessage,
   onDeleteUserMessage,
 }) => {
-    const router = useRouter();
+  const router = useRouter();
   const flatListRef = useRef<FlatList<Message>>(null);
   const fadeAnim = useSharedValue(0);
   const translateAnim = useSharedValue(0);
@@ -451,6 +544,9 @@ const ChatDialog: React.FC<ExtendedChatDialogProps> = ({
   const [audioStates, setAudioStates] = useState<Record<string, AudioState>>({});
   const [ttsEnhancerEnabled, setTtsEnhancerEnabled] = useState(false);
   const { mode, visualNovelSettings, updateVisualNovelSettings, isHistoryModalVisible: contextHistoryModalVisible, setHistoryModalVisible: contextSetHistoryModalVisible } = useDialogMode();
+
+  // Load UI settings
+  const { settings: uiSettings, isLoaded: uiSettingsLoaded } = useChatUISettings();
 
   // 这里假设通过window.__topBarVisible传递（如需更优雅方案可通过props传递）
   const [isTopBarVisible, setIsTopBarVisible] = useState(true);
@@ -470,10 +566,7 @@ const ChatDialog: React.FC<ExtendedChatDialogProps> = ({
   // 新增：视觉小说展开/收起状态和背景透明度
   const [vnExpanded, setVnExpanded] = useState(false);
   const [vnBgAlpha, setVnBgAlpha] = useState(() => {
-    // 从 visualNovelSettings.backgroundColor 解析 alpha
-    const match = visualNovelSettings.backgroundColor.match(/rgba?\((\d+),\s*(\d+),\s*(\d+),?\s*([0-9\.]+)?\)/);
-    if (match && match[4]) return parseFloat(match[4]);
-    return 0.7;
+    return uiSettings.vnDialogAlpha;
   });
   const [showAlphaSlider, setShowAlphaSlider] = useState(false);
 
@@ -504,29 +597,59 @@ const ChatDialog: React.FC<ExtendedChatDialogProps> = ({
 
   // 调整背景色
   const getVnBgColor = () => {
-    // 取原色的rgb部分，替换alpha
-    const match = visualNovelSettings.backgroundColor.match(/rgba?\((\d+),\s*(\d+),\s*(\d+),?/);
-    if (match) {
-      const [_, r, g, b] = match;
-      return `rgba(${r},${g},${b},${vnBgAlpha})`;
-    }
-    return `rgba(0,0,0,${vnBgAlpha})`;
+    const color = uiSettings.vnDialogColor;
+    const rgbValues = color.match(/\d+/g)?.slice(0, 3);
+    return rgbValues ? `rgba(${rgbValues.join(',')},${vnBgAlpha})` : `rgba(0,0,0,${vnBgAlpha})`;
   };
 
   const handleAlphaChange = (alpha: number) => {
     setVnBgAlpha(alpha);
     // 更新 visualNovelSettings
-    const match = visualNovelSettings.backgroundColor.match(/rgba?\((\d+),\s*(\d+),\s*(\d+),?/);
-    let newColor = `rgba(0,0,0,${alpha})`;
-    if (match) {
-      const [_, r, g, b] = match;
-      newColor = `rgba(${r},${g},${b},${alpha})`;
-    }
+    const color = uiSettings.vnDialogColor;
+    const rgbValues = color.match(/\d+/g)?.slice(0, 3);
+    const newColor = rgbValues ? `rgba(${rgbValues.join(',')},${alpha})` : `rgba(0,0,0,${alpha})`;
     updateVisualNovelSettings({ backgroundColor: newColor });
   };
 
+  function getTextStyle(isUser: boolean) {
+  // 兼容三种模式
+  if (mode === 'normal') {
+    return {
+      color: isUser ? uiSettings.regularUserTextColor : uiSettings.regularBotTextColor,
+      fontSize: Math.min(Math.max(14, width * 0.04), 16) * uiSettings.textSizeMultiplier,
+    };
+  } else if (mode === 'background-focus') {
+    return {
+      color: isUser ? uiSettings.bgUserTextColor : uiSettings.bgBotTextColor,
+      fontSize: Math.min(Math.max(14, width * 0.04), 16) * uiSettings.textSizeMultiplier,
+    };
+  } else if (mode === 'visual-novel') {
+    return {
+      color: uiSettings.vnTextColor,
+      fontSize: 16 * uiSettings.textSizeMultiplier,
+    };
+  }
+  return {};
+}
 
+function getBubbleStyle(isUser: boolean) {
+  if (mode === 'normal') {
+    const color = isUser ? uiSettings.regularUserBubbleColor : uiSettings.regularBotBubbleColor;
+    const alpha = isUser ? uiSettings.regularUserBubbleAlpha : uiSettings.regularBotBubbleAlpha;
+    const rgb = color.match(/\d+/g)?.slice(0, 3);
+    return { backgroundColor: rgb ? `rgba(${rgb.join(',')},${alpha})` : undefined };
+  } else if (mode === 'background-focus') {
+    const color = isUser ? uiSettings.bgUserBubbleColor : uiSettings.bgBotBubbleColor;
+    const alpha = isUser ? uiSettings.bgUserBubbleAlpha : uiSettings.bgBotBubbleAlpha;
+    const rgb = color.match(/\d+/g)?.slice(0, 3);
+    return { backgroundColor: rgb ? `rgba(${rgb.join(',')},${alpha})` : undefined };
+  }
+  return {};
+}
 
+function getBubblePadding() {
+  return (RESPONSIVE_PADDING + 4) * uiSettings.bubblePaddingMultiplier;
+}
   useEffect(() => {
     const checkTtsEnhancerStatus = () => {
       const settings = ttsService.getEnhancerSettings();
@@ -734,333 +857,343 @@ const ChatDialog: React.FC<ExtendedChatDialogProps> = ({
     return /(<\s*(thinking|think|status|mem|websearch|char-think|StatusBlock|statusblock|font)[^>]*>[\s\S]*?<\/\s*(thinking|think|status|mem|websearch|char-think|StatusBlock|statusblock|font)\s*>)/i.test(text);
   };
 
-const processMessageContent = (text: string, isUser: boolean, opts?: { isHtmlPagePlaceholder?: boolean }) => {
-  // 新增：如果是HTML页面占位，直接显示占位文本
-  if (opts?.isHtmlPagePlaceholder) {
-    return (
-      <Text style={isUser ? styles.userMessageText : styles.botMessageText}>
-        [页面消息]
-      </Text>
-    );
-  }
-
-  if (!text || text.trim() === '') {
-    return (
-      <Text style={isUser ? styles.userMessageText : styles.botMessageText}>
-        (Empty message)
-      </Text>
-    );
-  }
-
-  if (containsCustomTags(text) || /<\/?[a-z][^>]*>/i.test(text)) {
-    // 渲染前先移除未知标签
-    const cleanedText = stripUnknownTags(text);
-    return (
-      <RichTextRenderer
-        html={optimizeHtmlForRendering(cleanedText)}
-        baseStyle={isUser ? styles.userMessageText : styles.botMessageText}
-        onImagePress={(url) => setFullscreenImage(url)}
-        maxImageHeight={MAX_IMAGE_HEIGHT}
-      />
-    );
-  }
-
-  // Enhanced check for Markdown code blocks with triple backticks
-  const codeBlockPattern = /```([a-zA-Z0-9]*)\n([\s\S]*?)```/g;
-  const hasCodeBlock = codeBlockPattern.test(text);
-  
-  const markdownPattern = /(^|\n)(\s{0,3}#|```|>\s|[*+-]\s|\d+\.\s|\|.*\|)/;
-  if (hasCodeBlock || markdownPattern.test(text)) {
-    return (
-      <View style={{ width: '100%' }}>
-        <Markdown
-          style={{
-            body: isUser ? styles.userMessageText : styles.botMessageText,
-            text: isUser ? styles.userMessageText : styles.botMessageText,
-            // Enhanced code block styling
-            code_block: { 
-              backgroundColor: '#111',
-              color: '#fff',
-              borderRadius: 6,
-              padding: 12,
-              fontSize: 14,
-              fontFamily: Platform.OS === 'ios' ? 'Menlo' : 'monospace',
-              marginVertical: 10,
-            },
-            code_block_text: {
-              backgroundColor: '#111', // 显式设置背景
-              color: '#fff',           // 显式设置字体颜色
-              fontSize: 14,
-              fontFamily: Platform.OS === 'ios' ? 'Menlo' : 'monospace',
-              padding: 0,
-            },
-            fence: {
-              backgroundColor: '#111',
-              borderRadius: 6,
-              marginVertical: 10,
-              width: '100%',
-            },
-            fence_code: {
-              backgroundColor: '#111',
-              color: '#fff',
-              borderRadius: 6,
-              padding: 12,
-              fontSize: 14,
-              fontFamily: Platform.OS === 'ios' ? 'Menlo' : 'monospace',
-              width: '100%',
-            },
-            fence_code_text: {
-              backgroundColor: '#111',
-              color: '#fff',
-              fontSize: 14,
-              fontFamily: Platform.OS === 'ios' ? 'Menlo' : 'monospace',
-              padding: 0,
-            },
-            heading1: { fontSize: 24, fontWeight: 'bold', marginVertical: 10 },
-            heading2: { fontSize: 22, fontWeight: 'bold', marginVertical: 8 },
-            heading3: { fontSize: 20, fontWeight: 'bold', marginVertical: 6 },
-            heading4: { fontSize: 18, fontWeight: 'bold', marginVertical: 5 },
-            heading5: { fontSize: 16, fontWeight: 'bold', marginVertical: 4 },
-            heading6: { fontSize: 14, fontWeight: 'bold', marginVertical: 3 },
-            bullet_list: { marginVertical: 6 },
-            ordered_list: { marginVertical: 6 },
-            list_item: { flexDirection: 'row', alignItems: 'flex-start', marginVertical: 2 },
-            blockquote: { backgroundColor: '#111', borderLeftWidth: 4, borderLeftColor: '#aaa', padding: 8, marginVertical: 6 },
-            table: { borderWidth: 1, borderColor: '#666', marginVertical: 8 },
-            th: { backgroundColor: '#444', color: '#fff', fontWeight: 'bold', padding: 6 },
-            tr: { borderBottomWidth: 1, borderColor: '#666' },
-            td: { padding: 6, color: '#fff' },
-            hr: { borderBottomWidth: 1, borderColor: '#aaa', marginVertical: 8 },
-            link: { color: '#3498db', textDecorationLine: 'underline' },
-            image: { width: 220, height: 160, borderRadius: 8, marginVertical: 8, alignSelf: 'center' },
-          }}
-          onLinkPress={(url: string) => {
-            if (url.startsWith('http://') || url.startsWith('https://') || url.startsWith('mailto:')) {
-              if (typeof window !== 'undefined') {
-                window.open(url, '_blank');
-              } else {
-                setFullscreenImage(url);
-              }
-              return true;
-            }
-            return false;
-          }}
-          rules={{
-            fence: (
-              node: ASTNode,
-              children: React.ReactNode[],
-              parent: ASTNode[],
-              styles: any
-            ) => {
-              return (
-                <View key={node.key} style={styles.code_block}>
-                  <Text style={styles.code_block_text}>
-                    {node.content || ''}
-                  </Text>
-                </View>
-              );
-            }
-          }}
-        >
-          {text}
-        </Markdown>
-      </View>
-    );
-  }
-
-  const rawImageMarkdownRegex = /^!\[(.*?)\]\(image:([a-f0-9]+)\)$/;
-  const rawImageMatch = text.trim().match(rawImageMarkdownRegex);
-
-  if (rawImageMatch) {
-    const alt = rawImageMatch[1] || "图片";
-    const imageId = rawImageMatch[2];
-
-    const imageInfo = ImageManager.getImageInfo(imageId);
-    const imageStyle = getImageDisplayStyle(imageInfo);
-
-    if (imageInfo) {
+  // 修改处理消息内容的函数，应用文本样式
+  const processMessageContent = (text: string, isUser: boolean, opts?: { isHtmlPagePlaceholder?: boolean }) => {
+    // 新增：如果是HTML页面占位，直接显示占位文本
+    if (opts?.isHtmlPagePlaceholder) {
       return (
-        <View style={styles.imageWrapper}>
-          <TouchableOpacity
-            style={styles.imageContainer}
-            onPress={() => handleOpenFullscreenImage(imageId)}
-          >
-            <Image
-              source={{ uri: imageInfo.originalPath }}
-              style={imageStyle}
-              resizeMode="contain"
-              onError={(e) => console.error(`Error loading image: ${e.nativeEvent.error}`, imageInfo.originalPath)}
-            />
-          </TouchableOpacity>
-          <Text style={styles.imageCaption}>{alt}</Text>
-        </View>
+        <Text style={[
+          isUser ? styles.userMessageText : styles.botMessageText,
+          getTextStyle(isUser)
+        ]}>
+          [页面消息]
+        </Text>
       );
-    } else {
-      console.error(`No image info found for ID: ${imageId}`);
+    }
+
+    if (!text || text.trim() === '') {
       return (
-        <View style={styles.imageError}>
-          <Ionicons name="alert-circle" size={36} color="#e74c3c" />
-          <Text style={styles.imageErrorText}>图片无法加载 (ID: {imageId.substring(0, 8)}...)</Text>
+        <Text style={[
+          isUser ? styles.userMessageText : styles.botMessageText,
+          getTextStyle(isUser)
+        ]}>
+          (Empty message)
+        </Text>
+      );
+    }
+
+    if (containsCustomTags(text) || /<\/?[a-z][^>]*>/i.test(text)) {
+      // 渲染前先移除未知标签
+      const cleanedText = stripUnknownTags(text);
+      return (
+        <RichTextRenderer
+          html={optimizeHtmlForRendering(cleanedText)}
+          baseStyle={[isUser ? styles.userMessageText : styles.botMessageText, getTextStyle(isUser)]}
+          onImagePress={(url) => setFullscreenImage(url)}
+          maxImageHeight={MAX_IMAGE_HEIGHT}
+        />
+      );
+    }
+
+    // Enhanced check for Markdown code blocks with triple backticks
+    const codeBlockPattern = /```([a-zA-Z0-9]*)\n([\s\S]*?)```/g;
+    const hasCodeBlock = codeBlockPattern.test(text);
+    
+    const markdownPattern = /(^|\n)(\s{0,3}#|```|>\s|[*+-]\s|\d+\.\s|\|.*\|)/;
+    if (hasCodeBlock || markdownPattern.test(text)) {
+      return (
+        <View style={{ width: '100%' }}>
+          <Markdown
+            style={{
+              body: isUser ? styles.userMessageText : styles.botMessageText,
+              text: isUser ? styles.userMessageText : styles.botMessageText,
+              // Enhanced code block styling
+              code_block: { 
+                backgroundColor: '#111',
+                color: '#fff',
+                borderRadius: 6,
+                padding: 12,
+                fontSize: 14,
+                fontFamily: Platform.OS === 'ios' ? 'Menlo' : 'monospace',
+                marginVertical: 10,
+              },
+              code_block_text: {
+                backgroundColor: '#111', // 显式设置背景
+                color: '#fff',           // 显式设置字体颜色
+                fontSize: 14,
+                fontFamily: Platform.OS === 'ios' ? 'Menlo' : 'monospace',
+                padding: 0,
+              },
+              fence: {
+                backgroundColor: '#111',
+                borderRadius: 6,
+                marginVertical: 10,
+                width: '100%',
+              },
+              fence_code: {
+                backgroundColor: '#111',
+                color: '#fff',
+                borderRadius: 6,
+                padding: 12,
+                fontSize: 14,
+                fontFamily: Platform.OS === 'ios' ? 'Menlo' : 'monospace',
+                width: '100%',
+              },
+              fence_code_text: {
+                backgroundColor: '#111',
+                color: '#fff',
+                fontSize: 14,
+                fontFamily: Platform.OS === 'ios' ? 'Menlo' : 'monospace',
+                padding: 0,
+              },
+              heading1: { fontSize: 24, fontWeight: 'bold', marginVertical: 10 },
+              heading2: { fontSize: 22, fontWeight: 'bold', marginVertical: 8 },
+              heading3: { fontSize: 20, fontWeight: 'bold', marginVertical: 6 },
+              heading4: { fontSize: 18, fontWeight: 'bold', marginVertical: 5 },
+              heading5: { fontSize: 16, fontWeight: 'bold', marginVertical: 4 },
+              heading6: { fontSize: 14, fontWeight: 'bold', marginVertical: 3 },
+              bullet_list: { marginVertical: 6 },
+              ordered_list: { marginVertical: 6 },
+              list_item: { flexDirection: 'row', alignItems: 'flex-start', marginVertical: 2 },
+              blockquote: { backgroundColor: '#111', borderLeftWidth: 4, borderLeftColor: '#aaa', padding: 8, marginVertical: 6 },
+              table: { borderWidth: 1, borderColor: '#666', marginVertical: 8 },
+              th: { backgroundColor: '#444', color: '#fff', fontWeight: 'bold', padding: 6 },
+              tr: { borderBottomWidth: 1, borderColor: '#666' },
+              td: { padding: 6, color: '#fff' },
+              hr: { borderBottomWidth: 1, borderColor: '#aaa', marginVertical: 8 },
+              link: { color: '#3498db', textDecorationLine: 'underline' },
+              image: { width: 220, height: 160, borderRadius: 8, marginVertical: 8, alignSelf: 'center' },
+            }}
+            onLinkPress={(url: string) => {
+              if (url.startsWith('http://') || url.startsWith('https://') || url.startsWith('mailto:')) {
+                if (typeof window !== 'undefined') {
+                  window.open(url, '_blank');
+                } else {
+                  setFullscreenImage(url);
+                }
+                return true;
+              }
+              return false;
+            }}
+            rules={{
+              fence: (
+                node: ASTNode,
+                children: React.ReactNode[],
+                parent: ASTNode[],
+                styles: any
+              ) => {
+                return (
+                  <View key={node.key} style={styles.code_block}>
+                    <Text style={styles.code_block_text}>
+                      {node.content || ''}
+                    </Text>
+                  </View>
+                );
+              }
+            }}
+          >
+            {text}
+          </Markdown>
         </View>
       );
     }
-  }
 
-  const hasCustomTags = (
-    /<\s*(thinking|think|status|mem|websearch)[^>]*>([\s\S]*?)<\/\s*(thinking|think|status|mem|websearch)\s*>/i.test(text) ||
-    /<\s*char\s+think\s*>([\s\S]*?)<\/\s*char\s+think\s*>/i.test(text)
-  );
+    const rawImageMarkdownRegex = /^!\[(.*?)\]\(image:([a-f0-9]+)\)$/;
+    const rawImageMatch = text.trim().match(rawImageMarkdownRegex);
 
-  const hasMarkdown = /```[\w]*\s*([\s\S]*?)```/.test(text) ||
+    if (rawImageMatch) {
+      const alt = rawImageMatch[1] || "图片";
+      const imageId = rawImageMatch[2];
+
+      const imageInfo = ImageManager.getImageInfo(imageId);
+      const imageStyle = getImageDisplayStyle(imageInfo);
+
+      if (imageInfo) {
+        return (
+          <View style={styles.imageWrapper}>
+            <TouchableOpacity
+              style={styles.imageContainer}
+              onPress={() => handleOpenFullscreenImage(imageId)}
+            >
+              <Image
+                source={{ uri: imageInfo.originalPath }}
+                style={imageStyle}
+                resizeMode="contain"
+                onError={(e) => console.error(`Error loading image: ${e.nativeEvent.error}`, imageInfo.originalPath)}
+              />
+            </TouchableOpacity>
+            <Text style={styles.imageCaption}>{alt}</Text>
+          </View>
+        );
+      } else {
+        console.error(`No image info found for ID: ${imageId}`);
+        return (
+          <View style={styles.imageError}>
+            <Ionicons name="alert-circle" size={36} color="#e74c3c" />
+            <Text style={styles.imageErrorText}>图片无法加载 (ID: {imageId.substring(0, 8)}...)</Text>
+          </View>
+        );
+      }
+    }
+
+    const hasCustomTags = (
+      /<\s*(thinking|think|status|mem|websearch)[^>]*>([\s\S]*?)<\/\s*(thinking|think|status|mem|websearch)\s*>/i.test(text) ||
+      /<\s*char\s+think\s*>([\s\S]*?)<\/\s*char\s+think\s*>/i.test(text)
+    );
+
+    const hasMarkdown = /```[\w]*\s*([\s\S]*?)```/.test(text) ||
                      /!\[[\s\S]*?\]\([\s\S]*?\)/.test(text) ||
                      /\*\*([\s\S]*?)\*\*/.test(text) ||
                      /\*([\s\S]*?)\*/.test(text);
 
-  const hasHtml = /<\/?[a-z][^>]*>/i.test(text);
+    const hasHtml = /<\/?[a-z][^>]*>/i.test(text);
 
-  const imageIdRegex = /!\[(.*?)\]\(image:([^\s)]+)\)/g;
-  let match: RegExpExecArray | null;
-  const matches: { alt: string, id: string }[] = [];
+    const imageIdRegex = /!\[(.*?)\]\(image:([^\s)]+)\)/g;
+    let match: RegExpExecArray | null;
+    const matches: { alt: string, id: string }[] = [];
 
-  while ((match = imageIdRegex.exec(text)) !== null) {
-    matches.push({
-      alt: match[1] || "图片",
-      id: match[2]
-    });
-  }
+    while ((match = imageIdRegex.exec(text)) !== null) {
+      matches.push({
+        alt: match[1] || "图片",
+        id: match[2]
+      });
+    }
 
-  if (matches.length > 0) {
-    return (
-      <View>
-        {matches.map((img, idx) => {
-          const imageInfo = ImageManager.getImageInfo(img.id);
-          const imageStyle = getImageDisplayStyle(imageInfo);
-          if (imageInfo) {
+    if (matches.length > 0) {
+      return (
+        <View>
+          {matches.map((img, idx) => {
+            const imageInfo = ImageManager.getImageInfo(img.id);
+            const imageStyle = getImageDisplayStyle(imageInfo);
+            if (imageInfo) {
+              return (
+                <TouchableOpacity 
+                  key={img.id + '-' + idx}
+                  style={styles.imageWrapper}
+                  onPress={() => handleOpenFullscreenImage(img.id)}
+                >
+                  <Image
+                    source={{ uri: imageInfo.originalPath }}
+                    style={imageStyle}
+                    resizeMode="contain"
+                    onError={(e) => console.error(`Error loading image: ${e.nativeEvent.error}`, imageInfo.originalPath)}
+                  />
+                  <Text style={styles.imageCaption}>{img.alt}</Text>
+                </TouchableOpacity>
+              );
+            } else {
+              return (
+                <View key={idx} style={styles.imageError}>
+                  <Ionicons name="alert-circle" size={36} color="#e74c3c" />
+                  <Text style={styles.imageErrorText}>图片无法加载 (ID: {img.id.substring(0, 8)}...)</Text>
+                </View>
+              );
+            }
+          })}
+        </View>
+      );
+    }
+
+    const imageMarkdownRegex = /!\[(.*?)\]\((https?:\/\/[^\s)]+|data:image\/[^\s)]+)\)/g;
+    let urlMatches: { alt: string, url: string }[] = [];
+
+    imageMarkdownRegex.lastIndex = 0;
+
+    while ((match = imageMarkdownRegex.exec(text)) !== null) {
+      urlMatches.push({
+        alt: match[1] || "图片",
+        url: match[2]
+      });
+    }
+
+    if (urlMatches.length > 0) {
+      return (
+        <View>
+          {urlMatches.map((img, idx) => {
+            const isDataUrl = img.url.startsWith('data:');
+            const isLargeDataUrl = isDataUrl && img.url.length > 100000;
+
+            if (isLargeDataUrl) {
+              return (
+                <View key={idx} style={styles.imageWrapper}>
+                  <TouchableOpacity
+                    style={styles.imageDataUrlWarning}
+                    onPress={() => setFullscreenImage(img.url)}
+                  >
+                    <Ionicons name="image" size={36} color="#999" />
+                    <Text style={styles.imageDataUrlWarningText}>
+                      {img.alt} (点击查看)
+                    </Text>
+                  </TouchableOpacity>
+                </View>
+              );
+            }
+
             return (
               <TouchableOpacity 
-                key={img.id + '-' + idx}
+                key={idx}
                 style={styles.imageWrapper}
-                onPress={() => handleOpenFullscreenImage(img.id)}
+                onPress={() => setFullscreenImage(img.url)}
               >
                 <Image
-                  source={{ uri: imageInfo.originalPath }}
-                  style={imageStyle}
+                  source={{ uri: img.url }}
+                  style={styles.messageImage}
                   resizeMode="contain"
-                  onError={(e) => console.error(`Error loading image: ${e.nativeEvent.error}`, imageInfo.originalPath)}
+                  onError={(e) => console.error(`Error loading image URL: ${e.nativeEvent.error}`)}
                 />
                 <Text style={styles.imageCaption}>{img.alt}</Text>
               </TouchableOpacity>
             );
-          } else {
-            return (
-              <View key={idx} style={styles.imageError}>
-                <Ionicons name="alert-circle" size={36} color="#e74c3c" />
-                <Text style={styles.imageErrorText}>图片无法加载 (ID: {img.id.substring(0, 8)}...)</Text>
-              </View>
-            );
-          }
-        })}
-      </View>
-    );
-  }
+          })}
+        </View>
+      );
+    }
 
-  const imageMarkdownRegex = /!\[(.*?)\]\((https?:\/\/[^\s)]+|data:image\/[^\s)]+)\)/g;
-  let urlMatches: { alt: string, url: string }[] = [];
+    const linkRegex = /\[(.*?)\]\((https?:\/\/[^\s)]+|data:image\/[^\s)]+)\)/g;
+    let linkMatches: { text: string, url: string }[] = [];
 
-  imageMarkdownRegex.lastIndex = 0;
+    while ((match = linkRegex.exec(text)) !== null) {
+      linkMatches.push({
+        text: match[1],
+        url: match[2]
+      });
+    }
 
-  while ((match = imageMarkdownRegex.exec(text)) !== null) {
-    urlMatches.push({
-      alt: match[1] || "图片",
-      url: match[2]
-    });
-  }
-
-  if (urlMatches.length > 0) {
-    return (
-      <View>
-        {urlMatches.map((img, idx) => {
-          const isDataUrl = img.url.startsWith('data:');
-          const isLargeDataUrl = isDataUrl && img.url.length > 100000;
-
-          if (isLargeDataUrl) {
-            return (
-              <View key={idx} style={styles.imageWrapper}>
-                <TouchableOpacity
-                  style={styles.imageDataUrlWarning}
-                  onPress={() => setFullscreenImage(img.url)}
-                >
-                  <Ionicons name="image" size={36} color="#999" />
-                  <Text style={styles.imageDataUrlWarningText}>
-                    {img.alt} (点击查看)
-                  </Text>
-                </TouchableOpacity>
-              </View>
-            );
-          }
-
-          return (
-            <TouchableOpacity 
+    if (linkMatches.length > 0) {
+      return (
+        <View>
+          {linkMatches.map((link, idx) => (
+            <TouchableOpacity
               key={idx}
-              style={styles.imageWrapper}
-              onPress={() => setFullscreenImage(img.url)}
+              style={styles.linkButton}
+              onPress={() => {
+                if (typeof window !== 'undefined') {
+                  window.open(link.url, '_blank');
+                } else {
+                  setFullscreenImage(link.url);
+                }
+              }}
             >
-              <Image
-                source={{ uri: img.url }}
-                style={styles.messageImage}
-                resizeMode="contain"
-                onError={(e) => console.error(`Error loading image URL: ${e.nativeEvent.error}`)}
-              />
-              <Text style={styles.imageCaption}>{img.alt}</Text>
+              <Ionicons name="link" size={16} color="#3498db" style={styles.linkIcon} />
+              <Text style={styles.linkText}>{link.text}</Text>
             </TouchableOpacity>
-          );
-        })}
-      </View>
-    );
-  }
+          ))}
+        </View>
+      );
+    }
 
-  const linkRegex = /\[(.*?)\]\((https?:\/\/[^\s)]+|data:image\/[^\s)]+)\)/g;
-  let linkMatches: { text: string, url: string }[] = [];
-
-  while ((match = linkRegex.exec(text)) !== null) {
-    linkMatches.push({
-      text: match[1],
-      url: match[2]
-    });
-  }
-
-  if (linkMatches.length > 0) {
-    return (
-      <View>
-        {linkMatches.map((link, idx) => (
-          <TouchableOpacity
-            key={idx}
-            style={styles.linkButton}
-            onPress={() => {
-              if (typeof window !== 'undefined') {
-                window.open(link.url, '_blank');
-              } else {
-                setFullscreenImage(link.url);
-              }
-            }}
-          >
-            <Ionicons name="link" size={16} color="#3498db" style={styles.linkIcon} />
-            <Text style={styles.linkText}>{link.text}</Text>
-          </TouchableOpacity>
-        ))}
-      </View>
-    );
-  }
-
-  return renderMessageText(text, isUser);
-};
+    return renderMessageText(text, isUser);
+  };
 
   const renderMessageText = (text: string, isUser: boolean) => {
     const segments = parseHtmlText(text);
     return (
-      <Text style={isUser ? styles.userMessageText : styles.botMessageText}>
+      <Text style={[
+        isUser ? styles.userMessageText : styles.botMessageText,
+        getTextStyle(isUser)
+      ]}>
         {segments.map((segment, index) => (
-          <Text key={index} style={segment.style}>
+          <Text key={index} style={[segment.style, getTextStyle(isUser)]}>
             {segment.text}
           </Text>
         ))}
@@ -1232,15 +1365,42 @@ const getAiMessageIndex = (realIndex: number): number => {
                 style={[styles.userMessageAvatar, { width: AVATAR_SIZE, height: AVATAR_SIZE, borderRadius: AVATAR_SIZE / 2 }]}
               />
             )}
-            <LinearGradient
-              colors={['rgba(255, 224, 195, 0.95)', 'rgba(255, 200, 170, 0.95)']}
-              style={[styles.userGradient, {borderRadius: 18, borderTopRightRadius: 4}]}
-            >
-              {processMessageContent(message.text, true)}
-            </LinearGradient>
+            {mode === 'normal' || mode === 'background-focus' ? (
+              <LinearGradient
+                colors={[
+                  uiSettings.regularUserBubbleColor.replace('rgb', 'rgba').replace(')', `,${uiSettings.regularUserBubbleAlpha})`),
+                  uiSettings.regularUserBubbleColor.replace('rgb', 'rgba').replace(')', `,${uiSettings.regularUserBubbleAlpha - 0.05})`)
+                ]}
+                style={[
+                  styles.userGradient, 
+                  { borderRadius: 18, borderTopRightRadius: 4 },
+                  { padding: getBubblePadding(), paddingHorizontal: getBubblePadding() + 4 }
+                ]}
+              >
+                {processMessageContent(message.text, true)}
+              </LinearGradient>
+            ) : (
+              <View style={[
+                styles.userGradient,
+                getBubbleStyle(true),
+                { borderRadius: 18, borderTopRightRadius: 4 },
+                { padding: getBubblePadding(), paddingHorizontal: getBubblePadding() + 4 }
+              ]}>
+                {processMessageContent(message.text, true)}
+              </View>
+            )}
           </View>
         ) : (
-          <View style={[styles.botMessageTextContainer, {maxWidth: MAX_WIDTH}]}>
+          <View style={[
+            styles.botMessageTextContainer, 
+            getBubbleStyle(false),
+            {maxWidth: MAX_WIDTH},
+            { 
+              padding: getBubblePadding(), 
+              paddingHorizontal: getBubblePadding() + 4,
+              paddingTop: getBubblePadding() + 8
+            }
+          ]}>
             {message.isLoading ? (
               <View style={styles.loadingContainer}>
                 <Animated.View style={[styles.loadingDot, dot1Style]} />
@@ -1735,6 +1895,7 @@ const getAiMessageIndex = (realIndex: number): number => {
                   disabled={isRegenerating || !!regeneratingMessageId}
                   onPress={() => onRegenerateMessage && onRegenerateMessage(lastMessage.id, aiIndex)}
                 >
+
                   {isRegenerating ? (
                     <ActivityIndicator size="small" color="#fff" />
                   ) : (
@@ -2078,48 +2239,13 @@ const styles = StyleSheet.create({
     marginHorizontal: 2,
     opacity: 0.7,
   },
-  messageActionsRow: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    marginTop: BUTTON_MARGIN,
-    width: '100%',
-    minHeight: BUTTON_SIZE,
-  },
-  messageActionsLeft: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    flex: 1,
-  },
-  messageActionsRight: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'flex-end',
-    flex: 1,
-  },
-  actionCircleButton: {
-    backgroundColor: 'rgba(0,0,0,0.5)',
-    borderRadius: BUTTON_SIZE / 2,
-    justifyContent: 'center',
-    alignItems: 'center',
-    marginHorizontal: 0,
-    marginVertical: 0,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 1 },
-    shadowOpacity: 0.12,
-    shadowRadius: 2,
-    elevation: 2,
-  },
-  actionCircleButtonActive: {
-    backgroundColor: 'rgba(255,224,195,0.85)',
-  },
   timeGroup: {
     alignItems: 'center',
     marginVertical: RESPONSIVE_PADDING,
   },
   timeText: {
     color: '#ddd',
-    fontSize: Math.min(Math.max(10, width * 0.03), 12),
+    fontSize: 12,
     backgroundColor: 'rgba(0, 0, 0, 0.4)',
     paddingHorizontal: 10,
     paddingVertical: 2,
@@ -2617,6 +2743,41 @@ const styles = StyleSheet.create({
     top: 10,
     right: 60,
     zIndex: 30,
+  },
+    messageActionsRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginTop: BUTTON_MARGIN,
+    width: '100%',
+    minHeight: BUTTON_SIZE,
+  },
+  messageActionsLeft: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    flex: 1,
+  },
+  messageActionsRight: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'flex-end',
+    flex: 1,
+  },
+  actionCircleButton: {
+    backgroundColor: 'rgba(0,0,0,0.5)',
+    borderRadius: BUTTON_SIZE / 2,
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginHorizontal: 0,
+    marginVertical: 0,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.12,
+    shadowRadius: 2,
+    elevation: 2,
+  },
+  actionCircleButtonActive: {
+    backgroundColor: 'rgba(255,224,195,0.85)',
   },
 });
 
